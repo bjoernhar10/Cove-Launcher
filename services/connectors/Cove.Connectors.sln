@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cove.Connectors", "src\Cove.Connectors\Cove.Connectors.csproj", "{6B1E3C2A-4F3D-4C55-9C2E-1A0B7E2D9F01}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cove.Connectors.Tests", "tests\Cove.Connectors.Tests\Cove.Connectors.Tests.csproj", "{9D4A7B10-2C6E-4E8F-8A3B-5F1C0D2E7A02}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6B1E3C2A-4F3D-4C55-9C2E-1A0B7E2D9F01}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6B1E3C2A-4F3D-4C55-9C2E-1A0B7E2D9F01}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6B1E3C2A-4F3D-4C55-9C2E-1A0B7E2D9F01}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6B1E3C2A-4F3D-4C55-9C2E-1A0B7E2D9F01}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9D4A7B10-2C6E-4E8F-8A3B-5F1C0D2E7A02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9D4A7B10-2C6E-4E8F-8A3B-5F1C0D2E7A02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9D4A7B10-2C6E-4E8F-8A3B-5F1C0D2E7A02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9D4A7B10-2C6E-4E8F-8A3B-5F1C0D2E7A02}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

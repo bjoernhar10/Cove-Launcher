@@ -1,0 +1,211 @@
+/*
+ * Cove design tokens — raw values. Single source of truth for every color,
+ * size and duration. Components never use these directly: they use the
+ * Tailwind utilities defined in `theme.css` (bg-surface, text-fg-muted, …).
+ *
+ * Rules (CLAUDE.md → Design-Regeln): neutral grays + ONE calm accent,
+ * no gradients, no shadows, no glow, no blur. Light + dark always.
+ *
+ * Theme is selected via <html data-theme="light|dark" data-accent="…">.
+ */
+
+:root {
+  /* Neutrals — light */
+  --cove-bg: #ffffff;
+  --cove-bg-sidebar: #f8f8f9;
+  --cove-surface: #ffffff;
+  --cove-surface-raised: #ffffff;
+  --cove-hover: #f2f2f4;
+  --cove-active: #ebebee;
+  --cove-skeleton: #ececef;
+  --cove-border: #e6e6e9;
+  --cove-border-strong: #d4d4d9;
+  --cove-fg: #18181b;
+  --cove-fg-muted: #5c5c66;
+  --cove-fg-subtle: #85858f;
+  --cove-danger: #b0443b;
+  --cove-danger-subtle: #fbeeec;
+  --cove-overlay: rgb(24 24 27 / 0.36);
+
+  /* Accent — default: muted blue */
+  --cove-accent: #3b6fd8;
+  --cove-accent-hover: #3363c4;
+  --cove-accent-text: #3b6fd8;
+  --cove-accent-subtle: #edf2fc;
+  --cove-on-accent: #ffffff;
+
+  /* Placeholder cover tones (artwork stand-ins, low chroma) — bg / ink pairs */
+  --cove-tone-1-bg: #dae3ed;
+  --cove-tone-1-fg: #2f3e4f;
+  --cove-tone-2-bg: #dfe8df;
+  --cove-tone-2-fg: #33463a;
+  --cove-tone-3-bg: #ece4d7;
+  --cove-tone-3-fg: #4f4130;
+  --cove-tone-4-bg: #e6dee8;
+  --cove-tone-4-fg: #44364a;
+  --cove-tone-5-bg: #dbe7e8;
+  --cove-tone-5-fg: #2e4547;
+  --cove-tone-6-bg: #ecdfd8;
+  --cove-tone-6-fg: #50352c;
+  --cove-tone-7-bg: #e3e3e5;
+  --cove-tone-7-fg: #3a3a40;
+  --cove-tone-8-bg: #e6e4d5;
+  --cove-tone-8-fg: #45432c;
+
+  /* Motion */
+  --cove-duration-fast: 150ms;
+  --cove-duration-normal: 200ms;
+  --cove-ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+  color-scheme: light;
+}
+
+/* Before JS has applied a theme, follow the OS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --cove-bg: #161618;
+    --cove-bg-sidebar: #1b1b1e;
+    --cove-surface: #1e1e21;
+    --cove-surface-raised: #232327;
+    --cove-hover: #26262a;
+    --cove-active: #2c2c31;
+    --cove-skeleton: #27272b;
+    --cove-border: #2c2c31;
+    --cove-border-strong: #3a3a41;
+    --cove-fg: #ededef;
+    --cove-fg-muted: #a3a3ad;
+    --cove-fg-subtle: #75757f;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --cove-bg: #161618;
+  --cove-bg-sidebar: #1b1b1e;
+  --cove-surface: #1e1e21;
+  --cove-surface-raised: #232327;
+  --cove-hover: #26262a;
+  --cove-active: #2c2c31;
+  --cove-skeleton: #27272b;
+  --cove-border: #2c2c31;
+  --cove-border-strong: #3a3a41;
+  --cove-fg: #ededef;
+  --cove-fg-muted: #a3a3ad;
+  --cove-fg-subtle: #75757f;
+  --cove-danger: #e07a70;
+  --cove-danger-subtle: #3a2523;
+  --cove-overlay: rgb(0 0 0 / 0.5);
+
+  --cove-accent: #4774d6;
+  --cove-accent-hover: #5682de;
+  --cove-accent-text: #86a7ec;
+  --cove-accent-subtle: #1f2940;
+
+  --cove-tone-1-bg: #27303b;
+  --cove-tone-1-fg: #c3d0de;
+  --cove-tone-2-bg: #29332b;
+  --cove-tone-2-fg: #c4d4c6;
+  --cove-tone-3-bg: #372f25;
+  --cove-tone-3-fg: #e0d2bd;
+  --cove-tone-4-bg: #322a35;
+  --cove-tone-4-fg: #d6c9da;
+  --cove-tone-5-bg: #243335;
+  --cove-tone-5-fg: #bfd4d6;
+  --cove-tone-6-bg: #382a24;
+  --cove-tone-6-fg: #e2cbc0;
+  --cove-tone-7-bg: #2b2b2f;
+  --cove-tone-7-fg: #d0d0d5;
+  --cove-tone-8-bg: #333225;
+  --cove-tone-8-fg: #d8d5bd;
+
+  color-scheme: dark;
+}
+
+/* Accent options (Settings → Aussehen). All muted; one is active at a time. */
+:root[data-accent="teal"] {
+  --cove-accent: #2b7a84;
+  --cove-accent-hover: #256c75;
+  --cove-accent-text: #2b7a84;
+  --cove-accent-subtle: #e8f2f3;
+}
+:root[data-accent="sage"] {
+  --cove-accent: #4b7a57;
+  --cove-accent-hover: #426c4d;
+  --cove-accent-text: #4b7a57;
+  --cove-accent-subtle: #ecf3ee;
+}
+:root[data-accent="plum"] {
+  --cove-accent: #765aa3;
+  --cove-accent-hover: #694f92;
+  --cove-accent-text: #765aa3;
+  --cove-accent-subtle: #f2eef9;
+}
+:root[data-accent="clay"] {
+  --cove-accent: #a95b39;
+  --cove-accent-hover: #984f30;
+  --cove-accent-text: #a95b39;
+  --cove-accent-subtle: #faefea;
+}
+:root[data-theme="dark"][data-accent="teal"] {
+  --cove-accent: #2d7f89;
+  --cove-accent-hover: #358d98;
+  --cove-accent-text: #72b5bd;
+  --cove-accent-subtle: #1a2d30;
+}
+:root[data-theme="dark"][data-accent="sage"] {
+  --cove-accent: #4c8159;
+  --cove-accent-hover: #578f65;
+  --cove-accent-text: #8fbb9a;
+  --cove-accent-subtle: #1f2b22;
+}
+:root[data-theme="dark"][data-accent="plum"] {
+  --cove-accent: #7a5fae;
+  --cove-accent-hover: #876cba;
+  --cove-accent-text: #b59ed8;
+  --cove-accent-subtle: #2a2335;
+}
+:root[data-theme="dark"][data-accent="clay"] {
+  --cove-accent: #a85d3b;
+  --cove-accent-hover: #b66a47;
+  --cove-accent-text: #dfa183;
+  --cove-accent-subtle: #34241b;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --cove-duration-fast: 0ms;
+    --cove-duration-normal: 0ms;
+  }
+}
+
+/* Settings → Aussehen: swatches and theme previews (fixed values, independent of the active theme). */
+[data-swatch="blue"] {
+  --swatch: #3b6fd8;
+}
+[data-swatch="teal"] {
+  --swatch: #2b7a84;
+}
+[data-swatch="sage"] {
+  --swatch: #4b7a57;
+}
+[data-swatch="plum"] {
+  --swatch: #765aa3;
+}
+[data-swatch="clay"] {
+  --swatch: #a95b39;
+}
+[data-preview="light"] {
+  --pv-bg: #ffffff;
+  --pv-side: #f2f2f4;
+  --pv-line: #e3e3e6;
+}
+[data-preview="dark"] {
+  --pv-bg: #161618;
+  --pv-side: #232327;
+  --pv-line: #34343a;
+}
+[data-preview="system"] {
+  --pv-bg: var(--cove-bg);
+  --pv-side: var(--cove-hover);
+  --pv-line: var(--cove-border);
+}

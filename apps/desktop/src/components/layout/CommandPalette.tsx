@@ -1,0 +1,205 @@
+import type { Game } from "@cove/shared";
+import { CornerDownLeft, Moon, Plus, Search, Sun, type LucideIcon } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router";
+import { api } from "../../api/index.ts";
+import { cx } from "../../lib/cx.ts";
+import { usePreferences } from "../../stores/preferences.ts";
+import { useUi } from "../../stores/ui.ts";
+import { GameCover } from "../game/GameCover.tsx";
+import { Dialog } from "../ui/Dialog.tsx";
+import { Kbd } from "../ui/Feedback.tsx";
+import { MAIN_NAV, SETTINGS_NAV } from "./nav.ts";
+
+interface Command {
+  id: string;
+  group: "Spiele" | "Navigation" | "Aktionen";
+  label: string;
+  hint?: string;
+  icon?: LucideIcon;
+  game?: Game;
+  run: () => void;
+}
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebounced(value);
+    }, ms);
+    return () => {
+      clearTimeout(t);
+    };
+  }, [value, ms]);
+  return debounced;
+}
+
+function PaletteBody({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate();
+  const openAddGame = useUi((s) => s.openAddGame);
+  const setTheme = usePreferences((s) => s.setTheme);
+  const [query, setQuery] = useState("");
+  const [games, setGames] = useState<Game[]>([]);
+  const [owned, setOwned] = useState<Set<string>>(new Set());
+  const [activeIndex, setActiveIndex] = useState(0);
+  const debounced = useDebounced(query, 120);
+  const listId = useId();
+  const listRef = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.library.listLibrary().then(
+      (items) => {
+        if (!cancelled) setOwned(new Set(items.map((i) => i.game.id)));
+      },
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([api.catalog.searchCatalog(debounced), api.library.listLibrary().catch(() => [])]).then(([catalog, library]) => {
+      if (cancelled) return;
+      const q = debounced.trim().toLowerCase();
+      // Own games first (including manual ones the catalogue does not know), then catalogue hits.
+      const own = q ? library.map((i) => i.game).filter((g) => g.title.toLowerCase().includes(q)) : [];
+      const ownIds = new Set(own.map((g) => g.id));
+      setGames([...own, ...catalog.filter((g) => !ownIds.has(g.id))].slice(0, 8));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [debounced]);
+
+  const commands = useMemo<Command[]>(() => {
+    const go = (to: string) => () => {
+      void navigate(to);
+      onClose();
+    };
+    const q = query.trim().toLowerCase();
+    const gameCommands: Command[] = q
+      ? games.map((game) => ({
+          id: `game-${game.id}`,
+          group: "Spiele",
+          label: game.title,
+          hint: owned.has(game.id) ? "In deiner Bibliothek" : "Katalog",
+          game,
+          run: go(owned.has(game.id) ? `/library/${game.id}` : `/catalogue/${game.id}`),
+        }))
+      : [];
+    const nav: Command[] = [...MAIN_NAV, SETTINGS_NAV].map((item) => ({
+      id: `nav-${item.to}`,
+      group: "Navigation",
+      label: `Gehe zu ${item.label}`,
+      icon: item.icon,
+      run: go(item.to),
+    }));
+    const actions: Command[] = [
+      {
+        id: "add-game",
+        group: "Aktionen",
+        label: "Spiel hinzufügen",
+        icon: Plus,
+        run: () => {
+          onClose();
+          openAddGame();
+        },
+      },
+      { id: "theme-light", group: "Aktionen", label: "Helles Design verwenden", icon: Sun, run: () => { setTheme("light"); onClose(); } },
+      { id: "theme-dark", group: "Aktionen", label: "Dunkles Design verwenden", icon: Moon, run: () => { setTheme("dark"); onClose(); } },
+    ];
+    const matches = (c: Command) => !q || c.label.toLowerCase().includes(q);
+    return [...gameCommands, ...nav.filter(matches), ...actions.filter(matches)];
+  }, [games, owned, query, navigate, onClose, openAddGame, setTheme]);
+
+  const safeIndex = Math.min(activeIndex, Math.max(0, commands.length - 1));
+  const active = commands[safeIndex];
+
+  useEffect(() => {
+    listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [safeIndex]);
+
+  return (
+    <div className="flex flex-col">
+      <div className="flex h-12 items-center gap-3 border-b border-border px-4">
+        <Search aria-hidden className="text-fg-subtle" />
+        <input
+          autoFocus
+          role="combobox"
+          aria-expanded
+          aria-controls={listId}
+          aria-activedescendant={active ? `${listId}-${active.id}` : undefined}
+          aria-label="Suche"
+          placeholder="Spiele, Seiten, Aktionen suchen …"
+          className="h-full flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg-subtle"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setActiveIndex(0);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActiveIndex((safeIndex + 1) % Math.max(commands.length, 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActiveIndex((safeIndex - 1 + commands.length) % Math.max(commands.length, 1));
+            } else if (e.key === "Enter") {
+              e.preventDefault();
+              active?.run();
+            }
+          }}
+        />
+        <Kbd>Esc</Kbd>
+      </div>
+      <ul ref={listRef} id={listId} role="listbox" aria-label="Ergebnisse" className="max-h-96 overflow-y-auto p-2">
+        {commands.length === 0 && <li className="px-3 py-8 text-center text-sm text-fg-muted">Keine Treffer für „{query}“.</li>}
+        {commands.map((command, index) => {
+          const showGroup = index === 0 || commands[index - 1]?.group !== command.group;
+          const Icon = command.icon;
+          const selected = index === safeIndex;
+          return (
+            <li key={command.id} role="presentation">
+              {showGroup && <p className="px-3 pt-3 pb-1.5 text-xs font-medium text-fg-subtle first:pt-1">{command.group}</p>}
+              <div
+                id={`${listId}-${command.id}`}
+                role="option"
+                aria-selected={selected}
+                tabIndex={-1}
+                onMouseMove={() => {
+                  setActiveIndex(index);
+                }}
+                onClick={command.run}
+                onKeyDown={undefined}
+                className={cx("flex h-10 cursor-pointer items-center gap-3 rounded-md px-3 text-sm", selected ? "bg-active text-fg" : "text-fg-muted")}
+              >
+                {command.game ? (
+                  <GameCover game={command.game} aspect="square" showTitle={false} className="w-6 rounded-md" />
+                ) : (
+                  Icon && <Icon aria-hidden className="text-fg-subtle" />
+                )}
+                <span className="min-w-0 flex-1 truncate">{command.label}</span>
+                {command.hint && <span className="text-xs text-fg-subtle">{command.hint}</span>}
+                {selected && <CornerDownLeft aria-hidden className="text-fg-subtle" />}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+export function CommandPalette() {
+  const open = useUi((s) => s.paletteOpen);
+  const setOpen = useUi((s) => s.setPaletteOpen);
+  const close = useMemo(() => () => { setOpen(false); }, [setOpen]);
+  return (
+    <Dialog open={open} onClose={close} title="Befehlspalette" bare className="mt-[12vh] mb-auto w-[600px]">
+      {open && <PaletteBody onClose={close} />}
+    </Dialog>
+  );
+}

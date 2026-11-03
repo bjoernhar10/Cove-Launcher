@@ -1,0 +1,79 @@
+/*
+ * Tailwind v4 theme. Tailwind's default palette, shadows, blurs and extra
+ * font sizes are switched OFF on purpose — only Cove tokens exist, so the
+ * design rules cannot be broken by accident (e.g. `bg-pink-500`, `shadow-lg`,
+ * `text-4xl` or `backdrop-blur` simply don't generate CSS).
+ */
+
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
+  --blur-*: initial;
+  --ease-*: initial;
+  --animate-*: initial;
+
+  /* 4px grid: p-1 = 4px, p-2 = 8px, … */
+  --spacing: 4px;
+
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Only these five sizes exist: 12 / 14 / 16 / 20 / 28 */
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 20px;
+  --text-lg--line-height: 28px;
+  --text-xl: 28px;
+  --text-xl--line-height: 36px;
+
+  /* 8px default, 12px for cards (rounded-full stays available for pills/avatars) */
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+
+  --animate-skeleton: skeleton 1.6s ease-in-out infinite;
+
+  @keyframes skeleton {
+    50% {
+      opacity: 0.55;
+    }
+  }
+}
+
+/* Semantic colors → runtime CSS variables (switch with data-theme / data-accent). */
+@theme inline {
+  --color-bg: var(--cove-bg);
+  --color-sidebar: var(--cove-bg-sidebar);
+  --color-surface: var(--cove-surface);
+  --color-raised: var(--cove-surface-raised);
+  --color-hover: var(--cove-hover);
+  --color-active: var(--cove-active);
+  --color-skeleton: var(--cove-skeleton);
+  --color-border: var(--cove-border);
+  --color-border-strong: var(--cove-border-strong);
+  --color-fg: var(--cove-fg);
+  --color-fg-muted: var(--cove-fg-muted);
+  --color-fg-subtle: var(--cove-fg-subtle);
+  --color-accent: var(--cove-accent);
+  --color-accent-hover: var(--cove-accent-hover);
+  --color-accent-text: var(--cove-accent-text);
+  --color-accent-subtle: var(--cove-accent-subtle);
+  --color-on-accent: var(--cove-on-accent);
+  --color-danger: var(--cove-danger);
+  --color-danger-subtle: var(--cove-danger-subtle);
+  --color-overlay: var(--cove-overlay);
+}
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));

@@ -1,0 +1,23 @@
+{
+  "name": "cove",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "apps/desktop"
+  ],
+  "scripts": {
+    "dev": "npm run tauri:dev -w @cove/desktop",
+    "lint": "eslint . && npm run typecheck --workspaces",
+    "test": "npm run test --workspaces && node --test \"plugins/**/*.test.js\"",
+    "check": "npm run lint && npm run test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}

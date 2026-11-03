@@ -1,0 +1,599 @@
+//! Games + library entries.
+
+use std::collections::HashSet;
+use std::path::Path;
+
+use sqlx::{FromRow, SqlitePool};
+
+use crate::db::slugify;
+use crate::error::{AppError, AppResult};
+use crate::models::{
+    now_iso, AchievementProgress, CompatibilityTool, EnvVar, Game, GameArtwork, GameId, ImageRef,
+    LaunchOptions, LibraryEntry, LibraryItem, LibraryUpdate, ManualGameInput, Platform,
+    StoreSource,
+};
+
+#[derive(Debug, FromRow)]
+pub(crate) struct GameRow {
+    pub id: String,
+    pub title: String,
+    pub summary: String,
+    pub description: String,
+    pub genres: String,
+    pub platforms: String,
+    pub release_date: String,
+    pub developer: String,
+    pub publisher: String,
+    pub rating: Option<i64>,
+    pub popularity: i64,
+    pub cover_url: Option<String>,
+    pub header_url: Option<String>,
+    pub screenshots: String,
+}
+
+pub(crate) const GAME_COLUMNS: &str =
+    "g.id, g.title, g.summary, g.description, g.genres, g.platforms, g.release_date, \
+     g.developer, g.publisher, g.rating, g.popularity, g.cover_url, g.header_url, g.screenshots";
+
+impl GameRow {
+    pub(crate) fn into_game(self) -> AppResult<Game> {
+        let screenshots: Vec<Option<String>> = serde_json::from_str(&self.screenshots)?;
+        let title = self.title;
+        Ok(Game {
+            artwork: GameArtwork {
+                cover: ImageRef {
+                    url: self.cover_url,
+                    alt: format!("Cover von {title}"),
+                },
+                header: ImageRef {
+                    url: self.header_url,
+                    alt: format!("Titelbild von {title}"),
+                },
+                screenshots: screenshots
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, url)| ImageRef {
+                        url,
+                        alt: format!("Screenshot {} von {title}", i + 1),
+                    })
+                    .collect(),
+            },
+            id: self.id,
+            summary: self.summary,
+            description: self.description,
+            genres: serde_json::from_str(&self.genres)?,
+            platforms: serde_json::from_str(&self.platforms)?,
+            release_date: self.release_date,
+            developer: self.developer,
+            publisher: self.publisher,
+            rating: self.rating,
+            popularity: self.popularity,
+            title,
+        })
+    }
+}
+
+#[derive(Debug, FromRow)]
+struct EntryRow {
+    #[sqlx(flatten)]
+    game: GameRow,
+    source_id: String,
+    store_game_id: Option<String>,
+    installed: bool,
+    install_path: Option<String>,
+    executable_path: Option<String>,
+    install_size_bytes: Option<i64>,
+    favorite: bool,
+    playtime_offset_minutes: i64,
+    launch_arguments: String,
+    compatibility_tool: String,
+    env: String,
+    added_at: String,
+    played_seconds: i64,
+    last_played_at: Option<String>,
+    achievements_total: i64,
+    achievements_unlocked: i64,
+}
+
+impl EntryRow {
+    fn into_item(self) -> AppResult<LibraryItem> {
+        let env: Vec<EnvVar> = serde_json::from_str(&self.env)?;
+        let game = self.game.into_game()?;
+        Ok(LibraryItem {
+            entry: LibraryEntry {
+                game_id: game.id.clone(),
+                source: StoreSource::parse(&self.source_id).unwrap_or(StoreSource::Manual),
+                store_game_id: self.store_game_id,
+                installed: self.installed,
+                install_path: self.install_path,
+                executable_path: self.executable_path,
+                install_size_bytes: self.install_size_bytes,
+                favorite: self.favorite,
+                playtime_minutes: self.playtime_offset_minutes + self.played_seconds / 60,
+                last_played_at: self.last_played_at,
+                added_at: self.added_at,
+                achievements: AchievementProgress {
+                    unlocked: self.achievements_unlocked,
+                    total: self.achievements_total,
+                },
+                launch_options: LaunchOptions {
+                    arguments: self.launch_arguments,
+                    compatibility_tool: CompatibilityTool::parse(&self.compatibility_tool),
+                    env,
+                },
+            },
+            game,
+        })
+    }
+}
+
+fn select_entries(filter: &str) -> String {
+    format!(
+        "SELECT {GAME_COLUMNS}, e.source_id, e.store_game_id, e.installed, e.install_path, e.executable_path, \
+           e.install_size_bytes, e.favorite, e.playtime_offset_minutes, e.launch_arguments, e.compatibility_tool, \
+           e.env, e.added_at, \
+           (SELECT COALESCE(SUM(s.duration_seconds), 0) FROM play_sessions s WHERE s.game_id = g.id) AS played_seconds, \
+           (SELECT MAX(COALESCE(s.ended_at, s.started_at)) FROM play_sessions s WHERE s.game_id = g.id) AS last_played_at, \
+           (SELECT COUNT(*) FROM achievements a WHERE a.game_id = g.id) AS achievements_total, \
+           (SELECT COUNT(*) FROM user_achievements u WHERE u.game_id = g.id) AS achievements_unlocked \
+         FROM library_entries e JOIN games g ON g.id = e.game_id {filter}"
+    )
+}
+
+pub async fn list(pool: &SqlitePool) -> AppResult<Vec<LibraryItem>> {
+    let rows: Vec<EntryRow> = sqlx::query_as(&select_entries("ORDER BY g.title COLLATE NOCASE"))
+        .fetch_all(pool)
+        .await?;
+    rows.into_iter().map(EntryRow::into_item).collect()
+}
+
+pub async fn get(pool: &SqlitePool, game_id: &str) -> AppResult<Option<LibraryItem>> {
+    let row: Option<EntryRow> = sqlx::query_as(&select_entries("WHERE g.id = ?"))
+        .bind(game_id)
+        .fetch_optional(pool)
+        .await?;
+    row.map(EntryRow::into_item).transpose()
+}
+
+pub async fn require(pool: &SqlitePool, game_id: &str) -> AppResult<LibraryItem> {
+    get(pool, game_id)
+        .await?
+        .ok_or_else(|| AppError::NotInLibrary(game_id.to_owned()))
+}
+
+/// Executable paths already in the library (for marking scan results).
+pub async fn executable_paths(pool: &SqlitePool) -> AppResult<HashSet<String>> {
+    let paths: Vec<String> = sqlx::query_scalar(
+        "SELECT executable_path FROM library_entries WHERE executable_path IS NOT NULL",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(paths.into_iter().collect())
+}
+
+async fn unique_game_id(pool: &SqlitePool, base: &str) -> AppResult<GameId> {
+    let base = if base.is_empty() {
+        "game".to_owned()
+    } else {
+        base.to_owned()
+    };
+    let mut candidate = format!("manual-{base}");
+    let mut n = 2;
+    loop {
+        let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM games WHERE id = ?")
+            .bind(&candidate)
+            .fetch_optional(pool)
+            .await?;
+        if exists.is_none() {
+            return Ok(candidate);
+        }
+        candidate = format!("manual-{base}-{n}");
+        n += 1;
+    }
+}
+
+/// Adds a game the user points at by executable path.
+pub async fn add_manual(pool: &SqlitePool, input: &ManualGameInput) -> AppResult<LibraryItem> {
+    let title = input.title.trim();
+    let executable = input.executable_path.trim();
+    if title.is_empty() {
+        return Err(AppError::InvalidInput("Bitte gib einen Namen ein.".into()));
+    }
+    if executable.is_empty() {
+        return Err(AppError::InvalidInput(
+            "Bitte gib den Pfad zur ausführbaren Datei an.".into(),
+        ));
+    }
+    if executable_paths(pool).await?.contains(executable) {
+        return Err(AppError::AlreadyInLibrary(title.to_owned()));
+    }
+
+    let id = unique_game_id(pool, &slugify(title)).await?;
+    let now = now_iso();
+    let install_dir = Path::new(executable)
+        .parent()
+        .map(|p| p.to_string_lossy().into_owned());
+    let platforms = serde_json::to_string(&[Platform::current()])?;
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "INSERT INTO games (id, title, summary, description, platforms, release_date, created_at) \
+         VALUES (?, ?, 'Manuell hinzugefügt.', ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(title)
+    .bind(format!("Manuell hinzugefügt.\n\nPfad: {executable}"))
+    .bind(platforms)
+    .bind(&now[..10])
+    .bind(&now)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO library_entries (game_id, source_id, installed, install_path, executable_path, install_size_bytes, added_at) \
+         VALUES (?, 'manual', 1, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(install_dir)
+    .bind(executable)
+    .bind(input.size_bytes)
+    .bind(&now)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    require(pool, &id).await
+}
+
+/// Stores catalogue metadata and adds the game as a (not yet set up) library entry.
+pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<LibraryItem> {
+    if game.id.trim().is_empty() || game.title.trim().is_empty() {
+        return Err(AppError::InvalidInput("Ungültiges Spiel.".into()));
+    }
+    if get(pool, &game.id).await?.is_some() {
+        return Err(AppError::AlreadyInLibrary(game.title.clone()));
+    }
+    let now = now_iso();
+    let screenshots: Vec<Option<&str>> = game
+        .artwork
+        .screenshots
+        .iter()
+        .map(|s| s.url.as_deref())
+        .collect();
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "INSERT INTO games (id, title, summary, description, genres, platforms, release_date, developer, publisher, \
+           rating, popularity, cover_url, header_url, screenshots, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+         ON CONFLICT (id) DO UPDATE SET title = excluded.title, summary = excluded.summary, \
+           description = excluded.description, genres = excluded.genres, platforms = excluded.platforms, \
+           release_date = excluded.release_date, developer = excluded.developer, publisher = excluded.publisher, \
+           rating = excluded.rating, popularity = excluded.popularity, cover_url = excluded.cover_url, \
+           header_url = excluded.header_url, screenshots = excluded.screenshots",
+    )
+    .bind(&game.id)
+    .bind(&game.title)
+    .bind(&game.summary)
+    .bind(&game.description)
+    .bind(serde_json::to_string(&game.genres)?)
+    .bind(serde_json::to_string(&game.platforms)?)
+    .bind(&game.release_date)
+    .bind(&game.developer)
+    .bind(&game.publisher)
+    .bind(game.rating)
+    .bind(game.popularity)
+    .bind(&game.artwork.cover.url)
+    .bind(&game.artwork.header.url)
+    .bind(serde_json::to_string(&screenshots)?)
+    .bind(&now)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("INSERT INTO library_entries (game_id, source_id, installed, added_at) VALUES (?, 'manual', 0, ?)")
+        .bind(&game.id)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    require(pool, &game.id).await
+}
+
+/// Removes the library entry. Game metadata and play sessions are kept, so
+/// playtime comes back if the game is added again.
+pub async fn remove(pool: &SqlitePool, game_id: &str) -> AppResult<()> {
+    let result = sqlx::query("DELETE FROM library_entries WHERE game_id = ?")
+        .bind(game_id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotInLibrary(game_id.to_owned()));
+    }
+    Ok(())
+}
+
+pub async fn update(
+    pool: &SqlitePool,
+    game_id: &str,
+    patch: &LibraryUpdate,
+) -> AppResult<LibraryItem> {
+    require(pool, game_id).await?;
+    let mut tx = pool.begin().await?;
+
+    if let Some(title) = &patch.title {
+        let title = title.trim();
+        if title.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Der Name darf nicht leer sein.".into(),
+            ));
+        }
+        sqlx::query("UPDATE games SET title = ? WHERE id = ?")
+            .bind(title)
+            .bind(game_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if let Some(favorite) = patch.favorite {
+        sqlx::query("UPDATE library_entries SET favorite = ? WHERE game_id = ?")
+            .bind(favorite)
+            .bind(game_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+    if let Some(raw_path) = &patch.executable_path {
+        let exe_path = raw_path.trim();
+        if exe_path.is_empty() {
+            return Err(AppError::InvalidInput(
+                "Bitte gib den Pfad zur ausführbaren Datei an.".into(),
+            ));
+        }
+        let install_dir = Path::new(exe_path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned());
+        sqlx::query(
+            "UPDATE library_entries SET executable_path = ?, install_path = COALESCE(install_path, ?), installed = 1 \
+             WHERE game_id = ?",
+        )
+        .bind(exe_path)
+        .bind(install_dir)
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    if let Some(options) = &patch.launch_options {
+        let env: Vec<&EnvVar> = options
+            .env
+            .iter()
+            .filter(|e| !e.key.trim().is_empty())
+            .collect();
+        if env
+            .iter()
+            .any(|e| e.key.contains('=') || e.key.chars().any(char::is_whitespace))
+        {
+            return Err(AppError::InvalidInput(
+                "Variablennamen dürfen weder „=“ noch Leerzeichen enthalten.".into(),
+            ));
+        }
+        sqlx::query(
+            "UPDATE library_entries SET launch_arguments = ?, compatibility_tool = ?, env = ? WHERE game_id = ?",
+        )
+        .bind(options.arguments.trim())
+        .bind(options.compatibility_tool.as_str())
+        .bind(serde_json::to_string(&env)?)
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    require(pool, game_id).await
+}
+
+/// Inserts a store-owned game (connectors will use this; tests for now).
+#[cfg(test)]
+pub async fn insert_store_game(
+    pool: &SqlitePool,
+    game: &Game,
+    source: StoreSource,
+    store_game_id: Option<&str>,
+    install_path: Option<&str>,
+) -> AppResult<LibraryItem> {
+    add_from_catalog(pool, game).await?;
+    sqlx::query(
+        "UPDATE library_entries SET source_id = ?, store_game_id = ?, install_path = ?, installed = ? WHERE game_id = ?",
+    )
+    .bind(source.as_str())
+    .bind(store_game_id)
+    .bind(install_path)
+    .bind(install_path.is_some())
+    .bind(&game.id)
+    .execute(pool)
+    .await?;
+    require(pool, &game.id).await
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    use crate::db::open_in_memory;
+
+    pub(crate) fn sample_game(id: &str, title: &str) -> Game {
+        Game {
+            id: id.into(),
+            title: title.into(),
+            summary: "Kurz.".into(),
+            description: "Lang.".into(),
+            genres: vec!["puzzle".into()],
+            platforms: vec![Platform::Linux, Platform::Windows],
+            release_date: "2024-05-01".into(),
+            developer: "Studio".into(),
+            publisher: "Verlag".into(),
+            rating: Some(81),
+            popularity: 40,
+            artwork: GameArtwork {
+                cover: ImageRef {
+                    url: None,
+                    alt: String::new(),
+                },
+                header: ImageRef {
+                    url: None,
+                    alt: String::new(),
+                },
+                screenshots: vec![ImageRef {
+                    url: None,
+                    alt: String::new(),
+                }],
+            },
+        }
+    }
+
+    fn manual(title: &str, path: &str) -> ManualGameInput {
+        ManualGameInput {
+            title: title.into(),
+            executable_path: path.into(),
+            size_bytes: Some(1234),
+        }
+    }
+
+    #[tokio::test]
+    async fn add_manual_and_list() {
+        let pool = open_in_memory().await.unwrap();
+        let item = add_manual(&pool, &manual("Ember & Oak", "/games/ember/ember.x86_64"))
+            .await
+            .unwrap();
+        assert_eq!(item.game.id, "manual-ember-and-oak");
+        assert_eq!(item.entry.source, StoreSource::Manual);
+        assert!(item.entry.installed);
+        assert_eq!(item.entry.install_path.as_deref(), Some("/games/ember"));
+        assert_eq!(item.entry.install_size_bytes, Some(1234));
+        assert_eq!(item.entry.playtime_minutes, 0);
+        assert_eq!(item.game.artwork.screenshots.len(), 0);
+
+        add_manual(&pool, &manual("Alpha", "/games/alpha/alpha"))
+            .await
+            .unwrap();
+        let titles: Vec<String> = list(&pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|i| i.game.title)
+            .collect();
+        assert_eq!(titles, ["Alpha", "Ember & Oak"]);
+    }
+
+    #[tokio::test]
+    async fn rejects_duplicates_and_empty_input() {
+        let pool = open_in_memory().await.unwrap();
+        add_manual(&pool, &manual("Game", "/g/game")).await.unwrap();
+        assert!(matches!(
+            add_manual(&pool, &manual("Other", "/g/game")).await,
+            Err(AppError::AlreadyInLibrary(_))
+        ));
+        assert!(matches!(
+            add_manual(&pool, &manual("  ", "/g/x")).await,
+            Err(AppError::InvalidInput(_))
+        ));
+        // Same title, different path → unique id
+        let second = add_manual(&pool, &manual("Game", "/h/game")).await.unwrap();
+        assert_eq!(second.game.id, "manual-game-2");
+    }
+
+    #[tokio::test]
+    async fn update_fields() {
+        let pool = open_in_memory().await.unwrap();
+        let item = add_manual(&pool, &manual("Game", "/g/game.exe"))
+            .await
+            .unwrap();
+        let patch = LibraryUpdate {
+            title: Some("Renamed".into()),
+            favorite: Some(true),
+            executable_path: None,
+            launch_options: Some(LaunchOptions {
+                arguments: " -novid ".into(),
+                compatibility_tool: CompatibilityTool::Proton,
+                env: vec![
+                    EnvVar {
+                        key: "DXVK_HUD".into(),
+                        value: "fps".into(),
+                    },
+                    EnvVar {
+                        key: String::new(),
+                        value: "dropped".into(),
+                    },
+                ],
+            }),
+        };
+        let updated = update(&pool, &item.game.id, &patch).await.unwrap();
+        assert_eq!(updated.game.title, "Renamed");
+        assert!(updated.entry.favorite);
+        assert_eq!(updated.entry.launch_options.arguments, "-novid");
+        assert_eq!(
+            updated.entry.launch_options.compatibility_tool,
+            CompatibilityTool::Proton
+        );
+        assert_eq!(updated.entry.launch_options.env.len(), 1);
+
+        let bad = LibraryUpdate {
+            launch_options: Some(LaunchOptions {
+                env: vec![EnvVar {
+                    key: "A B".into(),
+                    value: String::new(),
+                }],
+                ..LaunchOptions::default()
+            }),
+            ..LibraryUpdate::default()
+        };
+        assert!(matches!(
+            update(&pool, &item.game.id, &bad).await,
+            Err(AppError::InvalidInput(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn catalog_game_then_set_executable() {
+        let pool = open_in_memory().await.unwrap();
+        let item = add_from_catalog(&pool, &sample_game("tidewater", "Tidewater"))
+            .await
+            .unwrap();
+        assert!(!item.entry.installed);
+        assert_eq!(item.game.genres, ["puzzle"]);
+        assert_eq!(item.game.artwork.screenshots.len(), 1);
+        assert!(matches!(
+            add_from_catalog(&pool, &sample_game("tidewater", "Tidewater")).await,
+            Err(AppError::AlreadyInLibrary(_))
+        ));
+
+        let patch = LibraryUpdate {
+            executable_path: Some("/opt/tide/tide".into()),
+            ..LibraryUpdate::default()
+        };
+        let updated = update(&pool, "tidewater", &patch).await.unwrap();
+        assert!(updated.entry.installed);
+        assert_eq!(updated.entry.install_path.as_deref(), Some("/opt/tide"));
+    }
+
+    #[tokio::test]
+    async fn remove_keeps_sessions() {
+        let pool = open_in_memory().await.unwrap();
+        let item = add_manual(&pool, &manual("Game", "/g/game")).await.unwrap();
+        let id = item.game.id.clone();
+        let session = crate::db::sessions::start(&pool, &id, "2026-11-01T10:00:00Z")
+            .await
+            .unwrap();
+        crate::db::sessions::update(&pool, session, "2026-11-01T11:00:00Z", 3600)
+            .await
+            .unwrap();
+        assert_eq!(
+            require(&pool, &id).await.unwrap().entry.playtime_minutes,
+            60
+        );
+
+        remove(&pool, &id).await.unwrap();
+        assert!(get(&pool, &id).await.unwrap().is_none());
+        assert!(matches!(
+            remove(&pool, &id).await,
+            Err(AppError::NotInLibrary(_))
+        ));
+        let sessions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM play_sessions")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(sessions, 1);
+    }
+}

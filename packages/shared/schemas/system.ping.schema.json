@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cove.local/schemas/system.ping.schema.json",
+  "title": "system.ping",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "properties": {
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["service", "version", "message"],
+      "properties": {
+        "service": { "enum": ["core", "connectors", "recommender"] },
+        "version": { "type": "string" },
+        "message": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

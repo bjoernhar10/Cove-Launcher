@@ -1,0 +1,1125 @@
+{
+  "$id": "https://cove.local/schemas/models.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "AboutInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "appVersion": {
+          "type": "string"
+        },
+        "components": {
+          "items": {
+            "$ref": "#/definitions/ComponentVersion"
+          },
+          "type": "array"
+        },
+        "platform": {
+          "$ref": "#/definitions/Platform"
+        }
+      },
+      "required": [
+        "appVersion",
+        "components",
+        "platform"
+      ],
+      "type": "object"
+    },
+    "AccentColor": {
+      "enum": [
+        "blue",
+        "teal",
+        "sage",
+        "plum",
+        "clay"
+      ],
+      "type": "string"
+    },
+    "Achievement": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "hidden": {
+          "description": "Hidden achievements show no description until unlocked.",
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "rarityPercent": {
+          "description": "Share of players who unlocked it, 0–100; null if unknown.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "unlockedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null while locked."
+        }
+      },
+      "required": [
+        "id",
+        "gameId",
+        "title",
+        "description",
+        "unlockedAt",
+        "rarityPercent",
+        "hidden"
+      ],
+      "type": "object"
+    },
+    "AchievementProgress": {
+      "additionalProperties": false,
+      "properties": {
+        "total": {
+          "type": "number"
+        },
+        "unlocked": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "unlocked",
+        "total"
+      ],
+      "type": "object"
+    },
+    "AchievementUnlock": {
+      "additionalProperties": false,
+      "properties": {
+        "achievement": {
+          "$ref": "#/definitions/Achievement"
+        },
+        "game": {
+          "$ref": "#/definitions/Game"
+        }
+      },
+      "required": [
+        "achievement",
+        "game"
+      ],
+      "type": "object"
+    },
+    "AppErrorKind": {
+      "enum": [
+        "database",
+        "migration",
+        "io",
+        "serialization",
+        "notInLibrary",
+        "alreadyInLibrary",
+        "invalidInput",
+        "alreadyRunning",
+        "notRunning",
+        "launch",
+        "compatToolNotFound",
+        "notSupported"
+      ],
+      "type": "string"
+    },
+    "AppErrorPayload": {
+      "additionalProperties": false,
+      "description": "Error shape of every rejected Tauri command.",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/AppErrorKind"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "type": "object"
+    },
+    "AppSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "appearance": {
+          "$ref": "#/definitions/AppearanceSettings"
+        },
+        "downloads": {
+          "$ref": "#/definitions/DownloadSettings"
+        },
+        "general": {
+          "$ref": "#/definitions/GeneralSettings"
+        },
+        "library": {
+          "$ref": "#/definitions/LibrarySettings"
+        }
+      },
+      "required": [
+        "general",
+        "appearance",
+        "library",
+        "downloads"
+      ],
+      "type": "object"
+    },
+    "AppearanceSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "accent": {
+          "$ref": "#/definitions/AccentColor"
+        },
+        "theme": {
+          "$ref": "#/definitions/ThemePreference"
+        }
+      },
+      "required": [
+        "theme",
+        "accent"
+      ],
+      "type": "object"
+    },
+    "CatalogFilter": {
+      "additionalProperties": false,
+      "properties": {
+        "genres": {
+          "items": {
+            "$ref": "#/definitions/Genre"
+          },
+          "type": "array"
+        },
+        "minRating": {
+          "description": "Minimum rating 0–100, null = any.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "platforms": {
+          "items": {
+            "$ref": "#/definitions/Platform"
+          },
+          "type": "array"
+        },
+        "query": {
+          "type": "string"
+        },
+        "releaseYears": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/YearRange"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sort": {
+          "$ref": "#/definitions/CatalogSort"
+        }
+      },
+      "required": [
+        "query",
+        "genres",
+        "platforms",
+        "releaseYears",
+        "minRating",
+        "sort"
+      ],
+      "type": "object"
+    },
+    "CatalogSort": {
+      "enum": [
+        "recommended",
+        "popular",
+        "newest",
+        "title"
+      ],
+      "type": "string"
+    },
+    "CompatibilityTool": {
+      "enum": [
+        "native",
+        "proton",
+        "proton-experimental",
+        "wine"
+      ],
+      "type": "string"
+    },
+    "ComponentVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "enum": [
+            "core",
+            "connectors",
+            "recommender"
+          ],
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "ConnectableStore": {
+      "description": "Stores that support account connections (everything except manual).",
+      "enum": [
+        "steam",
+        "gog",
+        "epic"
+      ],
+      "type": "string"
+    },
+    "Download": {
+      "additionalProperties": false,
+      "properties": {
+        "bytesPerSecond": {
+          "description": "Current speed, 0 when not downloading.",
+          "type": "number"
+        },
+        "downloadedBytes": {
+          "type": "number"
+        },
+        "error": {
+          "description": "Human-readable error for failed downloads.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "finishedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "id": {
+          "type": "string"
+        },
+        "queuePosition": {
+          "description": "Position in the queue (0-based) for active/queued items, null otherwise.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "queuedAt": {
+          "$ref": "#/definitions/IsoDateTime"
+        },
+        "source": {
+          "$ref": "#/definitions/StoreSource"
+        },
+        "status": {
+          "$ref": "#/definitions/DownloadStatus"
+        },
+        "totalBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "gameId",
+        "source",
+        "status",
+        "totalBytes",
+        "downloadedBytes",
+        "bytesPerSecond",
+        "queuePosition",
+        "queuedAt",
+        "finishedAt",
+        "error"
+      ],
+      "type": "object"
+    },
+    "DownloadItem": {
+      "additionalProperties": false,
+      "description": "Download joined with its game metadata.",
+      "properties": {
+        "download": {
+          "$ref": "#/definitions/Download"
+        },
+        "game": {
+          "$ref": "#/definitions/Game"
+        }
+      },
+      "required": [
+        "download",
+        "game"
+      ],
+      "type": "object"
+    },
+    "DownloadSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "bandwidthLimitBytesPerSecond": {
+          "description": "Bandwidth limit in bytes/second, null = unlimited.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "directory": {
+          "type": "string"
+        },
+        "maxConcurrent": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "directory",
+        "bandwidthLimitBytesPerSecond",
+        "maxConcurrent"
+      ],
+      "type": "object"
+    },
+    "DownloadStatus": {
+      "enum": [
+        "downloading",
+        "paused",
+        "queued",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "EnvVar": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ],
+      "type": "object"
+    },
+    "ExecutableKind": {
+      "enum": [
+        "windows-exe",
+        "linux-binary",
+        "appimage",
+        "desktop-entry",
+        "script"
+      ],
+      "type": "string"
+    },
+    "Game": {
+      "additionalProperties": false,
+      "description": "Catalogue metadata for a game (independent of whether the user owns it).",
+      "properties": {
+        "artwork": {
+          "$ref": "#/definitions/GameArtwork"
+        },
+        "description": {
+          "description": "Full description, plain text with `\\n\\n` between paragraphs.",
+          "type": "string"
+        },
+        "developer": {
+          "type": "string"
+        },
+        "genres": {
+          "items": {
+            "$ref": "#/definitions/Genre"
+          },
+          "type": "array"
+        },
+        "id": {
+          "$ref": "#/definitions/GameId"
+        },
+        "platforms": {
+          "items": {
+            "$ref": "#/definitions/Platform"
+          },
+          "type": "array"
+        },
+        "popularity": {
+          "description": "Relative popularity 0–100, used for \"Beliebt\" sorting.",
+          "type": "number"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "rating": {
+          "description": "Aggregated rating 0–100, null if unrated.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "releaseDate": {
+          "$ref": "#/definitions/IsoDate"
+        },
+        "summary": {
+          "description": "One-sentence teaser.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "summary",
+        "description",
+        "genres",
+        "platforms",
+        "releaseDate",
+        "developer",
+        "publisher",
+        "rating",
+        "popularity",
+        "artwork"
+      ],
+      "type": "object"
+    },
+    "GameArtwork": {
+      "additionalProperties": false,
+      "properties": {
+        "cover": {
+          "$ref": "#/definitions/ImageRef",
+          "description": "Portrait cover, 3:4."
+        },
+        "header": {
+          "$ref": "#/definitions/ImageRef",
+          "description": "Wide header / hero image, 16:9 or wider."
+        },
+        "screenshots": {
+          "items": {
+            "$ref": "#/definitions/ImageRef"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cover",
+        "header",
+        "screenshots"
+      ],
+      "type": "object"
+    },
+    "GameId": {
+      "description": "Stable game identifier (store-independent, assigned by the core).",
+      "type": "string"
+    },
+    "GameState": {
+      "enum": [
+        "running",
+        "stopped"
+      ],
+      "type": "string"
+    },
+    "GameStateEvent": {
+      "additionalProperties": false,
+      "description": "Payload of the `game-state-changed` event.",
+      "properties": {
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "sessionSeconds": {
+          "description": "Length of the finished session in seconds; null while running.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "$ref": "#/definitions/IsoDateTime"
+        },
+        "state": {
+          "$ref": "#/definitions/GameState"
+        }
+      },
+      "required": [
+        "gameId",
+        "state",
+        "startedAt",
+        "sessionSeconds"
+      ],
+      "type": "object"
+    },
+    "GeneralSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "$ref": "#/definitions/Language"
+        },
+        "launchOnStartup": {
+          "type": "boolean"
+        },
+        "minimizeToTray": {
+          "type": "boolean"
+        },
+        "startPage": {
+          "$ref": "#/definitions/StartPage"
+        }
+      },
+      "required": [
+        "language",
+        "launchOnStartup",
+        "minimizeToTray",
+        "startPage"
+      ],
+      "type": "object"
+    },
+    "Genre": {
+      "enum": [
+        "action",
+        "adventure",
+        "rpg",
+        "strategy",
+        "simulation",
+        "puzzle",
+        "platformer",
+        "shooter",
+        "racing",
+        "sports",
+        "horror",
+        "indie"
+      ],
+      "type": "string"
+    },
+    "ImageRef": {
+      "additionalProperties": false,
+      "description": "Reference to an image. `url` is null when no artwork is available yet.",
+      "properties": {
+        "alt": {
+          "description": "Accessible description of the image.",
+          "type": "string"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "url",
+        "alt"
+      ],
+      "type": "object"
+    },
+    "IsoDate": {
+      "description": "Calendar date, e.g. `2026-11-03`.",
+      "type": "string"
+    },
+    "IsoDateTime": {
+      "description": "ISO-8601 timestamp, e.g. `2026-11-03T09:52:57Z`.",
+      "type": "string"
+    },
+    "Language": {
+      "enum": [
+        "de",
+        "en"
+      ],
+      "type": "string"
+    },
+    "LaunchMethod": {
+      "enum": [
+        "process",
+        "url"
+      ],
+      "type": "string"
+    },
+    "LaunchOptions": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "description": "Extra command-line arguments, as typed by the user.",
+          "type": "string"
+        },
+        "compatibilityTool": {
+          "$ref": "#/definitions/CompatibilityTool",
+          "description": "Linux only: how Windows binaries are run."
+        },
+        "env": {
+          "items": {
+            "$ref": "#/definitions/EnvVar"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "arguments",
+        "compatibilityTool",
+        "env"
+      ],
+      "type": "object"
+    },
+    "LaunchResult": {
+      "additionalProperties": false,
+      "properties": {
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "method": {
+          "$ref": "#/definitions/LaunchMethod"
+        },
+        "tracked": {
+          "description": "False when Cove cannot observe the game (started via a store client without known install folder).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "gameId",
+        "method",
+        "tracked"
+      ],
+      "type": "object"
+    },
+    "LibraryEntry": {
+      "additionalProperties": false,
+      "description": "A game in the user's library.",
+      "properties": {
+        "achievements": {
+          "$ref": "#/definitions/AchievementProgress"
+        },
+        "addedAt": {
+          "$ref": "#/definitions/IsoDateTime"
+        },
+        "executablePath": {
+          "description": "Absolute path of the file Cove starts (.exe, binary, AppImage, .desktop, script).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "favorite": {
+          "type": "boolean"
+        },
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "installPath": {
+          "description": "Absolute path of the install directory, null if not installed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "installSizeBytes": {
+          "description": "Size on disk in bytes, null if not installed.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "lastPlayedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "launchOptions": {
+          "$ref": "#/definitions/LaunchOptions"
+        },
+        "playtimeMinutes": {
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/definitions/StoreSource"
+        },
+        "storeGameId": {
+          "description": "Store-specific id (e.g. Steam app id) used for URL-scheme launches; null for manual games.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "gameId",
+        "source",
+        "storeGameId",
+        "installed",
+        "installPath",
+        "executablePath",
+        "installSizeBytes",
+        "favorite",
+        "playtimeMinutes",
+        "lastPlayedAt",
+        "addedAt",
+        "achievements",
+        "launchOptions"
+      ],
+      "type": "object"
+    },
+    "LibraryItem": {
+      "additionalProperties": false,
+      "description": "Library entry joined with its game metadata — what list views render.",
+      "properties": {
+        "entry": {
+          "$ref": "#/definitions/LibraryEntry"
+        },
+        "game": {
+          "$ref": "#/definitions/Game"
+        }
+      },
+      "required": [
+        "entry",
+        "game"
+      ],
+      "type": "object"
+    },
+    "LibrarySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "scanFolders": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "scanOnStartup": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "scanFolders",
+        "scanOnStartup"
+      ],
+      "type": "object"
+    },
+    "LibraryUpdate": {
+      "additionalProperties": false,
+      "description": "Partial update of a library entry; omitted fields stay unchanged.",
+      "properties": {
+        "executablePath": {
+          "type": "string"
+        },
+        "favorite": {
+          "type": "boolean"
+        },
+        "launchOptions": {
+          "$ref": "#/definitions/LaunchOptions"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ManualGameInput": {
+      "additionalProperties": false,
+      "description": "Input for adding a game manually.",
+      "properties": {
+        "executablePath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "description": "Known size on disk (from a folder scan), null if unknown.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "executablePath",
+        "sizeBytes"
+      ],
+      "type": "object"
+    },
+    "Platform": {
+      "enum": [
+        "windows",
+        "linux",
+        "macos"
+      ],
+      "type": "string"
+    },
+    "PlaytimeDay": {
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "$ref": "#/definitions/IsoDate"
+        },
+        "minutes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "date",
+        "minutes"
+      ],
+      "type": "object"
+    },
+    "PlaytimeStats": {
+      "additionalProperties": false,
+      "properties": {
+        "days": {
+          "description": "One entry per day, oldest first (no gaps).",
+          "items": {
+            "$ref": "#/definitions/PlaytimeDay"
+          },
+          "type": "array"
+        },
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "last14DaysMinutes": {
+          "type": "number"
+        },
+        "sessionCount": {
+          "type": "number"
+        },
+        "totalMinutes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "gameId",
+        "totalMinutes",
+        "last14DaysMinutes",
+        "sessionCount",
+        "days"
+      ],
+      "type": "object"
+    },
+    "PluginInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "author",
+        "description",
+        "enabled"
+      ],
+      "type": "object"
+    },
+    "Recommendation": {
+      "additionalProperties": false,
+      "properties": {
+        "game": {
+          "$ref": "#/definitions/Game"
+        },
+        "reason": {
+          "description": "Short human-readable reason, e.g. \"Weil du Tidewater gespielt hast\".",
+          "type": "string"
+        },
+        "score": {
+          "description": "0–1 relevance score from the recommender.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "game",
+        "score",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "RunningGame": {
+      "additionalProperties": false,
+      "properties": {
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "startedAt": {
+          "$ref": "#/definitions/IsoDateTime"
+        }
+      },
+      "required": [
+        "gameId",
+        "startedAt"
+      ],
+      "type": "object"
+    },
+    "ScanCandidate": {
+      "additionalProperties": false,
+      "description": "A game found while scanning a folder (suggestion — the user confirms).",
+      "properties": {
+        "alreadyInLibrary": {
+          "type": "boolean"
+        },
+        "executablePath": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/ExecutableKind"
+        },
+        "sizeBytes": {
+          "description": "Size of the game folder in bytes.",
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "executablePath",
+        "sizeBytes",
+        "kind",
+        "alreadyInLibrary"
+      ],
+      "type": "object"
+    },
+    "StartPage": {
+      "enum": [
+        "home",
+        "library"
+      ],
+      "type": "string"
+    },
+    "StoreAccount": {
+      "additionalProperties": false,
+      "properties": {
+        "accountName": {
+          "description": "Account display name when connected.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "gameCount": {
+          "description": "Number of games imported from this store.",
+          "type": "number"
+        },
+        "lastSyncedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "store": {
+          "$ref": "#/definitions/ConnectableStore"
+        }
+      },
+      "required": [
+        "store",
+        "connected",
+        "accountName",
+        "gameCount",
+        "lastSyncedAt"
+      ],
+      "type": "object"
+    },
+    "StoreSource": {
+      "enum": [
+        "steam",
+        "gog",
+        "epic",
+        "manual"
+      ],
+      "type": "string"
+    },
+    "ThemePreference": {
+      "enum": [
+        "system",
+        "light",
+        "dark"
+      ],
+      "type": "string"
+    },
+    "UserProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "displayName",
+        "avatarUrl"
+      ],
+      "type": "object"
+    },
+    "YearRange": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "number"
+        },
+        "to": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@cove/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schemas/*": "./schemas/*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "schemas": "ts-json-schema-generator --path src/models.ts --type '*' --tsconfig tsconfig.json --no-type-check --id https://cove.local/schemas/models.schema.json -o schemas/models.schema.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "ajv": "^8.20.0",
+    "ts-json-schema-generator": "^2.9.0",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.0"
+  }
+}

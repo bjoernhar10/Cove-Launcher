@@ -1,0 +1,64 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "./tokens.css";
+@import "./theme.css";
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  body {
+    @apply bg-bg font-sans text-sm text-fg antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  ::selection {
+    background: var(--cove-accent-subtle);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--cove-accent-text);
+    outline-offset: 2px;
+  }
+
+  /* Numbers are always tabular */
+  .num,
+  time,
+  data,
+  progress,
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--cove-border-strong) transparent;
+  }
+
+  dialog::backdrop {
+    background: var(--cove-overlay);
+  }
+
+  /* Native form controls follow the accent */
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: var(--cove-accent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
