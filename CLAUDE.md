@@ -13,6 +13,7 @@ Architecture details: `docs/architecture.md`.
 | Plugins | **JavaScript** (ES modules, no build) | `plugins/` | Third-party extensions |
 | Store connectors & achievements | **C#** .NET 9, Native AOT | `services/connectors` | Steam/GOG/Epic/… integration, achievements |
 | Recommendations | **Python** 3.12 (uv) | `services/recommender` | Recommendation engine |
+| Catalogue proxy | **TypeScript** (Cloudflare Worker, Hono, zod) | `services/catalog-proxy` | Fixed API in front of IGDB so users need no keys; holds the IGDB secrets |
 | Shared contracts | TypeScript + JSON Schema | `packages/shared` | Types and schemas for **all** RPC messages |
 
 **Communication:** JSON-RPC 2.0 over stdio, one JSON message per line. stdout is for RPC only, logs go to stderr.
@@ -47,7 +48,11 @@ the TS types (`packages/shared/src/methods.ts`), the JSON schema (`packages/shar
 - **C#:** `Nullable` enabled, `TreatWarningsAsErrors`. Everything must be AOT compatible, so no reflection-based serialization: JSON only via the source-generated `RpcJsonContext`. `dotnet format`.
 - **Python:** 3.12, `ruff check` + `ruff format`, `mypy --strict`. No `Any` in signatures (ruff `ANN401`).
 - **Frontend data access:** The UI gets data **only** through `apps/desktop/src/api/*` (`import { api } from "…/api"`). All core calls go through the typed `call()` / `subscribe()` in `api/transport.ts`. Outside `src/api` (and `src/test`), ESLint forbids imports from `src/mocks`, `@tauri-apps/api/core` and `@tauri-apps/api/event`.
-- **Mocks:** Only the **catalogue** is still mocked (`src/mocks`). Library, playtime, settings, downloads, plugins and sources come from the Rust core.
+- **No mocks** in the app anymore: everything comes from the Rust core. UI tests use the fake core in `src/test/fakeCore.ts` (Tauri `mockIPC`).
+- **Server state:** catalogue data uses TanStack Query (`hooks/useCatalog.ts`, client in `lib/queryClient.ts`). Older views use the small `useQuery` hook; `invalidateQueries()` refreshes both.
+- **Catalogue:** sources in fallback order: Cove proxy (`CoveProxyProvider`, URL from `COVE_CATALOG_PROXY_URL` at build time), own IGDB keys, own RAWG key, then the local cache. All behind the Rust trait `CatalogProvider` (`src-tauri/src/catalog/`).
+- **Catalogue proxy (Worker):** never add generic pass-through routes; every IGDB query is built in the Worker from validated parameters. Secrets only via `wrangler secret put`. Never call `fetch` as a method of another object (workerd throws "Illegal invocation"). Responses must match the `Proxy*` types in `packages/shared`. Deploy guide: `docs/proxy.md`. Credentials only in the OS keyring (`catalog/secrets.rs`), never in SQLite or the UI. Provider responses are cached in `catalog_cache` (TTL 7 days, stale entries served when offline). Images go through the `cove-img://` scheme and are cached on disk; `ImageRef` rewrites URLs on serialization, so Rust code and the database always hold the original URLs.
+- **External APIs in tests:** never call real services. Use `wiremock` with the providers' `with_endpoints`/`with_base` constructors and `Endpoints` for the service.
 - **New Tauri command:** always change all five places together:
   1. function in `src-tauri/src/commands.rs`
   2. entry in the `cove_handlers!` macro in `lib.rs`
@@ -108,6 +113,13 @@ uv run cove-recommender
 uv run ruff check . && uv run ruff format --check .
 uv run mypy
 uv run pytest
+```
+
+### Catalogue proxy (`services/catalog-proxy`)
+```sh
+npm test -w @cove/catalog-proxy            # vitest with fake bindings
+npm run check:deploy -w @cove/catalog-proxy # wrangler dry-run: validates bindings + bundle
+npx wrangler dev                           # local workerd (needs .dev.vars, see .dev.vars.example)
 ```
 
 ### Plugins (`plugins`)

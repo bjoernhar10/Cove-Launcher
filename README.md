@@ -5,7 +5,7 @@ Cove brings games from Steam, GOG, Epic and manually added titles together in **
 launches them (on Linux optionally through Proton or Wine) and tracks your playtime.
 
 > Status: early development. Library, folder scan, game launching and playtime tracking work.
-> The catalogue still uses sample data; store accounts and downloads arrive with the connector service.
+> Store accounts and downloads arrive with the connector service.
 
 ## Features
 
@@ -27,6 +27,7 @@ launches them (on Linux optionally through Proton or Wine) and tracks your playt
 | Store connectors & achievements | C# .NET 9 (Native AOT), JSON-RPC over stdio | `services/connectors` |
 | Recommendations | Python 3.12 (uv), JSON-RPC over stdio | `services/recommender` |
 | Plugins | JavaScript (ES modules) | `plugins` |
+| Catalogue proxy (IGDB, no user keys) | TypeScript, Cloudflare Workers, Hono | `services/catalog-proxy` |
 | Shared types & JSON schemas | TypeScript | `packages/shared` |
 
 Details in [docs/architecture.md](docs/architecture.md). Design and code rules live in [CLAUDE.md](CLAUDE.md).
@@ -60,6 +61,9 @@ npm run check                                          # ESLint, TypeScript, Vit
 (cd services/connectors && dotnet test)
 (cd services/recommender && uv run ruff check . && uv run mypy && uv run pytest)
 ```
+
+Game data provided by [IGDB.com](https://www.igdb.com). To run your own catalogue proxy, see
+[docs/proxy.md](docs/proxy.md).
 
 ## License
 

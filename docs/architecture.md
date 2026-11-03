@@ -12,6 +12,9 @@
               ▼                                                       ▼
    cove-connectors (C# .NET 9, Native AOT)              cove-recommender (Python 3.12)
    store connectors, achievements                       recommendations
+
+   Core ──HTTPS──▶ cove-catalog-proxy (Cloudflare Worker) ──▶ IGDB
+        ──HTTPS──▶ images.igdb.com (artwork, cached on disk)
 ```
 
 - The **core (Rust)** is the only process the UI talks to. It owns the library,
@@ -35,10 +38,9 @@
 ## Frontend (`apps/desktop/src`)
 
 ```
-api/         Data access layer: typed Tauri invoke()/listen(); the only importer of mocks/
-mocks/       Catalogue mock (~40 fictional games), the only remaining mock
+api/         Data access layer: typed Tauri invoke()/listen()
 stores/      Zustand: preferences (persisted), UI, downloads, running games, catalogue filter, toasts
-hooks/       useQuery, useInfiniteCatalog, useHotkey, useHistoryNav
+hooks/       useCatalog (TanStack Query), useQuery, useHotkey, useHistoryNav, useDebounced
 components/  ui/ (primitives), layout/ (shell, sidebar, topbar/title bar, command palette), game/
 pages/       Home, Catalogue (+detail), Library (+detail), Downloads, Settings
 styles/      tokens.css (raw values) + theme.css (Tailwind v4 theme)
@@ -61,6 +63,7 @@ db/               sqlx repositories: library, sessions, achievements, settings, 
 scanner.rs        Folder scan with heuristics (suggestions the user confirms)
 launcher.rs       Launch plan, process-tree tracking, sessions, events
 plugins.rs        Plugin discovery (manifest.json) + enabled state
+catalog/          CatalogProvider trait, IGDB + RAWG clients, cache-aware service, matching, keyring, image cache
 migrations/       SQL migrations (embedded via sqlx::migrate!)
 ```
 
@@ -104,6 +107,34 @@ Launch arguments are split shell-style (shlex); user environment variables overr
    - 64-bit path
    - on Linux: native before `.exe`
    - "launcher" in the name is penalised
+
+### Catalogue
+
+- `CatalogProvider` (async trait) with three implementations: **CoveProxyProvider** (default, no keys;
+  see `docs/proxy.md`), **IGDB** with own Twitch keys (OAuth token refreshed automatically, 4 requests/s) and
+  **RAWG** with an own API key (5 requests/s).
+- Source order: Cove proxy, then own IGDB keys (both wrapped in `FallbackProvider`; any error except
+  "not found" moves on to the next source), then own RAWG key, then the local cache. The proxy URL is
+  compiled in from `COVE_CATALOG_PROXY_URL`; users can switch the proxy off under Settings, Katalog, Erweitert.
+- Credentials are verified with the provider before they are stored in the OS keyring
+  (Secret Service, macOS Keychain, Windows Credential Manager).
+- Every response is cached in `catalog_cache` by request key. Fresh for 7 days; after that Cove asks the
+  provider again. If the network fails, stale entries are served and marked `offline: true`; the UI shows a
+  small "Offline" badge. Entries older than 60 days are pruned on startup.
+- Artwork: `cove-img://localhost/<encoded url>` (Windows: `http://cove-img.localhost/…`). Only IGDB and RAWG
+  image hosts are allowed. The first request downloads the file into the app cache folder, later requests
+  (also offline) read it from disk. Details pages and library links prefetch their images.
+
+### Matching library games
+
+1. After a game is added manually or from a folder scan, the core searches the catalogue by title in the background.
+2. Titles are normalized (case, symbols, edition suffixes like "GOTY", roman numerals) and scored with
+   Levenshtein + Jaro-Winkler.
+3. Score at least 0.95 and clearly ahead of the runner-up: metadata, genres and artwork are applied
+   (`matchStatus: matched`). Executable, launch options and playtime never change.
+4. Otherwise up to five candidates are stored in `match_candidates` (`matchStatus: pending`) and the user
+   picks one, searches manually or rejects all (`rejected`).
+5. The result is sent as the `library-match-changed` event.
 
 ## Open points
 

@@ -1,0 +1,32 @@
+# Cove catalogue proxy — deploy guide: docs/proxy.md
+name = "cove-catalog-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# Secrets (never in this file): wrangler secret put IGDB_CLIENT_ID / IGDB_CLIENT_SECRET
+
+# Twitch app access token cache. Create with: wrangler kv namespace create TOKENS
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Global 4 req/s towards IGDB.
+[[durable_objects.bindings]]
+name = "IGDB_GATE"
+class_name = "IgdbGate"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["IgdbGate"]
+
+# 60 requests per minute per client IP.
+[[ratelimits]]
+name = "IP_LIMIT"
+namespace_id = "1001"
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+[observability]
+enabled = true
