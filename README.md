@@ -2,7 +2,7 @@
 
 A calm, universal desktop game launcher for **Linux and Windows** (macOS later).
 Cove brings games from Steam, GOG, Epic and manually added titles together in **one** library,
-launches them — on Linux optionally through Proton or Wine — and tracks your playtime.
+launches them (on Linux optionally through Proton or Wine) and tracks your playtime.
 
 > Status: early development. Library, folder scan, game launching and playtime tracking work.
 > The catalogue still uses sample data; store accounts and downloads arrive with the connector service.

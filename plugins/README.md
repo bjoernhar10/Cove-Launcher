@@ -1,6 +1,6 @@
 # Cove Plugins
 
-Plugins are plain JavaScript ES modules — no build step. Each plugin lives in
+Plugins are plain JavaScript ES modules without a build step. Each plugin lives in
 its own folder with a `manifest.json` and an entry module.
 
 ```

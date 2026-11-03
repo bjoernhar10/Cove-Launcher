@@ -1,4 +1,4 @@
-# Cove — Notes for Claude
+# Cove: Notes for Claude
 
 Cove is a universal desktop game launcher for Linux and Windows (macOS later).
 It brings games from every store and local games together in one calm, tidy library.
@@ -29,7 +29,7 @@ the TS types (`packages/shared/src/methods.ts`), the JSON schema (`packages/shar
 - **Spacing** on a 4px grid. **Radius** 8px, cards 12px.
 - **Separation** through subtle 1px borders (`border-border`), **no shadows**.
 - **Icons:** `lucide-react`, 18px, stroke width 1.75.
-- **Animations** only subtle: 150–200ms ease-out. Always respect `prefers-reduced-motion`.
+- **Animations** only subtle: 150 to 200 ms ease-out. Always respect `prefers-reduced-motion`.
 - All raw values live in `apps/desktop/src/styles/tokens.css` (`--cove-*`, light/dark via `data-theme`, accent via `data-accent`). `styles/theme.css` maps them to Tailwind utilities (`bg-surface`, `text-fg-muted`, `border-border`, `bg-accent` …).
 - In `theme.css`, Tailwind's default palette, shadows, blur and every font size except the five allowed ones are **switched off**. Classes like `bg-pink-500`, `shadow-lg` or `text-4xl` generate no CSS. Do not switch them back on. If a token is missing, add it to `tokens.css` and `theme.css`.
 - **No hard-coded colours in components.** ESLint forbids hex, `rgb()` and `hsl()` literals in `apps/desktop/src`.

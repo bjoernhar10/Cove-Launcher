@@ -1,4 +1,4 @@
-# Cove — Architecture
+# Cove Architecture
 
 ## Processes
 
@@ -36,7 +36,7 @@
 
 ```
 api/         Data access layer: typed Tauri invoke()/listen(); the only importer of mocks/
-mocks/       Catalogue mock (~40 fictional games) — the only remaining mock
+mocks/       Catalogue mock (~40 fictional games), the only remaining mock
 stores/      Zustand: preferences (persisted), UI, downloads, running games, catalogue filter, toasts
 hooks/       useQuery, useInfiniteCatalog, useHotkey, useHistoryNav
 components/  ui/ (primitives), layout/ (shell, sidebar, topbar/title bar, command palette), game/
