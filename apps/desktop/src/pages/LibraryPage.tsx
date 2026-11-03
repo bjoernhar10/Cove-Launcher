@@ -83,6 +83,7 @@ function GridCard({ item, onFavorite }: { item: LibraryItem; onFavorite: (favori
           <p className="num mt-0.5 truncate text-xs text-fg-muted">
             {formatPlaytime(entry.playtimeMinutes)}
             {!entry.installed && " · Nicht installiert"}
+            {entry.matchStatus === "pending" && " · Zuordnung prüfen"}
           </p>
         </div>
         <FavoriteButton item={item} onToggle={onFavorite} />

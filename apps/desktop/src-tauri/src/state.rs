@@ -4,9 +4,13 @@ use std::path::PathBuf;
 
 use sqlx::SqlitePool;
 
+use std::sync::Arc;
+
+use crate::catalog::CatalogService;
 use crate::launcher::{HostEnv, Launcher};
 use crate::models::{
-    AppSettings, AppearanceSettings, DownloadSettings, GeneralSettings, LibrarySettings,
+    AppSettings, AppearanceSettings, CatalogSettings, DownloadSettings, GeneralSettings,
+    LibrarySettings,
 };
 
 pub struct AppState {
@@ -14,6 +18,7 @@ pub struct AppState {
     pub launcher: Launcher,
     pub host: HostEnv,
     pub defaults: AppSettings,
+    pub catalog: Arc<CatalogService>,
     /// Folders searched for plugins (each plugin is a sub folder with `manifest.json`).
     pub plugin_dirs: Vec<PathBuf>,
 }
@@ -39,6 +44,9 @@ pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
             directory: games_dir.to_string_lossy().into_owned(),
             bandwidth_limit_bytes_per_second: None,
             max_concurrent: 1,
+        },
+        catalog: CatalogSettings {
+            use_cove_service: true,
         },
     }
 }

@@ -65,7 +65,8 @@ export interface Game {
   description: string;
   genres: Genre[];
   platforms: Platform[];
-  releaseDate: IsoDate;
+  /** Null when unknown (e.g. unreleased or manually added games). */
+  releaseDate: IsoDate | null;
   developer: string;
   publisher: string;
   /** Aggregated rating 0–100, null if unrated. */
@@ -114,7 +115,17 @@ export interface LibraryEntry {
   addedAt: IsoDateTime;
   achievements: AchievementProgress;
   launchOptions: LaunchOptions;
+  /** Linked catalogue entry (e.g. `igdb-1942`), null if not matched. */
+  catalogId: string | null;
+  matchStatus: MatchStatus;
 }
+
+/**
+ * Catalogue matching state of a library game:
+ * none = not matched (yet) · pending = suggestions wait for the user ·
+ * matched = metadata applied · rejected = user declined all suggestions.
+ */
+export type MatchStatus = "none" | "pending" | "matched" | "rejected";
 
 /** Library entry joined with its game metadata — what list views render. */
 export interface LibraryItem {
@@ -193,7 +204,69 @@ export interface CatalogFilter {
   releaseYears: YearRange | null;
   /** Minimum rating 0–100, null = any. */
   minRating: number | null;
-  sort: CatalogSort;
+}
+
+export type CatalogProviderId = "igdb" | "rawg";
+
+/** One page of catalogue results. */
+export interface CatalogPage {
+  items: Game[];
+  /** 0-based page index. */
+  page: number;
+  hasMore: boolean;
+  /** Total number of matches, null if the provider does not report it. */
+  total: number | null;
+  /** True when the provider was unreachable and cached data is shown. */
+  offline: boolean;
+}
+
+export interface CatalogGameDetails {
+  game: Game;
+  /** Library game linked to this catalogue entry, if any. */
+  libraryGameId: GameId | null;
+  offline: boolean;
+}
+
+export interface ProvidersConfigured {
+  igdb: boolean;
+  rawg: boolean;
+}
+
+/** Where catalogue data comes from, in fallback order. */
+export type CatalogSource = "cove" | "igdb" | "rawg";
+
+export interface CoveServiceStatus {
+  /** This build knows a proxy URL. */
+  available: boolean;
+  /** The user has not switched it off. */
+  enabled: boolean;
+}
+
+export interface CatalogStatus {
+  /** Sources in the order they are tried; empty = catalogue not available. */
+  sources: CatalogSource[];
+  coveService: CoveServiceStatus;
+  /** Own credentials stored in the keyring. */
+  configured: ProvidersConfigured;
+  /** False after the last request failed for network reasons. */
+  online: boolean;
+}
+
+/** Credentials entered in Settings; stored in the OS keyring, never returned to the UI. */
+export type CatalogCredentials =
+  | { provider: "igdb"; clientId: string; clientSecret: string }
+  | { provider: "rawg"; apiKey: string };
+
+export interface MatchCandidate {
+  game: Game;
+  /** Title similarity 0–1. */
+  score: number;
+}
+
+/** Payload of the `library-match-changed` event. */
+export interface LibraryMatchEvent {
+  gameId: GameId;
+  status: MatchStatus;
 }
 
 /** Cursor-based page. `nextCursor` is null on the last page. */
@@ -268,11 +341,17 @@ export interface DownloadSettings {
   maxConcurrent: number;
 }
 
+export interface CatalogSettings {
+  /** Use the Cove catalogue service (no own API keys needed). */
+  useCoveService: boolean;
+}
+
 export interface AppSettings {
   general: GeneralSettings;
   appearance: AppearanceSettings;
   library: LibrarySettings;
   downloads: DownloadSettings;
+  catalog: CatalogSettings;
 }
 
 /** Input for adding a game manually. */
@@ -340,7 +419,12 @@ export type AppErrorKind =
   | "notRunning"
   | "launch"
   | "compatToolNotFound"
-  | "notSupported";
+  | "notSupported"
+  | "offline"
+  | "catalogNotConfigured"
+  | "catalogAuth"
+  | "catalogProvider"
+  | "keyring";
 
 /** Error shape of every rejected Tauri command. */
 export interface AppErrorPayload {
@@ -357,4 +441,43 @@ export interface AboutInfo {
   appVersion: string;
   components: ComponentVersion[];
   platform: Platform;
+}
+
+// ───────────── Cove catalogue proxy (services/catalog-proxy) ─────────────
+
+/** `GET /v1/search`, `GET /v1/browse`, `GET /v1/similar/:id` */
+export interface ProxyPage {
+  items: Game[];
+  /** 0-based page index. */
+  page: number;
+  hasMore: boolean;
+  total: number | null;
+}
+
+/** `GET /v1/game/:id` */
+export interface ProxyGame {
+  game: Game;
+}
+
+/** `POST /v1/match` request body. */
+export interface ProxyMatchRequest {
+  title: string;
+}
+
+/** `POST /v1/match` — best catalogue candidates for a title, best first. */
+export interface ProxyMatchResponse {
+  candidates: MatchCandidate[];
+}
+
+export type ProxyErrorCode =
+  | "invalid_request"
+  | "not_found"
+  | "rate_limited"
+  | "upstream_error"
+  | "upstream_unavailable"
+  | "not_configured";
+
+/** Body of every non-2xx proxy response. */
+export interface ProxyError {
+  error: { code: ProxyErrorCode; message: string };
 }

@@ -58,6 +58,7 @@ fn schema_check_is_not_vacuous() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)] // one assertion per wire type
 async fn core_responses_match_shared_schema() {
     let pool = db::open_in_memory().await.unwrap();
     let manual = db::library::add_manual(
@@ -153,6 +154,62 @@ async fn core_responses_match_shared_schema() {
             tracked: false,
         },
     );
+    let game = sample_game("igdb-1", "Orbit");
+    assert_valid(
+        "CatalogPage",
+        &crate::models::CatalogPage {
+            items: vec![game.clone()],
+            page: 0,
+            has_more: true,
+            total: None,
+            offline: true,
+        },
+    );
+    assert_valid(
+        "CatalogGameDetails",
+        &crate::models::CatalogGameDetails {
+            game: game.clone(),
+            library_game_id: Some("manual-orbit".into()),
+            offline: false,
+        },
+    );
+    assert_valid(
+        "CatalogStatus",
+        &crate::models::CatalogStatus {
+            sources: vec![
+                crate::models::CatalogSource::Cove,
+                crate::models::CatalogSource::Igdb,
+            ],
+            cove_service: crate::models::CoveServiceStatus {
+                available: true,
+                enabled: true,
+            },
+            configured: crate::models::ProvidersConfigured {
+                igdb: false,
+                rawg: true,
+            },
+            online: true,
+        },
+    );
+    assert_valid(
+        "MatchCandidate",
+        &crate::models::MatchCandidate { game, score: 0.8 },
+    );
+    assert_valid(
+        "LibraryMatchEvent",
+        &crate::models::LibraryMatchEvent {
+            game_id: "g".into(),
+            status: crate::models::MatchStatus::Pending,
+        },
+    );
+    assert_valid(
+        "CatalogCredentials",
+        &crate::models::CatalogCredentials::Igdb {
+            client_id: "a".into(),
+            client_secret: "b".into(),
+        },
+    );
+    assert_valid("AppErrorPayload", &AppError::CatalogNotConfigured);
     assert_valid("AppErrorPayload", &AppError::NotRunning("g".into()));
     assert_valid(
         "AppErrorPayload",

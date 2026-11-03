@@ -24,7 +24,13 @@ export function GameCard({ game, to, meta }: GameCardProps) {
         <p className="mt-0.5 truncate text-xs text-fg-muted">
           {meta ?? (
             <>
-              {genre ? GENRE_LABELS[genre] : "Spiel"} · <span className="num">{formatYear(game.releaseDate)}</span>
+              {genre ? GENRE_LABELS[genre] : "Spiel"}
+              {game.releaseDate && (
+                <>
+                  {" · "}
+                  <span className="num">{formatYear(game.releaseDate)}</span>
+                </>
+              )}
             </>
           )}
         </p>

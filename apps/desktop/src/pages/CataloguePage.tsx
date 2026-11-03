@@ -1,13 +1,16 @@
 import type { Genre, Platform, YearRange } from "@cove/shared";
-import { SearchX, X } from "lucide-react";
+import { Compass, SearchX, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { COVER_GRID, GameCard, GameCardSkeleton } from "../components/game/GameCard.tsx";
-import { Button } from "../components/ui/Button.tsx";
-import { EmptyState, ErrorState, LoadingRegion } from "../components/ui/Feedback.tsx";
+import { Button, ButtonLink } from "../components/ui/Button.tsx";
+import { EmptyState, ErrorState, LoadingRegion, OfflineBadge } from "../components/ui/Feedback.tsx";
 import { Input, Select } from "../components/ui/Field.tsx";
 import { Page, PageHeader } from "../components/ui/Page.tsx";
 import { CheckOption, Popover, RadioOption } from "../components/ui/Popover.tsx";
-import { useInfiniteCatalog } from "../hooks/useInfiniteCatalog.ts";
+import { CoveError } from "../api/index.ts";
+import { useCatalogBrowse } from "../hooks/useCatalog.ts";
+import { useDebounced } from "../hooks/useDebounced.ts";
+import { errorMessage } from "../stores/toasts.ts";
 import { formatNumber } from "../lib/format.ts";
 import { GENRE_LABELS, PLATFORM_LABELS, SORT_LABELS } from "../lib/labels.ts";
 import { activeFilterCount, useCatalogFilter } from "../stores/catalog.ts";
@@ -41,17 +44,15 @@ function summarize(labels: string[]): string | undefined {
 }
 
 function SortSelect() {
-  const sort = useCatalogFilter((s) => s.filter.sort);
-  const setFilter = useCatalogFilter((s) => s.setFilter);
+  const sort = useCatalogFilter((s) => s.sort);
+  const setSort = useCatalogFilter((s) => s.setSort);
   return (
     <label className="flex items-center gap-2 text-sm text-fg-muted">
       Sortierung
       <Select
         className="w-36"
         value={sort}
-        onChange={(next) => {
-          setFilter({ sort: next });
-        }}
+        onChange={setSort}
         options={(Object.keys(SORT_LABELS) as (keyof typeof SORT_LABELS)[]).map((value) => ({ value, label: SORT_LABELS[value] }))}
       />
     </label>
@@ -140,18 +141,21 @@ function FilterBar() {
 }
 
 export function CataloguePage() {
-  const filter = useCatalogFilter((s) => s.filter);
+  const liveFilter = useCatalogFilter((s) => s.filter);
+  const sort = useCatalogFilter((s) => s.sort);
   const reset = useCatalogFilter((s) => s.reset);
-  const catalog = useInfiniteCatalog(filter);
+  // Typing in the search box should not fire a request per keystroke.
+  const filter = useDebounced(liveFilter, 350);
+  const query = useCatalogBrowse(filter, sort);
   const sentinel = useRef<HTMLDivElement>(null);
-  const { hasMore, loadMore } = catalog;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
 
   useEffect(() => {
     const el = sentinel.current;
-    if (!el || !hasMore || typeof IntersectionObserver === "undefined") return;
+    if (!el || !hasNextPage || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((e) => e.isIntersecting)) loadMore();
+        if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage) void fetchNextPage();
       },
       { root: document.getElementById("main"), rootMargin: "600px" },
     );
@@ -159,70 +163,102 @@ export function CataloguePage() {
     return () => {
       observer.disconnect();
     };
-  }, [hasMore, loadMore]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const pages = query.data?.pages ?? [];
+  // Providers can repeat a game across pages when the ranking shifts; show each once.
+  const seen = new Set<string>();
+  const items = pages.flatMap((p) => p.items).filter((g) => !seen.has(g.id) && seen.add(g.id));
+  const total = pages[0]?.total ?? null;
+  const offline = pages.some((p) => p.offline);
+  const notConfigured = query.error instanceof CoveError && query.error.kind === "catalogNotConfigured";
 
   return (
     <Page className="pt-8">
       <PageHeader
         title="Catalogue"
         description={
-          catalog.status === "success" ? (
-            <>
-              <span className="num">{formatNumber(catalog.total)}</span> Spiele aus allen verbundenen Stores
-            </>
-          ) : (
-            "Spiele aus allen verbundenen Stores"
-          )
+          <span className="inline-flex items-center gap-3">
+            {total !== null ? (
+              <span>
+                <span className="num">{formatNumber(total)}</span> Spiele
+              </span>
+            ) : (
+              "Spieldaten von IGDB"
+            )}
+            {offline && <OfflineBadge />}
+          </span>
         }
-        actions={<SortSelect />}
+        actions={notConfigured ? undefined : <SortSelect />}
       />
-      <FilterBar />
 
-      {catalog.status === "loading" && (
-        <LoadingRegion label="Katalog wird geladen" className={COVER_GRID}>
-          {Array.from({ length: 12 }, (_, i) => (
-            <GameCardSkeleton key={i} />
-          ))}
-        </LoadingRegion>
-      )}
-
-      {catalog.status === "error" && <ErrorState message={catalog.error ?? ""} onRetry={catalog.retry} />}
-
-      {catalog.status === "success" && catalog.items.length === 0 && (
-        <EmptyState
-          icon={SearchX}
-          title="Keine Spiele gefunden"
-          description="Zu diesen Filtern passt gerade nichts. Versuch es mit weniger Einschränkungen."
-          actions={<Button onClick={reset}>Filter zurücksetzen</Button>}
-        />
-      )}
-
-      {catalog.status === "success" && catalog.items.length > 0 && (
+      {notConfigured ? (
+        <CatalogSetupState />
+      ) : (
         <>
-          <ul className={COVER_GRID} aria-label="Spiele">
-            {catalog.items.map((game) => (
-              <li key={game.id}>
-                <GameCard game={game} to={`/catalogue/${game.id}`} />
-              </li>
-            ))}
-            {catalog.loadingMore &&
-              Array.from({ length: 6 }, (_, i) => (
-                <li key={`s${String(i)}`} aria-hidden>
-                  <GameCardSkeleton />
-                </li>
+          <FilterBar />
+
+          {query.isPending && (
+            <LoadingRegion label="Katalog wird geladen" className={COVER_GRID}>
+              {Array.from({ length: 12 }, (_, i) => (
+                <GameCardSkeleton key={i} />
               ))}
-          </ul>
-          <div ref={sentinel} className="h-px" />
-          {catalog.hasMore && !catalog.loadingMore && (
-            <div className="mt-8 flex justify-center">
-              <Button onClick={loadMore}>Mehr laden</Button>
-            </div>
+            </LoadingRegion>
           )}
-          {!catalog.hasMore && (
-            <p className="mt-12 text-center text-sm text-fg-subtle">Das waren alle {formatNumber(catalog.total)} Spiele.</p>
+
+          {query.isError && <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />}
+
+          {query.isSuccess && items.length === 0 && (
+            <EmptyState
+              icon={SearchX}
+              title="Keine Spiele gefunden"
+              description="Zu diesen Filtern passt gerade nichts. Versuch es mit weniger Einschränkungen."
+              actions={<Button onClick={reset}>Filter zurücksetzen</Button>}
+            />
+          )}
+
+          {items.length > 0 && (
+            <>
+              <ul className={COVER_GRID} aria-label="Spiele">
+                {items.map((game) => (
+                  <li key={game.id}>
+                    <GameCard game={game} to={`/catalogue/${game.id}`} />
+                  </li>
+                ))}
+                {isFetchingNextPage &&
+                  Array.from({ length: 6 }, (_, i) => (
+                    <li key={`s${String(i)}`} aria-hidden>
+                      <GameCardSkeleton />
+                    </li>
+                  ))}
+              </ul>
+              <div ref={sentinel} className="h-px" />
+              {query.isFetchNextPageError && (
+                <div className="mt-8 flex justify-center">
+                  <Button onClick={() => void fetchNextPage()}>Weitere Spiele laden</Button>
+                </div>
+              )}
+              {!hasNextPage && <p className="mt-12 text-center text-sm text-fg-subtle">Das war alles.</p>}
+            </>
           )}
         </>
       )}
     </Page>
+  );
+}
+
+/** Shown when no catalogue source is available (no Cove service in this build / switched off, no own keys). */
+export function CatalogSetupState() {
+  return (
+    <EmptyState
+      icon={Compass}
+      title="Katalog nicht verfügbar"
+      description="Der Cove-Katalogdienst ist in diesem Build nicht enthalten oder ausgeschaltet. Unter Einstellungen → Katalog kannst du ihn einschalten oder eigene Zugangsdaten für IGDB eintragen."
+      actions={
+        <ButtonLink to="/settings/catalog" variant="primary">
+          Zu den Einstellungen
+        </ButtonLink>
+      }
+    />
   );
 }

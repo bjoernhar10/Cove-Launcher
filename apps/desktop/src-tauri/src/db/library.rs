@@ -9,8 +9,8 @@ use crate::db::slugify;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     now_iso, AchievementProgress, CompatibilityTool, EnvVar, Game, GameArtwork, GameId, ImageRef,
-    LaunchOptions, LibraryEntry, LibraryItem, LibraryUpdate, ManualGameInput, Platform,
-    StoreSource,
+    LaunchOptions, LibraryEntry, LibraryItem, LibraryUpdate, ManualGameInput, MatchCandidate,
+    MatchStatus, Platform, StoreSource,
 };
 
 #[derive(Debug, FromRow)]
@@ -63,7 +63,8 @@ impl GameRow {
             description: self.description,
             genres: serde_json::from_str(&self.genres)?,
             platforms: serde_json::from_str(&self.platforms)?,
-            release_date: self.release_date,
+            // Stored as '' when unknown (column is NOT NULL since 0001).
+            release_date: Some(self.release_date).filter(|d| !d.is_empty()),
             developer: self.developer,
             publisher: self.publisher,
             rating: self.rating,
@@ -93,6 +94,8 @@ struct EntryRow {
     last_played_at: Option<String>,
     achievements_total: i64,
     achievements_unlocked: i64,
+    catalog_id: Option<String>,
+    match_status: String,
 }
 
 impl EntryRow {
@@ -121,6 +124,8 @@ impl EntryRow {
                     compatibility_tool: CompatibilityTool::parse(&self.compatibility_tool),
                     env,
                 },
+                catalog_id: self.catalog_id,
+                match_status: MatchStatus::parse(&self.match_status),
             },
             game,
         })
@@ -131,7 +136,7 @@ fn select_entries(filter: &str) -> String {
     format!(
         "SELECT {GAME_COLUMNS}, e.source_id, e.store_game_id, e.installed, e.install_path, e.executable_path, \
            e.install_size_bytes, e.favorite, e.playtime_offset_minutes, e.launch_arguments, e.compatibility_tool, \
-           e.env, e.added_at, \
+           e.env, e.added_at, e.catalog_id, e.match_status, \
            (SELECT COALESCE(SUM(s.duration_seconds), 0) FROM play_sessions s WHERE s.game_id = g.id) AS played_seconds, \
            (SELECT MAX(COALESCE(s.ended_at, s.started_at)) FROM play_sessions s WHERE s.game_id = g.id) AS last_played_at, \
            (SELECT COUNT(*) FROM achievements a WHERE a.game_id = g.id) AS achievements_total, \
@@ -148,10 +153,13 @@ pub async fn list(pool: &SqlitePool) -> AppResult<Vec<LibraryItem>> {
 }
 
 pub async fn get(pool: &SqlitePool, game_id: &str) -> AppResult<Option<LibraryItem>> {
-    let row: Option<EntryRow> = sqlx::query_as(&select_entries("WHERE g.id = ?"))
-        .bind(game_id)
-        .fetch_optional(pool)
-        .await?;
+    // A catalogue id finds the library game linked to it as well.
+    let row: Option<EntryRow> = sqlx::query_as(&select_entries(
+        "WHERE g.id = ?1 OR e.catalog_id = ?1 LIMIT 1",
+    ))
+    .bind(game_id)
+    .fetch_optional(pool)
+    .await?;
     row.map(EntryRow::into_item).transpose()
 }
 
@@ -276,7 +284,7 @@ pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<Libra
     .bind(&game.description)
     .bind(serde_json::to_string(&game.genres)?)
     .bind(serde_json::to_string(&game.platforms)?)
-    .bind(&game.release_date)
+    .bind(game.release_date.as_deref().unwrap_or(""))
     .bind(&game.developer)
     .bind(&game.publisher)
     .bind(game.rating)
@@ -287,8 +295,11 @@ pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<Libra
     .bind(&now)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("INSERT INTO library_entries (game_id, source_id, installed, added_at) VALUES (?, 'manual', 0, ?)")
-        .bind(&game.id)
+    sqlx::query(
+        "INSERT INTO library_entries (game_id, source_id, installed, added_at, catalog_id, match_status) \
+         VALUES (?1, 'manual', 0, ?2, ?1, 'matched')",
+    )
+    .bind(&game.id)
         .bind(&now)
         .execute(&mut *tx)
         .await?;
@@ -421,7 +432,7 @@ pub(crate) mod tests {
             description: "Lang.".into(),
             genres: vec!["puzzle".into()],
             platforms: vec![Platform::Linux, Platform::Windows],
-            release_date: "2024-05-01".into(),
+            release_date: Some("2024-05-01".into()),
             developer: "Studio".into(),
             publisher: "Verlag".into(),
             rating: Some(81),
@@ -595,5 +606,236 @@ pub(crate) mod tests {
             .await
             .unwrap();
         assert_eq!(sessions, 1);
+    }
+}
+
+// ───────────── catalogue matching ─────────────
+
+pub async fn set_match_status(
+    pool: &SqlitePool,
+    game_id: &str,
+    status: MatchStatus,
+) -> AppResult<()> {
+    sqlx::query("UPDATE library_entries SET match_status = ? WHERE game_id = ?")
+        .bind(status.as_str())
+        .bind(game_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Stores suggestions for the user and marks the entry as `pending`.
+pub async fn store_candidates(
+    pool: &SqlitePool,
+    game_id: &str,
+    candidates: &[MatchCandidate],
+) -> AppResult<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM match_candidates WHERE game_id = ?")
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await?;
+    for c in candidates {
+        sqlx::query(
+            "INSERT INTO match_candidates (game_id, catalog_id, score, game) VALUES (?, ?, ?, ?)",
+        )
+        .bind(game_id)
+        .bind(&c.game.id)
+        .bind(c.score)
+        .bind(serde_json::to_string(&c.game)?)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query("UPDATE library_entries SET match_status = 'pending' WHERE game_id = ?")
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn candidates(pool: &SqlitePool, game_id: &str) -> AppResult<Vec<MatchCandidate>> {
+    let rows: Vec<(f64, String)> = sqlx::query_as(
+        "SELECT score, game FROM match_candidates WHERE game_id = ? ORDER BY score DESC",
+    )
+    .bind(game_id)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|(score, game)| {
+            Ok(MatchCandidate {
+                score,
+                game: serde_json::from_str(&game)?,
+            })
+        })
+        .collect()
+}
+
+/// User declined all suggestions.
+pub async fn reject_match(pool: &SqlitePool, game_id: &str) -> AppResult<LibraryItem> {
+    require(pool, game_id).await?;
+    sqlx::query("DELETE FROM match_candidates WHERE game_id = ?")
+        .bind(game_id)
+        .execute(pool)
+        .await?;
+    set_match_status(pool, game_id, MatchStatus::Rejected).await?;
+    require(pool, game_id).await
+}
+
+/// Copies catalogue metadata + artwork onto a library game and links it.
+/// Executable, launch options, playtime and favourites stay untouched.
+pub async fn apply_catalog(
+    pool: &SqlitePool,
+    game_id: &str,
+    catalog: &Game,
+) -> AppResult<LibraryItem> {
+    require(pool, game_id).await?;
+    let screenshots: Vec<Option<&str>> = catalog
+        .artwork
+        .screenshots
+        .iter()
+        .map(|s| s.url.as_deref())
+        .collect();
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "UPDATE games SET title = ?, summary = ?, description = ?, genres = ?, platforms = ?, release_date = ?, \
+           developer = ?, publisher = ?, rating = ?, popularity = ?, cover_url = ?, header_url = ?, screenshots = ? \
+         WHERE id = ?",
+    )
+    .bind(&catalog.title)
+    .bind(&catalog.summary)
+    .bind(&catalog.description)
+    .bind(serde_json::to_string(&catalog.genres)?)
+    .bind(serde_json::to_string(&catalog.platforms)?)
+    .bind(catalog.release_date.as_deref().unwrap_or(""))
+    .bind(&catalog.developer)
+    .bind(&catalog.publisher)
+    .bind(catalog.rating)
+    .bind(catalog.popularity)
+    .bind(&catalog.artwork.cover.url)
+    .bind(&catalog.artwork.header.url)
+    .bind(serde_json::to_string(&screenshots)?)
+    .bind(game_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "UPDATE library_entries SET catalog_id = ?, match_status = 'matched' WHERE game_id = ?",
+    )
+    .bind(&catalog.id)
+    .bind(game_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM match_candidates WHERE game_id = ?")
+        .bind(game_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    require(pool, game_id).await
+}
+
+#[cfg(test)]
+mod match_tests {
+    use super::tests::sample_game;
+    use super::*;
+    use crate::db::open_in_memory;
+
+    async fn manual_game(pool: &SqlitePool) -> String {
+        let input = ManualGameInput {
+            title: "tidewater".into(),
+            executable_path: "/g/tide".into(),
+            size_bytes: None,
+        };
+        add_manual(pool, &input).await.unwrap().game.id
+    }
+
+    #[tokio::test]
+    async fn candidates_then_link_applies_metadata() {
+        let pool = open_in_memory().await.unwrap();
+        let id = manual_game(&pool).await;
+        assert_eq!(
+            require(&pool, &id).await.unwrap().entry.match_status,
+            MatchStatus::None
+        );
+
+        let mut catalog = sample_game("igdb-77", "Tidewater");
+        catalog.artwork.cover.url = Some("https://images.igdb.com/c.jpg".into());
+        let other = sample_game("igdb-78", "Tidewater Remastered");
+        store_candidates(
+            &pool,
+            &id,
+            &[
+                MatchCandidate {
+                    game: other,
+                    score: 0.8,
+                },
+                MatchCandidate {
+                    game: catalog.clone(),
+                    score: 0.97,
+                },
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            require(&pool, &id).await.unwrap().entry.match_status,
+            MatchStatus::Pending
+        );
+        let list = candidates(&pool, &id).await.unwrap();
+        assert_eq!(list[0].game.id, "igdb-77", "best first");
+
+        let linked = apply_catalog(&pool, &id, &catalog).await.unwrap();
+        assert_eq!(linked.game.title, "Tidewater");
+        assert_eq!(
+            linked.game.artwork.cover.url.as_deref(),
+            Some("https://images.igdb.com/c.jpg")
+        );
+        assert_eq!(linked.game.release_date.as_deref(), Some("2024-05-01"));
+        assert_eq!(linked.entry.catalog_id.as_deref(), Some("igdb-77"));
+        assert_eq!(linked.entry.match_status, MatchStatus::Matched);
+        assert_eq!(
+            linked.entry.executable_path.as_deref(),
+            Some("/g/tide"),
+            "launch data untouched"
+        );
+        assert_eq!(
+            candidates(&pool, &id).await.unwrap(),
+            Vec::<MatchCandidate>::new()
+        );
+
+        // The catalogue id now finds the library game.
+        assert_eq!(get(&pool, "igdb-77").await.unwrap().unwrap().game.id, id);
+    }
+
+    #[tokio::test]
+    async fn reject_clears_candidates() {
+        let pool = open_in_memory().await.unwrap();
+        let id = manual_game(&pool).await;
+        store_candidates(
+            &pool,
+            &id,
+            &[MatchCandidate {
+                game: sample_game("igdb-1", "Tide"),
+                score: 0.7,
+            }],
+        )
+        .await
+        .unwrap();
+        let item = reject_match(&pool, &id).await.unwrap();
+        assert_eq!(item.entry.match_status, MatchStatus::Rejected);
+        assert_eq!(
+            candidates(&pool, &id).await.unwrap(),
+            Vec::<MatchCandidate>::new()
+        );
+    }
+
+    #[tokio::test]
+    async fn catalog_adds_are_matched_and_unknown_dates_are_null() {
+        let pool = open_in_memory().await.unwrap();
+        let mut game = sample_game("rawg-5", "Orbit");
+        game.release_date = None;
+        let item = add_from_catalog(&pool, &game).await.unwrap();
+        assert_eq!(item.entry.catalog_id.as_deref(), Some("rawg-5"));
+        assert_eq!(item.entry.match_status, MatchStatus::Matched);
+        assert_eq!(item.game.release_date, None);
     }
 }

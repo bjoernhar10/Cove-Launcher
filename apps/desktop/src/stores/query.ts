@@ -1,7 +1,8 @@
 import { create } from "zustand";
+import { queryClient } from "../lib/queryClient.ts";
 
 interface QueryState {
-  /** Bumped on every mutation; all queries refetch silently. */
+  /** Bumped on every mutation; all `useQuery` hooks refetch silently. */
   version: number;
   invalidate: () => void;
 }
@@ -13,7 +14,8 @@ export const useQueryVersion = create<QueryState>()((set) => ({
   },
 }));
 
-/** Call after any mutation so every visible view reloads its data. */
+/** Call after any mutation so every visible view reloads its data (own hooks and TanStack Query). */
 export function invalidateQueries(): void {
   useQueryVersion.getState().invalidate();
+  void queryClient.invalidateQueries();
 }

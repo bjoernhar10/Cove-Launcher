@@ -72,6 +72,10 @@ pub trait CatalogProvider: Send + Sync {
     async fn browse(&self, query: &BrowseQuery) -> Result<ProviderPage, ProviderError>;
     async fn details(&self, native_id: &str) -> Result<Game, ProviderError>;
     async fn similar(&self, native_id: &str) -> Result<Vec<Game>, ProviderError>;
+    /// Catalogue entries that may be the game called `title` (used for matching).
+    async fn match_candidates(&self, title: &str) -> Result<Vec<Game>, ProviderError> {
+        self.search(title, 10).await
+    }
 }
 
 /// First sentence (or ~180 chars) of a longer text, used as `Game.summary`.
@@ -79,11 +83,17 @@ pub fn teaser(text: &str) -> String {
     let text = text.trim();
     let end = text
         .char_indices()
-        .find(|&(i, c)| matches!(c, '.' | '!' | '?') && i > 40 && text[i + c.len_utf8()..].starts_with(char::is_whitespace))
+        .find(|&(i, c)| {
+            matches!(c, '.' | '!' | '?')
+                && i > 40
+                && text[i + c.len_utf8()..].starts_with(char::is_whitespace)
+        })
         .map(|(i, c)| i + c.len_utf8());
     match end {
         Some(end) if end <= 220 => text[..end].to_owned(),
-        _ if text.chars().count() > 180 => format!("{}…", text.chars().take(180).collect::<String>().trim_end()),
+        _ if text.chars().count() > 180 => {
+            format!("{}…", text.chars().take(180).collect::<String>().trim_end())
+        }
         _ => text.to_owned(),
     }
 }
@@ -102,8 +112,12 @@ mod tests {
     #[test]
     fn teaser_cuts_at_sentence_end() {
         assert_eq!(teaser("Short."), "Short.");
-        let long = "Explore a drowned city full of secrets and quiet stories. Then do more things here.";
-        assert_eq!(teaser(long), "Explore a drowned city full of secrets and quiet stories.");
+        let long =
+            "Explore a drowned city full of secrets and quiet stories. Then do more things here.";
+        assert_eq!(
+            teaser(long),
+            "Explore a drowned city full of secrets and quiet stories."
+        );
         let no_stop = "a".repeat(300);
         assert!(teaser(&no_stop).ends_with('…'));
     }

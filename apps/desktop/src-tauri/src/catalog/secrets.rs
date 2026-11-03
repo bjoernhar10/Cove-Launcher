@@ -1,7 +1,9 @@
 //! Catalogue credentials in the OS keyring (Secret Service / macOS Keychain /
 //! Windows Credential Manager). Secrets never leave the core.
 
+#[cfg(test)]
 use std::collections::HashMap;
+#[cfg(test)]
 use std::sync::{Mutex, PoisonError};
 
 use crate::error::{AppError, AppResult};
@@ -37,7 +39,9 @@ impl SecretStore for KeyringStore {
     }
 
     fn set(&self, key: &str, value: &str) -> AppResult<()> {
-        entry(key)?.set_password(value).map_err(|e| AppError::Keyring(e.to_string()))
+        entry(key)?
+            .set_password(value)
+            .map_err(|e| AppError::Keyring(e.to_string()))
     }
 
     fn delete(&self, key: &str) -> AppResult<()> {
@@ -49,39 +53,63 @@ impl SecretStore for KeyringStore {
 }
 
 /// In-memory store for tests.
+#[cfg(test)]
 #[derive(Default)]
 pub struct MemoryStore(Mutex<HashMap<String, String>>);
 
+#[cfg(test)]
 impl SecretStore for MemoryStore {
     fn get(&self, key: &str) -> AppResult<Option<String>> {
-        Ok(self.0.lock().unwrap_or_else(PoisonError::into_inner).get(key).cloned())
+        Ok(self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .cloned())
     }
 
     fn set(&self, key: &str, value: &str) -> AppResult<()> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).insert(key.to_owned(), value.to_owned());
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value.to_owned());
         Ok(())
     }
 
     fn delete(&self, key: &str) -> AppResult<()> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).remove(key);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(key);
         Ok(())
     }
 }
 
 /// Reads the stored credentials of one provider (None if incomplete).
-pub fn load(store: &dyn SecretStore, provider: CatalogProviderId) -> AppResult<Option<CatalogCredentials>> {
+pub fn load(
+    store: &dyn SecretStore,
+    provider: CatalogProviderId,
+) -> AppResult<Option<CatalogCredentials>> {
     Ok(match provider {
         CatalogProviderId::Igdb => match (store.get(IGDB_ID)?, store.get(IGDB_SECRET)?) {
-            (Some(client_id), Some(client_secret)) => Some(CatalogCredentials::Igdb { client_id, client_secret }),
+            (Some(client_id), Some(client_secret)) => Some(CatalogCredentials::Igdb {
+                client_id,
+                client_secret,
+            }),
             _ => None,
         },
-        CatalogProviderId::Rawg => store.get(RAWG_KEY)?.map(|api_key| CatalogCredentials::Rawg { api_key }),
+        CatalogProviderId::Rawg => store
+            .get(RAWG_KEY)?
+            .map(|api_key| CatalogCredentials::Rawg { api_key }),
     })
 }
 
 pub fn save(store: &dyn SecretStore, credentials: &CatalogCredentials) -> AppResult<()> {
     match credentials {
-        CatalogCredentials::Igdb { client_id, client_secret } => {
+        CatalogCredentials::Igdb {
+            client_id,
+            client_secret,
+        } => {
             store.set(IGDB_ID, client_id.trim())?;
             store.set(IGDB_SECRET, client_secret.trim())
         }
@@ -109,13 +137,16 @@ pub fn configured(store: &dyn SecretStore) -> AppResult<ProvidersConfigured> {
 /// Rejects obviously incomplete input before contacting the provider.
 pub fn validate(credentials: &CatalogCredentials) -> AppResult<()> {
     let empty = match credentials {
-        CatalogCredentials::Igdb { client_id, client_secret } => {
-            client_id.trim().is_empty() || client_secret.trim().is_empty()
-        }
+        CatalogCredentials::Igdb {
+            client_id,
+            client_secret,
+        } => client_id.trim().is_empty() || client_secret.trim().is_empty(),
         CatalogCredentials::Rawg { api_key } => api_key.trim().is_empty(),
     };
     if empty {
-        return Err(AppError::InvalidInput("Bitte fülle alle Felder aus.".into()));
+        return Err(AppError::InvalidInput(
+            "Bitte fülle alle Felder aus.".into(),
+        ));
     }
     Ok(())
 }
@@ -127,16 +158,35 @@ mod tests {
     #[test]
     fn roundtrip_and_clear() {
         let store = MemoryStore::default();
-        assert_eq!(configured(&store).unwrap(), ProvidersConfigured { igdb: false, rawg: false });
-        save(&store, &CatalogCredentials::Igdb { client_id: " id ".into(), client_secret: "secret".into() }).unwrap();
+        assert_eq!(
+            configured(&store).unwrap(),
+            ProvidersConfigured {
+                igdb: false,
+                rawg: false
+            }
+        );
+        save(
+            &store,
+            &CatalogCredentials::Igdb {
+                client_id: " id ".into(),
+                client_secret: "secret".into(),
+            },
+        )
+        .unwrap();
         assert_eq!(
             load(&store, CatalogProviderId::Igdb).unwrap(),
-            Some(CatalogCredentials::Igdb { client_id: "id".into(), client_secret: "secret".into() })
+            Some(CatalogCredentials::Igdb {
+                client_id: "id".into(),
+                client_secret: "secret".into()
+            })
         );
         assert!(configured(&store).unwrap().igdb);
         clear(&store, CatalogProviderId::Igdb).unwrap();
         assert!(load(&store, CatalogProviderId::Igdb).unwrap().is_none());
-        assert!(validate(&CatalogCredentials::Rawg { api_key: "  ".into() }).is_err());
+        assert!(validate(&CatalogCredentials::Rawg {
+            api_key: "  ".into()
+        })
+        .is_err());
     }
 
     /// Talks to the real OS keyring. Run manually: `cargo test real_keyring -- --ignored`.

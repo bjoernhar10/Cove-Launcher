@@ -129,7 +129,12 @@
         "notRunning",
         "launch",
         "compatToolNotFound",
-        "notSupported"
+        "notSupported",
+        "offline",
+        "catalogNotConfigured",
+        "catalogAuth",
+        "catalogProvider",
+        "keyring"
       ],
       "type": "string"
     },
@@ -156,6 +161,9 @@
         "appearance": {
           "$ref": "#/definitions/AppearanceSettings"
         },
+        "catalog": {
+          "$ref": "#/definitions/CatalogSettings"
+        },
         "downloads": {
           "$ref": "#/definitions/DownloadSettings"
         },
@@ -170,7 +178,8 @@
         "general",
         "appearance",
         "library",
-        "downloads"
+        "downloads",
+        "catalog"
       ],
       "type": "object"
     },
@@ -189,6 +198,49 @@
         "accent"
       ],
       "type": "object"
+    },
+    "CatalogCredentials": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "clientId": {
+              "type": "string"
+            },
+            "clientSecret": {
+              "type": "string"
+            },
+            "provider": {
+              "const": "igdb",
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "clientId",
+            "clientSecret"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "apiKey": {
+              "type": "string"
+            },
+            "provider": {
+              "const": "rawg",
+              "type": "string"
+            }
+          },
+          "required": [
+            "provider",
+            "apiKey"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "Credentials entered in Settings; stored in the OS keyring, never returned to the UI."
     },
     "CatalogFilter": {
       "additionalProperties": false,
@@ -224,9 +276,6 @@
               "type": "null"
             }
           ]
-        },
-        "sort": {
-          "$ref": "#/definitions/CatalogSort"
         }
       },
       "required": [
@@ -234,8 +283,93 @@
         "genres",
         "platforms",
         "releaseYears",
-        "minRating",
-        "sort"
+        "minRating"
+      ],
+      "type": "object"
+    },
+    "CatalogGameDetails": {
+      "additionalProperties": false,
+      "properties": {
+        "game": {
+          "$ref": "#/definitions/Game"
+        },
+        "libraryGameId": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GameId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Library game linked to this catalogue entry, if any."
+        },
+        "offline": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "game",
+        "libraryGameId",
+        "offline"
+      ],
+      "type": "object"
+    },
+    "CatalogPage": {
+      "additionalProperties": false,
+      "description": "One page of catalogue results.",
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/Game"
+          },
+          "type": "array"
+        },
+        "offline": {
+          "description": "True when the provider was unreachable and cached data is shown.",
+          "type": "boolean"
+        },
+        "page": {
+          "description": "0-based page index.",
+          "type": "number"
+        },
+        "total": {
+          "description": "Total number of matches, null if the provider does not report it.",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "page",
+        "hasMore",
+        "total",
+        "offline"
+      ],
+      "type": "object"
+    },
+    "CatalogProviderId": {
+      "enum": [
+        "igdb",
+        "rawg"
+      ],
+      "type": "string"
+    },
+    "CatalogSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "useCoveService": {
+          "description": "Use the Cove catalogue service (no own API keys needed).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "useCoveService"
       ],
       "type": "object"
     },
@@ -247,6 +381,45 @@
         "title"
       ],
       "type": "string"
+    },
+    "CatalogSource": {
+      "description": "Where catalogue data comes from, in fallback order.",
+      "enum": [
+        "cove",
+        "igdb",
+        "rawg"
+      ],
+      "type": "string"
+    },
+    "CatalogStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "configured": {
+          "$ref": "#/definitions/ProvidersConfigured",
+          "description": "Own credentials stored in the keyring."
+        },
+        "coveService": {
+          "$ref": "#/definitions/CoveServiceStatus"
+        },
+        "online": {
+          "description": "False after the last request failed for network reasons.",
+          "type": "boolean"
+        },
+        "sources": {
+          "description": "Sources in the order they are tried; empty = catalogue not available.",
+          "items": {
+            "$ref": "#/definitions/CatalogSource"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sources",
+        "coveService",
+        "configured",
+        "online"
+      ],
+      "type": "object"
     },
     "CompatibilityTool": {
       "enum": [
@@ -286,6 +459,24 @@
         "epic"
       ],
       "type": "string"
+    },
+    "CoveServiceStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "description": "This build knows a proxy URL.",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "The user has not switched it off.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "available",
+        "enabled"
+      ],
+      "type": "object"
     },
     "Download": {
       "additionalProperties": false,
@@ -477,7 +668,15 @@
           ]
         },
         "releaseDate": {
-          "$ref": "#/definitions/IsoDate"
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null when unknown (e.g. unreleased or manually added games)."
         },
         "summary": {
           "description": "One-sentence teaser.",
@@ -708,6 +907,13 @@
         "addedAt": {
           "$ref": "#/definitions/IsoDateTime"
         },
+        "catalogId": {
+          "description": "Linked catalogue entry (e.g. `igdb-1942`), null if not matched.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "executablePath": {
           "description": "Absolute path of the file Cove starts (.exe, binary, AppImage, .desktop, script).",
           "type": [
@@ -751,6 +957,9 @@
         "launchOptions": {
           "$ref": "#/definitions/LaunchOptions"
         },
+        "matchStatus": {
+          "$ref": "#/definitions/MatchStatus"
+        },
         "playtimeMinutes": {
           "type": "number"
         },
@@ -778,7 +987,9 @@
         "lastPlayedAt",
         "addedAt",
         "achievements",
-        "launchOptions"
+        "launchOptions",
+        "catalogId",
+        "matchStatus"
       ],
       "type": "object"
     },
@@ -796,6 +1007,23 @@
       "required": [
         "entry",
         "game"
+      ],
+      "type": "object"
+    },
+    "LibraryMatchEvent": {
+      "additionalProperties": false,
+      "description": "Payload of the `library-match-changed` event.",
+      "properties": {
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "status": {
+          "$ref": "#/definitions/MatchStatus"
+        }
+      },
+      "required": [
+        "gameId",
+        "status"
       ],
       "type": "object"
     },
@@ -861,6 +1089,33 @@
         "sizeBytes"
       ],
       "type": "object"
+    },
+    "MatchCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "game": {
+          "$ref": "#/definitions/Game"
+        },
+        "score": {
+          "description": "Title similarity 0–1.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "game",
+        "score"
+      ],
+      "type": "object"
+    },
+    "MatchStatus": {
+      "description": "Catalogue matching state of a library game: none = not matched (yet) · pending = suggestions wait for the user · matched = metadata applied · rejected = user declined all suggestions.",
+      "enum": [
+        "none",
+        "pending",
+        "matched",
+        "rejected"
+      ],
+      "type": "string"
     },
     "Platform": {
       "enum": [
@@ -947,6 +1202,133 @@
         "author",
         "description",
         "enabled"
+      ],
+      "type": "object"
+    },
+    "ProvidersConfigured": {
+      "additionalProperties": false,
+      "properties": {
+        "igdb": {
+          "type": "boolean"
+        },
+        "rawg": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "igdb",
+        "rawg"
+      ],
+      "type": "object"
+    },
+    "ProxyError": {
+      "additionalProperties": false,
+      "description": "Body of every non-2xx proxy response.",
+      "properties": {
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "$ref": "#/definitions/ProxyErrorCode"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "type": "object"
+    },
+    "ProxyErrorCode": {
+      "enum": [
+        "invalid_request",
+        "not_found",
+        "rate_limited",
+        "upstream_error",
+        "upstream_unavailable",
+        "not_configured"
+      ],
+      "type": "string"
+    },
+    "ProxyGame": {
+      "additionalProperties": false,
+      "description": "`GET /v1/game/:id`",
+      "properties": {
+        "game": {
+          "$ref": "#/definitions/Game"
+        }
+      },
+      "required": [
+        "game"
+      ],
+      "type": "object"
+    },
+    "ProxyMatchRequest": {
+      "additionalProperties": false,
+      "description": "`POST /v1/match` request body.",
+      "properties": {
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "ProxyMatchResponse": {
+      "additionalProperties": false,
+      "description": "`POST /v1/match` — best catalogue candidates for a title, best first.",
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/definitions/MatchCandidate"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidates"
+      ],
+      "type": "object"
+    },
+    "ProxyPage": {
+      "additionalProperties": false,
+      "description": "`GET /v1/search`, `GET /v1/browse`, `GET /v1/similar/:id`",
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/Game"
+          },
+          "type": "array"
+        },
+        "page": {
+          "description": "0-based page index.",
+          "type": "number"
+        },
+        "total": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "page",
+        "hasMore",
+        "total"
       ],
       "type": "object"
     },

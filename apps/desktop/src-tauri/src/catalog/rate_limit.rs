@@ -18,7 +18,10 @@ impl RateLimiter {
     }
 
     pub fn with_interval(interval: Duration) -> Self {
-        Self { interval, next_slot: Mutex::new(Instant::now()) }
+        Self {
+            interval,
+            next_slot: Mutex::new(Instant::now()),
+        }
     }
 
     /// Waits until the caller may send the next request.

@@ -1,5 +1,5 @@
 import type { Game } from "@cove/shared";
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { cx, unlessSet } from "../../lib/cx.ts";
 
 type Aspect = "portrait" | "landscape" | "wide" | "square";
@@ -46,8 +46,21 @@ export function GameCover({
   const image = kind === "cover" ? game.artwork.cover : game.artwork.header;
   const base = cx("relative overflow-hidden", unlessSet(className, ["rounded-"], "rounded-lg"), ASPECTS[aspect], className);
 
-  if (image.url) {
-    return <img src={image.url} alt={image.alt} className={cx(base, "w-full object-cover")} loading="lazy" />;
+  // Remember the URL that failed (offline and not cached yet) and fall back to the placeholder.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (image.url && image.url !== failedUrl) {
+    const url = image.url;
+    return (
+      <img
+        src={url}
+        alt={image.alt}
+        className={cx(base, "w-full bg-skeleton object-cover")}
+        loading="lazy"
+        onError={() => {
+          setFailedUrl(url);
+        }}
+      />
+    );
   }
 
   const h = (hash(game.id) + variant * 7) >>> 0;

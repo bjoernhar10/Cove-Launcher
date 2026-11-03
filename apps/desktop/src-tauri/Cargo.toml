@@ -44,5 +44,5 @@ missing_panics_doc = "allow"
 tauri = { version = "2", features = ["test"] }
 jsonschema = "0.33.0"
 tempfile = "3.27.0"
-tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "process", "time", "sync", "fs"] }
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "process", "time", "sync", "fs", "test-util"] }
 wiremock = "0.6.5"

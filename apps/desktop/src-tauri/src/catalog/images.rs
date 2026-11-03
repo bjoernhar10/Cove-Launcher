@@ -4,6 +4,7 @@
 //! (Windows: `http://cove-img.localhost/…`). The first request downloads the file into the app's
 //! cache folder; later requests — also offline — are answered from disk.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -24,9 +25,33 @@ pub fn proxy_url(remote: &str) -> String {
     }
 }
 
+fn proxy_prefix() -> String {
+    if cfg!(windows) {
+        format!("http://{SCHEME}.localhost/")
+    } else {
+        format!("{SCHEME}://localhost/")
+    }
+}
+
 /// Rewrites remote http(s) URLs to the local proxy; leaves everything else untouched.
 pub fn proxied(url: Option<String>) -> Option<String> {
-    url.map(|u| if u.starts_with("https://") || u.starts_with("http://") { proxy_url(&u) } else { u })
+    url.map(|u| {
+        let remote = (u.starts_with("https://") || u.starts_with("http://"))
+            && !u.starts_with(&proxy_prefix());
+        if remote {
+            proxy_url(&u)
+        } else {
+            u
+        }
+    })
+}
+
+/// Inverse of [`proxied`]: restores the remote URL of a proxy URL.
+pub fn unproxied(url: Option<String>) -> Option<String> {
+    url.map(|u| match u.strip_prefix(&proxy_prefix()) {
+        Some(rest) => ImageCache::decode_request_path(rest).unwrap_or(u),
+        None => u,
+    })
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -48,7 +73,12 @@ pub struct ImageCache {
 }
 
 fn mime_for(path: &Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref() {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
         Some("png") => "image/png",
         Some("webp") => "image/webp",
         Some("gif") => "image/gif",
@@ -58,17 +88,28 @@ fn mime_for(path: &Path) -> &'static str {
 
 impl ImageCache {
     pub fn new(dir: PathBuf, client: reqwest::Client) -> Self {
-        Self { dir, client, allowed_hosts: ALLOWED_HOSTS.iter().map(|h| (*h).to_owned()).collect() }
+        Self {
+            dir,
+            client,
+            allowed_hosts: ALLOWED_HOSTS.iter().map(|h| (*h).to_owned()).collect(),
+        }
     }
 
     #[cfg(test)]
     pub fn with_hosts(dir: PathBuf, client: reqwest::Client, hosts: &[&str]) -> Self {
-        Self { dir, client, allowed_hosts: hosts.iter().map(|h| (*h).to_owned()).collect() }
+        Self {
+            dir,
+            client,
+            allowed_hosts: hosts.iter().map(|h| (*h).to_owned()).collect(),
+        }
     }
 
     /// Remote URL from the request path of a `cove-img` request.
     pub fn decode_request_path(path: &str) -> Option<String> {
-        let decoded = percent_decode_str(path.trim_start_matches('/')).decode_utf8().ok()?.into_owned();
+        let decoded = percent_decode_str(path.trim_start_matches('/'))
+            .decode_utf8()
+            .ok()?
+            .into_owned();
         (decoded.starts_with("https://") || decoded.starts_with("http://")).then_some(decoded)
     }
 
@@ -83,11 +124,16 @@ impl ImageCache {
 
     pub fn path_for(&self, remote: &str) -> PathBuf {
         let hash = Sha256::digest(remote.as_bytes());
-        let hex: String = hash.iter().map(|b| format!("{b:02x}")).collect();
+        let hex = hash.iter().fold(String::with_capacity(64), |mut acc, b| {
+            let _ = write!(acc, "{b:02x}");
+            acc
+        });
         let ext = Path::new(remote.split(['?', '#']).next().unwrap_or(remote))
             .extension()
             .and_then(|e| e.to_str())
-            .filter(|e| ["jpg", "jpeg", "png", "webp", "gif"].contains(&e.to_ascii_lowercase().as_str()))
+            .filter(|e| {
+                ["jpg", "jpeg", "png", "webp", "gif"].contains(&e.to_ascii_lowercase().as_str())
+            })
             .unwrap_or("jpg")
             .to_ascii_lowercase();
         self.dir.join(format!("{hex}.{ext}"))
@@ -110,7 +156,10 @@ impl ImageCache {
         if !response.status().is_success() {
             return Err(ImageError::Unavailable);
         }
-        let bytes = response.bytes().await.map_err(|_| ImageError::Unavailable)?;
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|_| ImageError::Unavailable)?;
         if bytes.len() > MAX_BYTES {
             return Err(ImageError::TooLarge);
         }
@@ -142,11 +191,40 @@ mod tests {
     fn proxy_urls_roundtrip() {
         let remote = "https://images.igdb.com/igdb/image/upload/t_cover_big/co1wyy.jpg";
         let local = proxy_url(remote);
-        assert!(local.starts_with("cove-img://localhost/") || local.starts_with("http://cove-img.localhost/"));
+        assert!(
+            local.starts_with("cove-img://localhost/")
+                || local.starts_with("http://cove-img.localhost/")
+        );
         let request_path = local.split_once("localhost").unwrap().1;
-        assert_eq!(ImageCache::decode_request_path(request_path).as_deref(), Some(remote));
-        assert_eq!(proxied(Some("asset://x".into())).as_deref(), Some("asset://x"));
+        assert_eq!(
+            ImageCache::decode_request_path(request_path).as_deref(),
+            Some(remote)
+        );
+        assert_eq!(
+            proxied(Some("asset://x".into())).as_deref(),
+            Some("asset://x")
+        );
         assert_eq!(proxied(None), None);
+        assert_eq!(unproxied(Some(local.clone())).as_deref(), Some(remote));
+        assert_eq!(
+            proxied(Some(local.clone())).as_deref(),
+            Some(local.as_str()),
+            "idempotent"
+        );
+        assert_eq!(unproxied(Some(remote.into())).as_deref(), Some(remote));
+    }
+
+    #[test]
+    fn image_refs_are_proxied_on_the_wire_only() {
+        let remote = "https://media.rawg.io/media/a.jpg";
+        let image = crate::models::ImageRef {
+            url: Some(remote.into()),
+            alt: "a".into(),
+        };
+        let json = serde_json::to_value(&image).unwrap();
+        assert!(json["url"].as_str().unwrap().contains("cove-img"));
+        let back: crate::models::ImageRef = serde_json::from_value(json).unwrap();
+        assert_eq!(back, image);
     }
 
     #[tokio::test]
@@ -159,11 +237,18 @@ mod tests {
             .mount(&server)
             .await;
         let tmp = tempfile::tempdir().unwrap();
-        let cache = ImageCache::with_hosts(tmp.path().join("img"), reqwest::Client::new(), &["127.0.0.1"]);
+        let cache = ImageCache::with_hosts(
+            tmp.path().join("img"),
+            reqwest::Client::new(),
+            &["127.0.0.1"],
+        );
         let url = format!("{}/cover.png", server.uri());
 
         let (bytes, mime) = cache.get(&url).await.unwrap();
-        assert_eq!((bytes.as_slice(), mime), (b"PNGDATA".as_slice(), "image/png"));
+        assert_eq!(
+            (bytes.as_slice(), mime),
+            (b"PNGDATA".as_slice(), "image/png")
+        );
         assert!(cache.path_for(&url).is_file());
 
         drop(server); // offline now
@@ -175,10 +260,26 @@ mod tests {
     async fn rejects_foreign_hosts_and_reports_offline_misses() {
         let tmp = tempfile::tempdir().unwrap();
         let cache = ImageCache::new(tmp.path().to_path_buf(), reqwest::Client::new());
-        assert_eq!(cache.get("https://evil.example/x.jpg").await.unwrap_err(), ImageError::Forbidden);
-        assert_eq!(cache.get("not a url").await.unwrap_err(), ImageError::BadRequest);
+        assert_eq!(
+            cache.get("https://evil.example/x.jpg").await.unwrap_err(),
+            ImageError::Forbidden
+        );
+        assert_eq!(
+            cache.get("not a url").await.unwrap_err(),
+            ImageError::BadRequest
+        );
 
-        let local = ImageCache::with_hosts(tmp.path().to_path_buf(), reqwest::Client::new(), &["127.0.0.1"]);
-        assert_eq!(local.get("http://127.0.0.1:9/missing.jpg").await.unwrap_err(), ImageError::Unavailable);
+        let local = ImageCache::with_hosts(
+            tmp.path().to_path_buf(),
+            reqwest::Client::new(),
+            &["127.0.0.1"],
+        );
+        assert_eq!(
+            local
+                .get("http://127.0.0.1:9/missing.jpg")
+                .await
+                .unwrap_err(),
+            ImageError::Unavailable
+        );
     }
 }

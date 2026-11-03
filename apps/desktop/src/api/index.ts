@@ -14,5 +14,5 @@ import * as system from "./system.ts";
 
 export const api = { catalog, downloads, home, library, settings, system } as const;
 
-export { CATALOG_PAGE_SIZE, DEFAULT_CATALOG_FILTER } from "./catalog.ts";
+export { DEFAULT_CATALOG_FILTER, DEFAULT_CATALOG_SORT } from "./catalog.ts";
 export { CoveError } from "./transport.ts";

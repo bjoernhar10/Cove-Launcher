@@ -2,15 +2,16 @@ import type { Game } from "@cove/shared";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Layers, Plus, SearchX } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 import { useParams } from "react-router";
-import { api } from "../api/index.ts";
+import { api, CoveError } from "../api/index.ts";
 import { GameCard, GameCardSkeleton } from "../components/game/GameCard.tsx";
 import { GameCover } from "../components/game/GameCover.tsx";
 import { ScrollItem, ScrollRow } from "../components/game/ScrollRow.tsx";
 import { Button, ButtonLink } from "../components/ui/Button.tsx";
 import { Dialog } from "../components/ui/Dialog.tsx";
-import { Badge, EmptyState, ErrorState, LoadingRegion, Skeleton } from "../components/ui/Feedback.tsx";
+import { Badge, EmptyState, ErrorState, LoadingRegion, OfflineBadge, Skeleton } from "../components/ui/Feedback.tsx";
+import { CatalogSetupState } from "./CataloguePage.tsx";
 import { Page } from "../components/ui/Page.tsx";
-import { useQuery } from "../hooks/useQuery.ts";
+import { useCatalogGame, useSimilarGames } from "../hooks/useCatalog.ts";
 import { formatDate } from "../lib/format.ts";
 import { GENRE_LABELS, PLATFORM_LABELS } from "../lib/labels.ts";
 import { invalidateQueries } from "../stores/query.ts";
@@ -121,18 +122,19 @@ function DetailSkeleton() {
 
 export function CatalogueDetailPage() {
   const { gameId = "" } = useParams();
-  const game = useQuery(`catalog/${gameId}`, () => api.catalog.getGame(gameId));
-  const owned = useQuery(`library/${gameId}`, () => api.library.getLibraryItem(gameId));
-  const similar = useQuery(`catalog/${gameId}/similar`, () => api.catalog.getSimilarGames(gameId));
+  const details = useCatalogGame(gameId);
+  const similar = useSimilarGames(gameId);
   const [adding, setAdding] = useState(false);
   const similarRef = useRef<HTMLDivElement>(null);
+  const game = details.data?.game;
+  const libraryGameId = details.data?.libraryGameId ?? null;
 
   async function addToLibrary(): Promise<void> {
-    if (game.status !== "success") return;
+    if (!game) return;
     setAdding(true);
     try {
-      await api.library.addGameFromCatalog(game.data);
-      toast(`„${game.data.title}“ wurde zur Bibliothek hinzugefügt`);
+      await api.library.addGameFromCatalog(game);
+      toast(`„${game.title}“ wurde zur Bibliothek hinzugefügt`);
       invalidateQueries();
     } catch (error: unknown) {
       toast(errorMessage(error), "danger");
@@ -147,39 +149,50 @@ export function CatalogueDetailPage() {
     similarRef.current?.querySelector<HTMLElement>("a")?.focus({ preventScroll: true });
   }
 
+  const notConfigured = details.error instanceof CoveError && details.error.kind === "catalogNotConfigured";
+
   return (
     <Page>
       <ButtonLink to="/catalogue" variant="ghost" size="sm" icon={ArrowLeft} className="-ml-3 mb-4">
         Catalogue
       </ButtonLink>
 
-      {game.status === "loading" && <DetailSkeleton />}
-      {game.status === "error" && (
+      {details.isPending && <DetailSkeleton />}
+      {notConfigured && <CatalogSetupState />}
+      {details.isError && !notConfigured && (
         <EmptyState
           icon={SearchX}
-          title="Spiel nicht gefunden"
-          description="Dieses Spiel gibt es im Katalog nicht (mehr)."
-          actions={<ButtonLink to="/catalogue">Zum Katalog</ButtonLink>}
+          title="Spiel nicht verfügbar"
+          description={errorMessage(details.error)}
+          actions={
+            <>
+              <Button onClick={() => void details.refetch()}>Erneut versuchen</Button>
+              <ButtonLink to="/catalogue">Zum Katalog</ButtonLink>
+            </>
+          }
         />
       )}
-      {game.status === "success" && (
+      {game && (
         <>
-          <GameCover game={game.data} kind="header" aspect="wide" showTitle={false} className="border border-border" />
+          <GameCover game={game} kind="header" aspect="wide" showTitle={false} className="border border-border" />
 
           <div className="mt-8 grid grid-cols-1 gap-12 lg:grid-cols-[1fr_280px]">
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight text-fg">{game.data.title}</h1>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-xl font-semibold tracking-tight text-fg">{game.title}</h1>
+                {details.data?.offline && <OfflineBadge />}
+              </div>
               <p className="mt-1 text-sm text-fg-muted">
-                {game.data.developer} · <span className="num">{game.data.releaseDate.slice(0, 4)}</span>
+                {[game.developer, game.releaseDate?.slice(0, 4)].filter(Boolean).join(" · ") || "Keine weiteren Angaben"}
               </p>
 
               <div className="mt-6 flex flex-wrap gap-2">
-                {owned.status === "success" && owned.data ? (
-                  <ButtonLink to={`/library/${gameId}`} variant="secondary" icon={Check}>
+                {libraryGameId ? (
+                  <ButtonLink to={`/library/${libraryGameId}`} variant="secondary" icon={Check}>
                     In deiner Bibliothek
                   </ButtonLink>
                 ) : (
-                  <Button variant="primary" icon={Plus} disabled={adding || owned.status === "loading"} onClick={() => void addToLibrary()}>
+                  <Button variant="primary" icon={Plus} disabled={adding} onClick={() => void addToLibrary()}>
                     Zur Bibliothek hinzufügen
                   </Button>
                 )}
@@ -189,34 +202,46 @@ export function CatalogueDetailPage() {
               </div>
 
               <div className="mt-8 max-w-2xl space-y-4 text-base leading-relaxed text-fg">
-                {game.data.description.split("\n\n").map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
-                ))}
+                {game.description ? (
+                  game.description.split(/\n\s*\n/).map((paragraph) => <p key={paragraph}>{paragraph}</p>)
+                ) : (
+                  <p className="text-fg-muted">Für dieses Spiel gibt es noch keine Beschreibung.</p>
+                )}
               </div>
 
-              <Screenshots game={game.data} />
+              <Screenshots game={game} />
             </div>
 
             <aside aria-label="Details">
               <dl className="m-0 rounded-lg border border-border px-4">
                 <Fact label="Genres">
-                  <span className="flex flex-wrap gap-1.5 pt-0.5">
-                    {game.data.genres.map((g) => (
-                      <Badge key={g}>{GENRE_LABELS[g]}</Badge>
-                    ))}
-                  </span>
+                  {game.genres.length > 0 ? (
+                    <span className="flex flex-wrap gap-1.5 pt-0.5">
+                      {game.genres.map((g) => (
+                        <Badge key={g}>{GENRE_LABELS[g]}</Badge>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-fg-muted">Keine Angabe</span>
+                  )}
                 </Fact>
                 <Fact label="Release">
-                  <time dateTime={game.data.releaseDate}>{formatDate(game.data.releaseDate)}</time>
+                  {game.releaseDate ? (
+                    <time dateTime={game.releaseDate}>{formatDate(game.releaseDate)}</time>
+                  ) : (
+                    <span className="text-fg-muted">Unbekannt</span>
+                  )}
                 </Fact>
-                <Fact label="Entwickler">{game.data.developer}</Fact>
-                <Fact label="Publisher">{game.data.publisher}</Fact>
-                <Fact label="Plattformen">{game.data.platforms.map((p) => PLATFORM_LABELS[p]).join(", ")}</Fact>
+                <Fact label="Entwickler">{game.developer || <span className="text-fg-muted">Unbekannt</span>}</Fact>
+                <Fact label="Publisher">{game.publisher || <span className="text-fg-muted">Unbekannt</span>}</Fact>
+                <Fact label="Plattformen">
+                  {game.platforms.length > 0 ? game.platforms.map((p) => PLATFORM_LABELS[p]).join(", ") : "Keine Angabe"}
+                </Fact>
                 <Fact label="Bewertung">
-                  {game.data.rating === null ? (
+                  {game.rating === null ? (
                     <span className="text-fg-muted">Noch keine Bewertung</span>
                   ) : (
-                    <span className="num">{game.data.rating} / 100</span>
+                    <span className="num">{game.rating} / 100</span>
                   )}
                 </Fact>
               </dl>
@@ -225,22 +250,23 @@ export function CatalogueDetailPage() {
 
           <div ref={similarRef} className="scroll-mt-4">
             <ScrollRow title="Ähnliche Spiele">
-              {similar.status === "loading" &&
+              {similar.isPending &&
                 Array.from({ length: 6 }, (_, i) => (
                   <ScrollItem key={i}>
                     <GameCardSkeleton />
                   </ScrollItem>
                 ))}
-              {similar.status === "error" && <ErrorState message={similar.error} onRetry={similar.retry} />}
-              {similar.status === "success" && similar.data.length === 0 && (
+              {similar.isError && (
+                <ErrorState message={errorMessage(similar.error)} onRetry={() => void similar.refetch()} />
+              )}
+              {similar.isSuccess && similar.data.items.length === 0 && (
                 <p className="py-6 text-sm text-fg-muted">Keine ähnlichen Spiele gefunden.</p>
               )}
-              {similar.status === "success" &&
-                similar.data.map((g) => (
-                  <ScrollItem key={g.id}>
-                    <GameCard game={g} to={`/catalogue/${g.id}`} />
-                  </ScrollItem>
-                ))}
+              {similar.data?.items.map((g) => (
+                <ScrollItem key={g.id}>
+                  <GameCard game={g} to={`/catalogue/${g.id}`} />
+                </ScrollItem>
+              ))}
             </ScrollRow>
           </div>
         </>

@@ -1,5 +1,13 @@
-import type { AccentColor, AppSettings, ConnectableStore, ThemePreference } from "@cove/shared";
-import { Check, FolderOpen, FolderSearch, Monitor, Moon, Plus, Puzzle, RefreshCw, Sun, Trash2 } from "lucide-react";
+import type {
+  AccentColor,
+  AppSettings,
+  CatalogCredentials,
+  CatalogProviderId,
+  CatalogSource,
+  ConnectableStore,
+  ThemePreference,
+} from "@cove/shared";
+import { Check, ChevronRight, ExternalLink, FolderOpen, FolderSearch, Monitor, Moon, Plus, Puzzle, RefreshCw, Sun, Trash2 } from "lucide-react";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { Navigate, NavLink, useParams } from "react-router";
 import { api } from "../../api/index.ts";
@@ -7,7 +15,9 @@ import { Button } from "../../components/ui/Button.tsx";
 import { EmptyState, ErrorState, LoadingRegion, Skeleton } from "../../components/ui/Feedback.tsx";
 import { Field, Input, Select, SettingRow, Switch } from "../../components/ui/Field.tsx";
 import { Page } from "../../components/ui/Page.tsx";
+import { useCatalogStatus } from "../../hooks/useCatalog.ts";
 import { useQuery } from "../../hooks/useQuery.ts";
+import { queryClient } from "../../lib/queryClient.ts";
 import { cx } from "../../lib/cx.ts";
 import { modKeyLabel } from "../../lib/env.ts";
 import { formatRelative } from "../../lib/format.ts";
@@ -22,6 +32,7 @@ const TABS = [
   { id: "appearance", label: "Aussehen" },
   { id: "library", label: "Bibliothek" },
   { id: "accounts", label: "Konten & Stores" },
+  { id: "catalog", label: "Katalog" },
   { id: "downloads", label: "Downloads" },
   { id: "plugins", label: "Plugins" },
   { id: "about", label: "Über Cove" },
@@ -383,7 +394,236 @@ function AccountsTab() {
           ))}
         </ul>
       )}
-      <p className="mt-4 text-xs text-fg-subtle">Die Store-Anbindung kommt mit dem Connector-Service. Cove speichert keine Passwörter – die Anmeldung erfolgt direkt beim jeweiligen Store.</p>
+      <p className="mt-4 text-xs text-fg-subtle">Die Store-Anbindung kommt mit dem Connector-Service. Cove speichert keine Passwörter, die Anmeldung erfolgt direkt beim jeweiligen Store.</p>
+    </Panel>
+  );
+}
+
+interface CredentialField { key: string; label: string; secret: boolean }
+
+const PROVIDERS: {
+  id: CatalogProviderId;
+  name: string;
+  help: string;
+  fields: CredentialField[];
+}[] = [
+  {
+    id: "igdb",
+    name: "IGDB (eigene Twitch-Keys)",
+    help: "Kostenlos über eine Twitch-Anwendung: dev.twitch.tv/console → „Anwendung registrieren“, dann Client-ID und ein neues Client-Secret kopieren.",
+    fields: [
+      { key: "clientId", label: "Client-ID", secret: false },
+      { key: "clientSecret", label: "Client-Secret", secret: true },
+    ],
+  },
+  {
+    id: "rawg",
+    name: "RAWG",
+    help: "Kostenloser API-Key unter rawg.io/apidocs (Konto nötig).",
+    fields: [{ key: "apiKey", label: "API-Key", secret: true }],
+  },
+];
+
+function toCredentials(id: CatalogProviderId, values: Record<string, string>): CatalogCredentials {
+  return id === "igdb"
+    ? { provider: "igdb", clientId: values.clientId ?? "", clientSecret: values.clientSecret ?? "" }
+    : { provider: "rawg", apiKey: values.apiKey ?? "" };
+}
+
+function ProviderCard({ provider, configured }: { provider: (typeof PROVIDERS)[number]; configured: boolean }) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const complete = provider.fields.every((f) => (values[f.key] ?? "").trim() !== "");
+
+  async function save(event: SyntheticEvent): Promise<void> {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.catalog.setCatalogCredentials(toCredentials(provider.id, values));
+      setValues({});
+      toast(`${provider.id === "igdb" ? "IGDB" : "RAWG"} verbunden`);
+      invalidateQueries();
+    } catch (e: unknown) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(): Promise<void> {
+    setBusy(true);
+    try {
+      await api.catalog.clearCatalogCredentials(provider.id);
+      toast(`${provider.id === "igdb" ? "IGDB" : "RAWG"}-Zugangsdaten entfernt`);
+      invalidateQueries();
+    } catch (e: unknown) {
+      toast(errorMessage(e), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="rounded-lg border border-border p-5" onSubmit={(e) => void save(e)}>
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="text-sm font-medium text-fg">{provider.name}</h3>
+        <span className={cx("inline-flex items-center gap-1.5 text-xs", configured ? "text-accent-text" : "text-fg-subtle")}>
+          {configured && <Check aria-hidden className="size-3.5" />}
+          {configured ? "Eingerichtet" : "Nicht eingerichtet"}
+        </span>
+      </div>
+      <p className="mt-1 text-sm text-fg-muted">{provider.help}</p>
+      <div className="mt-4 flex flex-col gap-4">
+        {provider.fields.map((field) => (
+          <Field key={field.key} label={field.label} error={field === provider.fields.at(-1) ? error : null}>
+            {(props) => (
+              <Input
+                {...props}
+                type={field.secret ? "password" : "text"}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={configured ? "Gespeichert. Zum Ändern neu eingeben." : ""}
+                value={values[field.key] ?? ""}
+                onChange={(e) => {
+                  setValues((v) => ({ ...v, [field.key]: e.target.value }));
+                  setError(null);
+                }}
+              />
+            )}
+          </Field>
+        ))}
+      </div>
+      <div className="mt-5 flex gap-2">
+        <Button type="submit" variant="primary" disabled={!complete || busy}>
+          {busy ? "Wird geprüft …" : "Speichern & prüfen"}
+        </Button>
+        {configured && (
+          <Button variant="ghost" disabled={busy} onClick={() => void remove()}>
+            Entfernen
+          </Button>
+        )}
+      </div>
+    </form>
+  );
+}
+
+const IGDB_URL = "https://www.igdb.com";
+
+const SOURCE_NAMES: Record<CatalogSource, string> = {
+  cove: "Cove-Katalogdienst",
+  igdb: "eigene IGDB-Keys",
+  rawg: "eigener RAWG-Key",
+};
+
+function CatalogTab() {
+  const status = useCatalogStatus();
+  const { settings, save } = useSettings();
+  const [matching, setMatching] = useState(false);
+
+  async function matchLibrary(): Promise<void> {
+    setMatching(true);
+    try {
+      const items = await api.library.listLibrary();
+      const open = items.filter((i) => i.entry.matchStatus === "none");
+      for (const item of open) await api.library.rematch(item.game.id);
+      toast(
+        open.length === 0
+          ? "Alle Spiele sind bereits zugeordnet."
+          : `${String(open.length)} ${open.length === 1 ? "Spiel wird" : "Spiele werden"} im Hintergrund abgeglichen.`,
+      );
+    } catch (e: unknown) {
+      toast(errorMessage(e), "danger");
+    } finally {
+      setMatching(false);
+    }
+  }
+
+  return (
+    <Panel
+      title="Katalog"
+      description="Spieldaten, Cover und Screenshots stammen von IGDB. Antworten werden lokal gespeichert und stehen auch offline zur Verfügung."
+    >
+      {status.isPending && <SettingsSkeleton />}
+      {status.isError && <ErrorState message={errorMessage(status.error)} onRetry={() => void status.refetch()} />}
+      {status.isSuccess && (
+        <div className="flex flex-col gap-8">
+          <div role="status" className="rounded-lg border border-border px-5 py-4">
+            {status.data.sources.length > 0 ? (
+              <>
+                <p className="flex items-center gap-2 text-sm font-medium text-fg">
+                  <Check aria-hidden className="text-accent-text" />
+                  {status.data.sources[0] === "cove" ? "Bereit, keine Einrichtung nötig" : "Katalog eingerichtet"}
+                </p>
+                <p className="mt-1 text-sm text-fg-muted">
+                  Reihenfolge: {status.data.sources.map((s) => SOURCE_NAMES[s]).join(", dann ")}, zuletzt gespeicherte Daten.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-fg">Katalog nicht verfügbar</p>
+                <p className="mt-1 text-sm text-fg-muted">
+                  {status.data.coveService.available
+                    ? "Der Cove-Katalogdienst ist ausgeschaltet. Schalte ihn unter „Erweitert“ ein oder trage eigene Zugangsdaten ein."
+                    : "Dieser Build enthält keinen Cove-Katalogdienst. Trage unter „Erweitert“ eigene Zugangsdaten ein."}
+                </p>
+              </>
+            )}
+          </div>
+
+          {status.data.sources.length > 0 && (
+            <Group>
+              <SettingRow
+                title="Bibliothek abgleichen"
+                description="Sucht für Spiele ohne Zuordnung den passenden Katalog-Eintrag. Bei Unsicherheit fragt Cove nach."
+              >
+                <Button icon={RefreshCw} disabled={matching} onClick={() => void matchLibrary()}>
+                  Abgleichen
+                </Button>
+              </SettingRow>
+            </Group>
+          )}
+
+          <details className="group" open={status.data.sources.length === 0}>
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-fg [&::-webkit-details-marker]:hidden">
+              <ChevronRight aria-hidden className="text-fg-subtle transition-transform duration-150 ease-out group-open:rotate-90" />
+              Erweitert
+            </summary>
+            <div className="mt-4 flex flex-col gap-6">
+              {settings && (
+                <Group>
+                  <SettingRow
+                    title="Cove-Katalogdienst verwenden"
+                    description={
+                      status.data.coveService.available
+                        ? "Liefert IGDB-Daten ohne eigene Zugangsdaten. Ausgeschaltet nutzt Cove nur deine eigenen Keys."
+                        : "In diesem Build nicht verfügbar."
+                    }
+                  >
+                    <Switch
+                      label="Cove-Katalogdienst verwenden"
+                      checked={settings.catalog.useCoveService && status.data.coveService.available}
+                      disabled={!status.data.coveService.available}
+                      onChange={(useCoveService) => {
+                        save((s) => ({ ...s, catalog: { useCoveService } }));
+                        void queryClient.invalidateQueries({ queryKey: ["catalog"] });
+                      }}
+                    />
+                  </SettingRow>
+                </Group>
+              )}
+              <p className="text-sm text-fg-muted">
+                Eigene Zugangsdaten nutzt Cove, wenn der Cove-Katalogdienst nicht erreichbar oder ausgeschaltet ist. Sie
+                liegen im Schlüsselbund deines Systems und werden hier nie wieder angezeigt.
+              </p>
+              {PROVIDERS.map((p) => (
+                <ProviderCard key={p.id} provider={p} configured={status.data.configured[p.id]} />
+              ))}
+            </div>
+          </details>
+        </div>
+      )}
     </Panel>
   );
 }
@@ -528,7 +768,23 @@ function AboutTab() {
             <p className="num mt-1 text-sm text-fg-muted">
               Version {query.data.appVersion} · {PLATFORM_LABELS[query.data.platform]}
             </p>
-            <p className="mt-3 max-w-md text-sm text-fg-muted">Ein ruhiger Ort für alle deine Spiele – egal aus welchem Store.</p>
+            <p className="mt-3 max-w-md text-sm text-fg-muted">Ein ruhiger Ort für alle deine Spiele, egal aus welchem Store.</p>
+            <p className="mt-3 text-sm text-fg-muted">
+              Game data provided by{" "}
+              <a
+                href={IGDB_URL}
+                className="inline-flex items-center gap-1 text-accent-text underline-offset-2 hover:underline [&_svg]:size-3.5"
+                onClick={(e) => {
+                  e.preventDefault();
+                  api.system.openExternal(IGDB_URL).catch((error: unknown) => {
+                    toast(errorMessage(error), "danger");
+                  });
+                }}
+              >
+                IGDB.com
+                <ExternalLink aria-hidden />
+              </a>
+            </p>
           </div>
           <div>
             <h3 className="mb-3 text-sm font-medium text-fg">Komponenten</h3>
@@ -564,6 +820,7 @@ const PANELS: Record<TabId, () => ReactNode> = {
   appearance: AppearanceTab,
   library: LibraryTab,
   accounts: AccountsTab,
+  catalog: CatalogTab,
   downloads: DownloadsTab,
   plugins: PluginsTab,
   about: AboutTab,

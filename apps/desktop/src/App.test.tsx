@@ -123,3 +123,101 @@ describe("Settings", () => {
     expect(await screen.findByText(/Connector-Service\./)).toBeDefined();
   });
 });
+
+describe("Catalogue", () => {
+  it("shows catalogue games from the core", async () => {
+    renderAt("/catalogue");
+    const list = await screen.findByRole("list", { name: "Spiele" });
+    expect(within(list).getAllByText("Hollow Lantern").length).toBeGreaterThan(0);
+    expect(within(list).getAllByText("Paper Orbit").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Offline")).toBeNull();
+  });
+
+  it("works without own keys through the Cove service", async () => {
+    expect(core.catalog.igdb).toBe(false);
+    renderAt("/catalogue");
+    expect(await screen.findByRole("list", { name: "Spiele" })).toBeDefined();
+  });
+
+  it("explains when no catalogue source is available", async () => {
+    core.catalog.cove = false;
+    renderAt("/catalogue");
+    expect(await screen.findByRole("heading", { name: "Katalog nicht verfügbar" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "Zu den Einstellungen" })).toBeDefined();
+  });
+
+  it("marks cached data shown while offline", async () => {
+    core.catalog.offline = true;
+    renderAt("/catalogue");
+    expect(await screen.findByText("Offline")).toBeDefined();
+  });
+
+  it("links the detail page to the owned library game", async () => {
+    core.library[0] = fakeItem("tidewater", "Tidewater", { catalogId: "igdb-1", matchStatus: "matched" });
+    renderAt("/catalogue/igdb-1");
+    expect(await screen.findByRole("link", { name: /In deiner Bibliothek/ })).toBeDefined();
+    renderAt("/catalogue/igdb-2");
+    expect(await screen.findByRole("button", { name: /Zur Bibliothek hinzufügen/ })).toBeDefined();
+  });
+});
+
+describe("Catalogue matching", () => {
+  it("lets the user confirm one of several suggestions", async () => {
+    core.library[0] = fakeItem("tidewater", "Tidewater", { matchStatus: "pending" });
+    core.candidates.tidewater = [
+      { game: { ...fakeItem("igdb-1", "Tidewater").game, id: "igdb-1" }, score: 0.97 },
+      { game: { ...fakeItem("igdb-9", "Tidewater Remastered").game, id: "igdb-9" }, score: 0.9 },
+    ];
+    renderAt("/library/tidewater");
+    fireEvent.click(await screen.findByRole("button", { name: "Zuordnung prüfen" }));
+    const dialog = await screen.findByRole("dialog", { name: "Katalog-Zuordnung" });
+    expect(await within(dialog).findByText("97 %")).toBeDefined();
+    const [first] = within(dialog).getAllByRole("button", { name: "Zuordnen" });
+    if (!first) throw new Error("no candidate");
+    fireEvent.click(first);
+    await waitFor(() => {
+      expect(core.library[0]?.entry.catalogId).toBe("igdb-1");
+    });
+    expect(await screen.findByText(/zugeordnet, Metadaten und Cover übernommen/)).toBeDefined();
+  });
+});
+
+function firstSaveButton(): HTMLElement {
+  const [button] = screen.getAllByRole("button", { name: "Speichern & prüfen" });
+  if (!button) throw new Error("save button missing");
+  return button;
+}
+
+describe("Catalogue settings", () => {
+  it("shows the Cove service as ready and the fallback order", async () => {
+    renderAt("/settings/catalog");
+    expect(await screen.findByText("Bereit, keine Einrichtung nötig")).toBeDefined();
+    expect(screen.getByText(/Reihenfolge: Cove-Katalogdienst, zuletzt gespeicherte Daten/)).toBeDefined();
+    fireEvent.click(screen.getByRole("switch", { name: "Cove-Katalogdienst verwenden" }));
+    await waitFor(() => {
+      expect(core.settings.catalog.useCoveService).toBe(false);
+    });
+    expect(await screen.findByText("Katalog nicht verfügbar")).toBeDefined();
+  });
+
+  it("verifies own credentials and shows provider errors inline", async () => {
+    renderAt("/settings/catalog");
+    fireEvent.change(await screen.findByLabelText("Client-ID"), { target: { value: "id" } });
+    fireEvent.change(screen.getByLabelText("Client-Secret"), { target: { value: "wrong" } });
+    fireEvent.click(firstSaveButton());
+    expect(await screen.findByText(/Client-ID oder Secret falsch/)).toBeDefined();
+
+    fireEvent.change(screen.getByLabelText("Client-Secret"), { target: { value: "right" } });
+    fireEvent.click(firstSaveButton());
+    expect(await screen.findByText("IGDB verbunden")).toBeDefined();
+    expect(core.catalog.igdb).toBe(true);
+    expect(await screen.findByText(/Cove-Katalogdienst, dann eigene IGDB-Keys/)).toBeDefined();
+  });
+
+  it("credits IGDB in About", async () => {
+    renderAt("/settings/about");
+    const link = await screen.findByRole("link", { name: /IGDB\.com/ });
+    expect(link.getAttribute("href")).toBe("https://www.igdb.com");
+    expect(screen.getByText(/Game data provided by/)).toBeDefined();
+  });
+});

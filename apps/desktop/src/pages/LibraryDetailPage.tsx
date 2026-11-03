@@ -1,8 +1,9 @@
 import type { Achievement, CompatibilityTool, EnvVar, LaunchOptions, LibraryItem } from "@cove/shared";
-import { ArrowLeft, Compass, Library, Lock, Plus, Star, Trash2, Trophy } from "lucide-react";
+import { ArrowLeft, Compass, Library, Link2, Lock, Plus, Star, Trash2, Trophy } from "lucide-react";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api, CoveError } from "../api/index.ts";
+import { MatchDialog } from "../features/MatchDialog.tsx";
 import { GameCover } from "../components/game/GameCover.tsx";
 import { PlayButton } from "../components/game/PlayButton.tsx";
 import { PlaytimeChart } from "../components/game/PlaytimeChart.tsx";
@@ -441,6 +442,7 @@ export function LibraryDetailPage() {
   const query = useQuery(`library/${gameId}`, () => api.library.getLibraryItem(gameId));
   const tabParam = params.get("tab");
   const tab: Tab = TABS.find((t) => t === tabParam) ?? "overview";
+  const [matchOpen, setMatchOpen] = useState(false);
 
   async function toggleFavorite(item: LibraryItem): Promise<void> {
     const favorite = !item.entry.favorite;
@@ -499,12 +501,51 @@ export function LibraryDetailPage() {
                 >
                   {query.data.entry.favorite ? "Favorit" : "Zu Favoriten"}
                 </Button>
-                <ButtonLink to={`/catalogue/${query.data.game.id}`} variant="ghost">
-                  Store-Seite
-                </ButtonLink>
+                {query.data.entry.catalogId && (
+                  <ButtonLink to={`/catalogue/${query.data.entry.catalogId}`} variant="ghost">
+                    Katalog-Seite
+                  </ButtonLink>
+                )}
+                <Button
+                  variant="ghost"
+                  icon={Link2}
+                  onClick={() => {
+                    setMatchOpen(true);
+                  }}
+                >
+                  {query.data.entry.catalogId ? "Zuordnung ändern" : "Im Katalog zuordnen"}
+                </Button>
               </div>
             </div>
           </header>
+
+          {query.data.entry.matchStatus === "pending" && (
+            <div
+              role="status"
+              className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-accent-subtle px-4 py-3"
+            >
+              <p className="text-sm text-fg">
+                Cove hat mehrere mögliche Treffer im Katalog gefunden. Welcher passt zu deinem Spiel?
+              </p>
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  setMatchOpen(true);
+                }}
+              >
+                Zuordnung prüfen
+              </Button>
+            </div>
+          )}
+          <MatchDialog
+            key={`${query.data.game.id}-${String(matchOpen)}`}
+            item={query.data}
+            open={matchOpen}
+            onClose={() => {
+              setMatchOpen(false);
+            }}
+          />
 
           <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="Gesamtspielzeit">{formatPlaytime(query.data.entry.playtimeMinutes)}</Stat>

@@ -44,6 +44,9 @@ pub async fn load(pool: &SqlitePool, defaults: &AppSettings) -> AppResult<AppSet
         downloads: get_json(pool, "downloads")
             .await?
             .unwrap_or_else(|| defaults.downloads.clone()),
+        catalog: get_json(pool, "catalog")
+            .await?
+            .unwrap_or_else(|| defaults.catalog.clone()),
     })
 }
 
@@ -93,6 +96,7 @@ pub async fn save(pool: &SqlitePool, settings: &AppSettings) -> AppResult<()> {
     set_json(pool, "appearance", &settings.appearance).await?;
     set_json(pool, "library", &library).await?;
     set_json(pool, "downloads", &settings.downloads).await?;
+    set_json(pool, "catalog", &settings.catalog).await?;
     Ok(())
 }
 
@@ -100,7 +104,9 @@ pub async fn save(pool: &SqlitePool, settings: &AppSettings) -> AppResult<()> {
 pub(crate) mod tests {
     use super::*;
     use crate::db::open_in_memory;
-    use crate::models::{AppearanceSettings, DownloadSettings, GeneralSettings, LibrarySettings};
+    use crate::models::{
+        AppearanceSettings, CatalogSettings, DownloadSettings, GeneralSettings, LibrarySettings,
+    };
 
     pub(crate) fn defaults() -> AppSettings {
         AppSettings {
@@ -122,6 +128,9 @@ pub(crate) mod tests {
                 directory: "/home/u/Games".into(),
                 bandwidth_limit_bytes_per_second: None,
                 max_concurrent: 1,
+            },
+            catalog: CatalogSettings {
+                use_cove_service: true,
             },
         }
     }

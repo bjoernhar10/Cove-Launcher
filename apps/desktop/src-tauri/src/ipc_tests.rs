@@ -35,6 +35,13 @@ async fn app() -> TestApp {
         ),
         host: HostEnv::detect(tmp.path().join("compat")),
         defaults: default_settings(None),
+        catalog: Arc::new(crate::catalog::CatalogService::new(
+            pool.clone(),
+            Arc::new(crate::catalog::secrets::MemoryStore::default()),
+            tmp.path().join("images"),
+            default_settings(None),
+            crate::catalog::Endpoints::default(),
+        )),
         plugin_dirs: vec![tmp.path().join("plugins")],
         pool,
     };
@@ -158,4 +165,46 @@ async fn settings_and_misc_commands() {
     ] {
         invoke_raw(&app, cmd, args).unwrap_or_else(|e| panic!("{cmd} failed: {e}"));
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn catalog_commands_accept_frontend_payloads() {
+    let app = app().await;
+    let status: Value = invoke(&app, "catalog_status", json!({}));
+    assert_eq!(
+        status["configured"],
+        json!({ "igdb": false, "rawg": false })
+    );
+
+    let browse = invoke_raw(
+        &app,
+        "catalog_browse",
+        json!({ "filter": { "query": "", "genres": ["rpg"], "platforms": ["linux"], "releaseYears": null, "minRating": null }, "sort": "popular", "page": 0 }),
+    )
+    .unwrap_err();
+    assert_eq!(browse["kind"], "catalogNotConfigured");
+
+    let empty: Value = invoke(&app, "catalog_search", json!({ "query": "  " }));
+    assert_eq!(empty["items"], json!([]));
+
+    let creds = invoke_raw(
+        &app,
+        "catalog_set_credentials",
+        json!({ "credentials": { "provider": "igdb", "clientId": "", "clientSecret": "" } }),
+    )
+    .unwrap_err();
+    assert_eq!(creds["kind"], "invalidInput");
+    let _: Value = invoke(
+        &app,
+        "catalog_clear_credentials",
+        json!({ "provider": "rawg" }),
+    );
+    let details =
+        invoke_raw(&app, "catalog_game_details", json!({ "gameId": "igdb-1" })).unwrap_err();
+    assert_eq!(details["kind"], "catalogNotConfigured");
+
+    let candidates: Vec<Value> = invoke(&app, "library_match_candidates", json!({ "gameId": "x" }));
+    assert_eq!(candidates, Vec::<Value>::new());
+    let reject = invoke_raw(&app, "library_reject_match", json!({ "gameId": "x" })).unwrap_err();
+    assert_eq!(reject["kind"], "notInLibrary");
 }

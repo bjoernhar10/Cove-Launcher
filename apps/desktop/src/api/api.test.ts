@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import type { AnySchema } from "ajv";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_SETTINGS, FAKE_SCAN, fakeItem, installFakeCore, type FakeCore } from "../test/fakeCore.ts";
+import { DEFAULT_SETTINGS, FAKE_CATALOG, FAKE_SCAN, fakeItem, installFakeCore, type FakeCore } from "../test/fakeCore.ts";
 import { api, CoveError, DEFAULT_CATALOG_FILTER } from "./index.ts";
 
 const require = createRequire(import.meta.url);
@@ -17,29 +17,12 @@ function expectValid(definition: string, value: unknown): void {
   expect(validate(value), JSON.stringify(validate.errors, null, 2)).toBe(true);
 }
 
-describe("catalogue mock", () => {
-  it("serves ~40 schema-valid games with cursor pagination", async () => {
-    const first = await api.catalog.listCatalog(DEFAULT_CATALOG_FILTER, null);
-    expect(first.total).toBeGreaterThanOrEqual(40);
-    for (const game of first.items) expectValid("Game", game);
-    const second = await api.catalog.listCatalog(DEFAULT_CATALOG_FILTER, first.nextCursor);
-    const ids = new Set([...first.items, ...second.items].map((g) => g.id));
-    expect(ids.size).toBe(first.items.length + second.items.length);
-  });
-
-  it("filters by genre and sorts A–Z", async () => {
-    const page = await api.catalog.listCatalog({ ...DEFAULT_CATALOG_FILTER, genres: ["puzzle"], sort: "title" }, null);
-    expect(page.items.every((g) => g.genres.includes("puzzle"))).toBe(true);
-    const titles = page.items.map((g) => g.title);
-    expect(titles).toEqual([...titles].sort((a, b) => a.localeCompare(b, "de")));
-  });
-});
-
 describe("test fake stays honest", () => {
   it("produces schema-valid core data", () => {
     expectValid("LibraryItem", fakeItem("x", "X"));
     expectValid("AppSettings", DEFAULT_SETTINGS);
     for (const c of FAKE_SCAN) expectValid("ScanCandidate", c);
+    for (const g of FAKE_CATALOG) expectValid("Game", g);
   });
 });
 
@@ -85,12 +68,38 @@ describe("core commands", () => {
     });
   });
 
+  it("sends catalogue filter, sort and page as separate arguments", async () => {
+    const page = await api.catalog.browseCatalog({ ...DEFAULT_CATALOG_FILTER, genres: ["horror"] }, "newest", 2);
+    expectValid("CatalogPage", page);
+    expect(page.items.map((g) => g.title)).toEqual(["Hollow Lantern"]);
+    expect(core.calls.at(-1)).toEqual({
+      command: "catalog_browse",
+      args: { filter: { ...DEFAULT_CATALOG_FILTER, genres: ["horror"] }, sort: "newest", page: 2 },
+    });
+  });
+
+  it("reports a missing catalogue source as its own error kind", async () => {
+    core.catalog.cove = false;
+    const error: unknown = await api.catalog.browseCatalog(DEFAULT_CATALOG_FILTER, "popular", 0).catch((e: unknown) => e);
+    expect((error as CoveError).kind).toBe("catalogNotConfigured");
+    // Home stays usable: catalogue rows are simply empty.
+    expect(await api.home.getRecommendations()).toEqual([]);
+    expect(await api.home.getDiscover()).toEqual([]);
+  });
+
+  it("links library games to catalogue entries", async () => {
+    const item = await api.library.linkCatalog("tidewater", "igdb-1");
+    expect(item.entry.catalogId).toBe("igdb-1");
+    expect(core.calls.at(-1)?.args).toEqual({ gameId: "tidewater", catalogId: "igdb-1" });
+  });
+
   it("builds Home from the real library and the catalogue", async () => {
     const continuePlaying = await api.home.getContinuePlaying();
     expect(continuePlaying.map((i) => i.game.id)).toEqual(["tidewater"]);
+    core.library[0] = fakeItem("tidewater", "Tidewater", { catalogId: "igdb-1", matchStatus: "matched" });
     const recommendations = await api.home.getRecommendations();
-    expect(recommendations.length).toBeGreaterThan(0);
-    expect(recommendations.some((r) => r.game.id === "tidewater")).toBe(false);
+    // Same genre as the owned game ranks first.
+    expect(recommendations.map((r) => r.game.id)).toEqual(["igdb-3", "igdb-2"]);
   });
 });
 

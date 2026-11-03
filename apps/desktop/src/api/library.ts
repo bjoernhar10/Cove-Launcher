@@ -5,8 +5,10 @@ import type {
   GameStateEvent,
   LaunchResult,
   LibraryItem,
+  LibraryMatchEvent,
   LibraryUpdate,
   ManualGameInput,
+  MatchCandidate,
   PlaytimeStats,
   RunningGame,
   ScanCandidate,
@@ -85,4 +87,27 @@ export function listRunningGames(): Promise<RunningGame[]> {
 /** `game-state-changed`: running / stopped. */
 export function subscribeGameState(handler: (event: GameStateEvent) => void): () => void {
   return subscribe("game-state-changed", handler);
+}
+
+/** Catalogue suggestions waiting for the user's decision (`matchStatus: "pending"`). */
+export function getMatchCandidates(gameId: GameId): Promise<MatchCandidate[]> {
+  return call("library_match_candidates", { gameId });
+}
+
+/** Links a library game to a catalogue entry and takes over its metadata and artwork. */
+export function linkCatalog(gameId: GameId, catalogId: string): Promise<LibraryItem> {
+  return call("library_link_catalog", { gameId, catalogId });
+}
+
+export function rejectMatch(gameId: GameId): Promise<LibraryItem> {
+  return call("library_reject_match", { gameId });
+}
+
+/** Runs the automatic catalogue matching again (result arrives as `library-match-changed`). */
+export async function rematch(gameId: GameId): Promise<void> {
+  await call("library_rematch", { gameId });
+}
+
+export function subscribeMatchChanges(handler: (event: LibraryMatchEvent) => void): () => void {
+  return subscribe("library-match-changed", handler);
 }

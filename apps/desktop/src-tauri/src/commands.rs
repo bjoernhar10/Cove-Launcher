@@ -5,17 +5,21 @@ use std::path::Path;
 
 use tauri::{AppHandle, Emitter, Runtime, State};
 
+use crate::catalog::CatalogService;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    AboutInfo, Achievement, AchievementUnlock, AppSettings, ComponentVersion, DownloadItem,
-    DownloadStatus, Game, LaunchResult, LibraryItem, LibraryUpdate, ManualGameInput, Platform,
-    PlaytimeStats, PluginInfo, RunningGame, ScanCandidate, StoreAccount, StoreSource, UserProfile,
+    AboutInfo, Achievement, AchievementUnlock, AppSettings, CatalogCredentials, CatalogFilter,
+    CatalogGameDetails, CatalogPage, CatalogProviderId, CatalogSort, CatalogStatus,
+    ComponentVersion, DownloadItem, DownloadStatus, Game, LaunchResult, LibraryItem,
+    LibraryMatchEvent, LibraryUpdate, ManualGameInput, MatchCandidate, Platform, PlaytimeStats,
+    PluginInfo, RunningGame, ScanCandidate, StoreAccount, StoreSource, UserProfile,
 };
 use crate::state::AppState;
 use crate::{plugins, scanner};
 
 pub const DOWNLOADS_CHANGED: &str = "downloads-changed";
+pub const LIBRARY_MATCH_CHANGED: &str = "library-match-changed";
 
 // ───────────── library ─────────────
 
@@ -280,4 +284,123 @@ pub fn system_about() -> AboutInfo {
         ],
         platform: Platform::current(),
     }
+}
+
+// ───────────── catalogue ─────────────
+
+/// Downloads a game's artwork in the background so it is available offline.
+fn prefetch_images(state: &AppState, game: &Game) {
+    let catalog = state.catalog.clone();
+    let urls = CatalogService::image_urls(game);
+    tauri::async_runtime::spawn(async move { catalog.images.prefetch(&urls).await });
+}
+
+/// Matches a library game against the catalogue in the background and reports the result.
+fn spawn_match<R: Runtime>(app: &AppHandle<R>, state: &AppState, game_id: String) {
+    let catalog = state.catalog.clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        match catalog.match_library_game(&game_id).await {
+            Ok(status) => {
+                let _ = app.emit(LIBRARY_MATCH_CHANGED, LibraryMatchEvent { game_id, status });
+            }
+            Err(error) => {
+                eprintln!("[cove] Katalog-Zuordnung für {game_id} fehlgeschlagen: {error}");
+            }
+        }
+    });
+}
+
+#[tauri::command]
+pub async fn catalog_status(state: State<'_, AppState>) -> AppResult<CatalogStatus> {
+    state.catalog.status().await
+}
+
+#[tauri::command]
+pub async fn catalog_set_credentials(
+    state: State<'_, AppState>,
+    credentials: CatalogCredentials,
+) -> AppResult<CatalogStatus> {
+    state.catalog.set_credentials(credentials).await
+}
+
+#[tauri::command]
+pub async fn catalog_clear_credentials(
+    state: State<'_, AppState>,
+    provider: CatalogProviderId,
+) -> AppResult<CatalogStatus> {
+    state.catalog.clear_credentials(provider).await
+}
+
+#[tauri::command]
+pub async fn catalog_search(state: State<'_, AppState>, query: String) -> AppResult<CatalogPage> {
+    state.catalog.search(&query).await
+}
+
+#[tauri::command]
+pub async fn catalog_browse(
+    state: State<'_, AppState>,
+    filter: CatalogFilter,
+    sort: CatalogSort,
+    page: u32,
+) -> AppResult<CatalogPage> {
+    state.catalog.browse(filter, sort, page).await
+}
+
+#[tauri::command]
+pub async fn catalog_game_details(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<CatalogGameDetails> {
+    let details = state.catalog.details(&game_id).await?;
+    prefetch_images(&state, &details.game);
+    Ok(details)
+}
+
+#[tauri::command]
+pub async fn catalog_similar(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<CatalogPage> {
+    state.catalog.similar(&game_id).await
+}
+
+#[tauri::command]
+pub async fn library_match_candidates(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<Vec<MatchCandidate>> {
+    db::library::candidates(&state.pool, &game_id).await
+}
+
+#[tauri::command]
+pub async fn library_link_catalog(
+    state: State<'_, AppState>,
+    game_id: String,
+    catalog_id: String,
+) -> AppResult<LibraryItem> {
+    let item = state.catalog.link(&game_id, &catalog_id).await?;
+    prefetch_images(&state, &item.game);
+    Ok(item)
+}
+
+#[tauri::command]
+pub async fn library_reject_match(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<LibraryItem> {
+    db::library::reject_match(&state.pool, &game_id).await
+}
+
+/// Runs the automatic matching again (e.g. after the catalogue was set up).
+#[tauri::command]
+pub async fn library_rematch<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<()> {
+    db::library::require(&state.pool, &game_id).await?;
+    db::library::set_match_status(&state.pool, &game_id, crate::models::MatchStatus::None).await?;
+    spawn_match(&app, &state, game_id);
+    Ok(())
 }

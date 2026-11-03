@@ -3,6 +3,7 @@ import { CornerDownLeft, Moon, Plus, Search, Sun, type LucideIcon } from "lucide
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../../api/index.ts";
+import { useDebounced } from "../../hooks/useDebounced.ts";
 import { cx } from "../../lib/cx.ts";
 import { usePreferences } from "../../stores/preferences.ts";
 import { useUi } from "../../stores/ui.ts";
@@ -21,52 +22,38 @@ interface Command {
   run: () => void;
 }
 
-function useDebounced<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setDebounced(value);
-    }, ms);
-    return () => {
-      clearTimeout(t);
-    };
-  }, [value, ms]);
-  return debounced;
-}
-
 function PaletteBody({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const openAddGame = useUi((s) => s.openAddGame);
   const setTheme = usePreferences((s) => s.setTheme);
   const [query, setQuery] = useState("");
   const [games, setGames] = useState<Game[]>([]);
-  const [owned, setOwned] = useState<Set<string>>(new Set());
+  /** Game or catalogue id → library game id. */
+  const [owned, setOwned] = useState<Map<string, string>>(new Map());
   const [activeIndex, setActiveIndex] = useState(0);
-  const debounced = useDebounced(query, 120);
+  const debounced = useDebounced(query, 250);
   const listId = useId();
   const listRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     let cancelled = false;
-    api.library.listLibrary().then(
-      (items) => {
-        if (!cancelled) setOwned(new Set(items.map((i) => i.game.id)));
-      },
-      () => undefined,
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void Promise.all([api.catalog.searchCatalog(debounced), api.library.listLibrary().catch(() => [])]).then(([catalog, library]) => {
+    const catalogHits = debounced.trim().length > 1
+      ? api.catalog.searchCatalog(debounced).then((page) => page.items, () => [])
+      : Promise.resolve([]);
+    void Promise.all([catalogHits, api.library.listLibrary().catch(() => [])]).then(([catalog, library]) => {
       if (cancelled) return;
+      // Catalogue entries linked to a library game open the library page.
+      setOwned(
+        new Map(
+          library.flatMap((i): [string, string][] =>
+            i.entry.catalogId ? [[i.game.id, i.game.id], [i.entry.catalogId, i.game.id]] : [[i.game.id, i.game.id]],
+          ),
+        ),
+      );
       const q = debounced.trim().toLowerCase();
       // Own games first (including manual ones the catalogue does not know), then catalogue hits.
       const own = q ? library.map((i) => i.game).filter((g) => g.title.toLowerCase().includes(q)) : [];
-      const ownIds = new Set(own.map((g) => g.id));
+      const ownIds = new Set(library.flatMap((i) => [i.game.id, i.entry.catalogId ?? ""]));
       setGames([...own, ...catalog.filter((g) => !ownIds.has(g.id))].slice(0, 8));
     });
     return () => {
@@ -87,7 +74,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
           label: game.title,
           hint: owned.has(game.id) ? "In deiner Bibliothek" : "Katalog",
           game,
-          run: go(owned.has(game.id) ? `/library/${game.id}` : `/catalogue/${game.id}`),
+          run: go(owned.has(game.id) ? `/library/${owned.get(game.id) ?? game.id}` : `/catalogue/${game.id}`),
         }))
       : [];
     const nav: Command[] = [...MAIN_NAV, SETTINGS_NAV].map((item) => ({

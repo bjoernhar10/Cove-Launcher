@@ -13,12 +13,13 @@ export default tseslint.config(
       "**/obj/**",
       "**/.venv/**",
       "apps/desktop/src-tauri/gen/**",
+      "**/.wrangler/**",
     ],
   },
 
   // TypeScript (UI + shared): strict, type-aware, no `any`.
   {
-    files: ["apps/desktop/**/*.{ts,tsx}", "packages/shared/**/*.ts"],
+    files: ["apps/desktop/**/*.{ts,tsx}", "packages/shared/**/*.ts", "services/catalog-proxy/**/*.ts"],
     extends: [...tseslint.configs.strictTypeChecked, ...tseslint.configs.stylisticTypeChecked],
     languageOptions: {
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },

@@ -37,7 +37,7 @@ impl StoreSource {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     Windows,
@@ -55,10 +55,39 @@ impl Platform {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Image reference. Remote http(s) URLs are rewritten to the local image cache
+/// (`cove-img://…`) when sent to the UI and restored when received back, so the
+/// database and caches always hold the original URLs.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRef {
     pub url: Option<String>,
     pub alt: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct ImageRefWire {
+    url: Option<String>,
+    alt: String,
+}
+
+impl Serialize for ImageRef {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ImageRefWire {
+            url: crate::catalog::images::proxied(self.url.clone()),
+            alt: self.alt.clone(),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ImageRef {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = ImageRefWire::deserialize(deserializer)?;
+        Ok(Self {
+            url: crate::catalog::images::unproxied(wire.url),
+            alt: wire.alt,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -358,9 +387,10 @@ pub struct DownloadSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CatalogSettings {
-    /// Preferred catalogue source; the other configured one is the fallback.
-    pub provider: CatalogProviderId,
+    /// Use the Cove catalogue proxy (no own API keys needed). On by default.
+    pub use_cove_service: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -387,13 +417,6 @@ impl CatalogProviderId {
         match self {
             Self::Igdb => "igdb",
             Self::Rawg => "rawg",
-        }
-    }
-
-    pub fn other(self) -> Self {
-        match self {
-            Self::Igdb => Self::Rawg,
-            Self::Rawg => Self::Igdb,
         }
     }
 
@@ -444,6 +467,8 @@ pub struct CatalogPage {
     pub has_more: bool,
     /// Total number of matches if the source reports it.
     pub total: Option<i64>,
+    /// True when the provider was unreachable and cached data is shown.
+    pub offline: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -452,6 +477,8 @@ pub struct CatalogGameDetails {
     pub game: Game,
     /// Library game linked to this catalogue entry, if any.
     pub library_game_id: Option<GameId>,
+    /// True when the provider was unreachable and cached data is shown.
+    pub offline: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -460,9 +487,33 @@ pub struct ProvidersConfigured {
     pub rawg: bool,
 }
 
+/// Where catalogue data comes from, in fallback order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CatalogSource {
+    /// Cove catalogue proxy (IGDB data, no keys needed).
+    Cove,
+    /// IGDB with the user's own Twitch keys.
+    Igdb,
+    /// RAWG with the user's own API key.
+    Rawg,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoveServiceStatus {
+    /// This build knows a proxy URL.
+    pub available: bool,
+    /// The user has not switched it off.
+    pub enabled: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CatalogStatus {
-    pub preferred: CatalogProviderId,
+    /// Sources in the order they are tried (empty = catalogue not available).
+    pub sources: Vec<CatalogSource>,
+    pub cove_service: CoveServiceStatus,
+    /// Own credentials stored in the keyring.
     pub configured: ProvidersConfigured,
     /// False after the last request failed for network reasons (cached data is shown).
     pub online: bool,
@@ -473,7 +524,10 @@ pub struct CatalogStatus {
 #[serde(tag = "provider", rename_all = "lowercase")]
 pub enum CatalogCredentials {
     #[serde(rename_all = "camelCase")]
-    Igdb { client_id: String, client_secret: String },
+    Igdb {
+        client_id: String,
+        client_secret: String,
+    },
     #[serde(rename_all = "camelCase")]
     Rawg { api_key: String },
 }

@@ -1,21 +1,27 @@
-import type { CatalogFilter } from "@cove/shared";
+import type { CatalogFilter, CatalogSort } from "@cove/shared";
 import { create } from "zustand";
-import { DEFAULT_CATALOG_FILTER } from "../api/index.ts";
+import { DEFAULT_CATALOG_FILTER, DEFAULT_CATALOG_SORT } from "../api/index.ts";
 
 interface CatalogState {
   filter: CatalogFilter;
+  sort: CatalogSort;
   setFilter: (patch: Partial<CatalogFilter>) => void;
+  setSort: (sort: CatalogSort) => void;
   reset: () => void;
 }
 
 /** Kept outside the page so filters survive a visit to a detail page. */
 export const useCatalogFilter = create<CatalogState>()((set) => ({
   filter: DEFAULT_CATALOG_FILTER,
+  sort: DEFAULT_CATALOG_SORT,
   setFilter: (patch) => {
     set((s) => ({ filter: { ...s.filter, ...patch } }));
   },
+  setSort: (sort) => {
+    set({ sort });
+  },
   reset: () => {
-    set((s) => ({ filter: { ...DEFAULT_CATALOG_FILTER, sort: s.filter.sort } }));
+    set({ filter: DEFAULT_CATALOG_FILTER });
   },
 }));
 

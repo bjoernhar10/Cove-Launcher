@@ -1,6 +1,8 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { LucideProvider } from "lucide-react";
 import { useEffect, useState } from "react";
 import { RouterProvider } from "react-router";
+import { queryClient } from "./lib/queryClient.ts";
 import { createAppRouter } from "./router.tsx";
 import { applyAppearance, usePreferences } from "./stores/preferences.ts";
 
@@ -27,8 +29,10 @@ export function App() {
   useAppearance();
   return (
     // Icons: lucide-react, 18px, stroke 1.75 — set once for the whole app.
-    <LucideProvider size={18} strokeWidth={1.75}>
-      <RouterProvider router={router} />
-    </LucideProvider>
+    <QueryClientProvider client={queryClient}>
+      <LucideProvider size={18} strokeWidth={1.75}>
+        <RouterProvider router={router} />
+      </LucideProvider>
+    </QueryClientProvider>
   );
 }

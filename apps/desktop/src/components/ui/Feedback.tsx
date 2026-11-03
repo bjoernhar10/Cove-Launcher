@@ -1,4 +1,4 @@
-import { CircleAlert, type LucideIcon } from "lucide-react";
+import { CircleAlert, WifiOff, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cx, unlessSet } from "../../lib/cx.ts";
 import { Button } from "./Button.tsx";
@@ -106,6 +106,20 @@ export function Avatar({ name, className }: { name: string; className?: string }
       className={cx("inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-active text-xs font-medium text-fg-muted", className)}
     >
       {initials}
+    </span>
+  );
+}
+
+/** Subtle hint that cached data is shown because the catalogue is unreachable. */
+export function OfflineBadge() {
+  return (
+    <span
+      role="status"
+      title="Der Katalog ist nicht erreichbar. Cove zeigt gespeicherte Daten."
+      className="inline-flex h-5 items-center gap-1 rounded-full border border-border px-2 text-xs text-fg-muted [&_svg]:size-3"
+    >
+      <WifiOff aria-hidden />
+      Offline
     </span>
   );
 }

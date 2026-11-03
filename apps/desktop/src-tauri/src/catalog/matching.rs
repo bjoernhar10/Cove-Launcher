@@ -7,7 +7,7 @@ pub const AUTO_MATCH_SCORE: f64 = 0.95;
 /// … and clearly ahead of the runner-up.
 pub const AUTO_MATCH_MARGIN: f64 = 0.05;
 /// Candidates below this are not worth asking about.
-pub const MIN_CANDIDATE_SCORE: f64 = 0.5;
+pub const MIN_CANDIDATE_SCORE: f64 = 0.55;
 
 const EDITION_SUFFIXES: &[&str] = &[
     "game of the year edition",
@@ -42,14 +42,20 @@ fn roman_to_digit(word: &str) -> Option<&'static str> {
 pub fn normalize(title: &str) -> String {
     let mut lower = title.to_lowercase().replace('&', " and ");
     lower.retain(|c| !matches!(c, '™' | '®' | '©' | '\'' | '’'));
-    let cleaned: String = lower.chars().map(|c| if c.is_alphanumeric() { c } else { ' ' }).collect();
+    let cleaned: String = lower
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect();
     let mut text = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
     for suffix in EDITION_SUFFIXES {
         if let Some(stripped) = text.strip_suffix(suffix) {
             text = stripped.trim_end().to_owned();
         }
     }
-    text.split(' ').map(|w| roman_to_digit(w).unwrap_or(w)).collect::<Vec<_>>().join(" ")
+    text.split(' ')
+        .map(|w| roman_to_digit(w).unwrap_or(w))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Similarity 0–1 of two titles.
@@ -70,7 +76,7 @@ pub fn score(a: &str, b: &str) -> f64 {
 #[derive(Debug, Clone, PartialEq)]
 pub enum MatchDecision {
     /// Confident: apply without asking.
-    Auto(MatchCandidate),
+    Auto(Box<MatchCandidate>),
     /// Ask the user (best first).
     Ask(Vec<MatchCandidate>),
     NoMatch,
@@ -79,15 +85,20 @@ pub enum MatchDecision {
 pub fn decide(title: &str, results: Vec<Game>) -> MatchDecision {
     let mut scored: Vec<MatchCandidate> = results
         .into_iter()
-        .map(|game| MatchCandidate { score: score(title, &game.title), game })
+        .map(|game| MatchCandidate {
+            score: score(title, &game.title),
+            game,
+        })
         .filter(|c| c.score >= MIN_CANDIDATE_SCORE)
         .collect();
     scored.sort_by(|a, b| b.score.total_cmp(&a.score));
     scored.dedup_by(|a, b| a.game.id == b.game.id);
-    let Some(best) = scored.first() else { return MatchDecision::NoMatch };
+    let Some(best) = scored.first() else {
+        return MatchDecision::NoMatch;
+    };
     let runner_up = scored.get(1).map_or(0.0, |c| c.score);
     if best.score >= AUTO_MATCH_SCORE && best.score - runner_up >= AUTO_MATCH_MARGIN {
-        return MatchDecision::Auto(best.clone());
+        return MatchDecision::Auto(Box::new(best.clone()));
     }
     scored.truncate(5);
     MatchDecision::Ask(scored)
@@ -112,8 +123,14 @@ mod tests {
             rating: None,
             popularity: 0,
             artwork: GameArtwork {
-                cover: ImageRef { url: None, alt: String::new() },
-                header: ImageRef { url: None, alt: String::new() },
+                cover: ImageRef {
+                    url: None,
+                    alt: String::new(),
+                },
+                header: ImageRef {
+                    url: None,
+                    alt: String::new(),
+                },
                 screenshots: vec![],
             },
         }
@@ -121,7 +138,10 @@ mod tests {
 
     #[test]
     fn normalizes_titles() {
-        assert_eq!(normalize("The Witcher® 3: Wild Hunt – Game of the Year Edition"), "the witcher 3 wild hunt");
+        assert_eq!(
+            normalize("The Witcher® 3: Wild Hunt – Game of the Year Edition"),
+            "the witcher 3 wild hunt"
+        );
         assert_eq!(normalize("Ember & Oak"), "ember and oak");
         assert_eq!(normalize("Final Fantasy VII"), "final fantasy 7");
         assert_eq!(normalize("Baldur's Gate"), "baldurs gate");
@@ -137,7 +157,10 @@ mod tests {
 
     #[test]
     fn decides_auto_ask_or_none() {
-        let results = vec![game("igdb-2", "Hollow Lantern 2"), game("igdb-1", "Hollow Lantern")];
+        let results = vec![
+            game("igdb-2", "Hollow Lantern 2"),
+            game("igdb-1", "Hollow Lantern"),
+        ];
         match decide("hollow_lantern", results) {
             MatchDecision::Auto(c) => assert_eq!(c.game.id, "igdb-1"),
             other => panic!("expected auto match, got {other:?}"),
@@ -150,6 +173,9 @@ mod tests {
             other => panic!("expected ask, got {other:?}"),
         }
 
-        assert_eq!(decide("Tidewater", vec![game("igdb-3", "Stardew Valley")]), MatchDecision::NoMatch);
+        assert_eq!(
+            decide("Tidewater", vec![game("igdb-3", "Stardew Valley")]),
+            MatchDecision::NoMatch
+        );
     }
 }

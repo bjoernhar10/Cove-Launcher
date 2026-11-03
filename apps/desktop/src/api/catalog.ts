@@ -1,7 +1,13 @@
-import type { CatalogFilter, Game, GameId, Page } from "@cove/shared";
-import { mockCatalog } from "./transport.ts";
-
-export const CATALOG_PAGE_SIZE = 12;
+import type {
+  CatalogCredentials,
+  CatalogFilter,
+  CatalogGameDetails,
+  CatalogPage,
+  CatalogProviderId,
+  CatalogSort,
+  CatalogStatus,
+} from "@cove/shared";
+import { call } from "./transport.ts";
 
 export const DEFAULT_CATALOG_FILTER: CatalogFilter = {
   query: "",
@@ -9,31 +15,36 @@ export const DEFAULT_CATALOG_FILTER: CatalogFilter = {
   platforms: [],
   releaseYears: null,
   minRating: null,
-  sort: "recommended",
 };
 
-// The catalogue is still mocked. Later: invoke("catalog_list", …) via the connectors.
+export const DEFAULT_CATALOG_SORT: CatalogSort = "recommended";
 
-export function listCatalog(filter: CatalogFilter, cursor: string | null): Promise<Page<Game>> {
-  return mockCatalog((c) => c.list(filter, cursor, CATALOG_PAGE_SIZE));
+/** One page (0-based) from IGDB/RAWG — cached by the core for 7 days, stale data when offline. */
+export function browseCatalog(filter: CatalogFilter, sort: CatalogSort, page: number): Promise<CatalogPage> {
+  return call("catalog_browse", { filter, sort, page });
 }
 
-export function getGame(gameId: GameId): Promise<Game> {
-  return mockCatalog((c) => c.get(gameId));
+export function searchCatalog(query: string): Promise<CatalogPage> {
+  return call("catalog_search", { query });
 }
 
-export function getSimilarGames(gameId: GameId): Promise<Game[]> {
-  return mockCatalog((c) => c.similar(gameId));
+export function getCatalogGame(gameId: string): Promise<CatalogGameDetails> {
+  return call("catalog_game_details", { gameId });
 }
 
-export function searchCatalog(query: string): Promise<Game[]> {
-  return mockCatalog((c) => c.search(query));
+export function getSimilarGames(gameId: string): Promise<CatalogPage> {
+  return call("catalog_similar", { gameId });
 }
 
-export function recommendedCatalogGames(): Promise<Game[]> {
-  return mockCatalog((c) => c.recommended());
+export function getCatalogStatus(): Promise<CatalogStatus> {
+  return call("catalog_status", {});
 }
 
-export function newestCatalogGames(): Promise<Game[]> {
-  return mockCatalog((c) => c.newest());
+/** Verifies the credentials with the provider and stores them in the OS keyring. */
+export function setCatalogCredentials(credentials: CatalogCredentials): Promise<CatalogStatus> {
+  return call("catalog_set_credentials", { credentials });
+}
+
+export function clearCatalogCredentials(provider: CatalogProviderId): Promise<CatalogStatus> {
+  return call("catalog_clear_credentials", { provider });
 }
