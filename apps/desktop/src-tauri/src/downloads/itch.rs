@@ -22,7 +22,9 @@ pub struct ItchApi {
     base: String,
 }
 
-fn network(e: &reqwest::Error) -> AppError {
+fn network(e: reqwest::Error) -> AppError {
+    // Download links are signed; keep them out of messages.
+    let e = e.without_url();
     if e.is_timeout() || e.is_connect() {
         AppError::Offline("itch.io ist nicht erreichbar.".into())
     } else {
@@ -70,7 +72,7 @@ impl ItchApi {
             .header("Authorization", key)
             .send()
             .await
-            .map_err(|e| network(&e))?;
+            .map_err(network)?;
         let status = response.status();
         let body: Value = response.json().await.unwrap_or(Value::Null);
         if status.as_u16() == 401 || status.as_u16() == 403 {
@@ -200,7 +202,7 @@ impl ItchApi {
             .get(&data)
             .send()
             .await
-            .map_err(|e| network(&e))?
+            .map_err(network)?
             .json()
             .await
             .map_err(|_| AppError::Itch("Die Seite gehört zu keinem itch.io-Spiel.".into()))?;
@@ -272,7 +274,7 @@ impl ItchApi {
             .header("Authorization", &key)
             .send()
             .await
-            .map_err(|e| network(&e))?;
+            .map_err(network)?;
         if response.status().is_redirection() {
             return response
                 .headers()

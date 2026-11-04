@@ -40,6 +40,8 @@ pub enum ProviderError {
 
 impl From<reqwest::Error> for ProviderError {
     fn from(e: reqwest::Error) -> Self {
+        // Never show the URL: it can hold the user's RAWG key or Twitch client secret.
+        let e = e.without_url();
         if e.is_decode() {
             Self::Decode(e.to_string())
         } else if let Some(status) = e.status() {
@@ -107,6 +109,18 @@ pub fn popularity_from_count(count: f64) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn network_errors_never_contain_the_url() {
+        let error = reqwest::get("http://127.0.0.1:1/games?key=supersecret")
+            .await
+            .unwrap_err();
+        let mapped = super::ProviderError::from(error).to_string();
+        assert!(
+            !mapped.contains("supersecret") && !mapped.contains("127.0.0.1"),
+            "{mapped}"
+        );
+    }
+
     use super::*;
 
     #[test]

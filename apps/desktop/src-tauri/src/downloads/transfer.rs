@@ -45,7 +45,9 @@ pub struct Remote {
     pub file_name: Option<String>,
 }
 
-fn http_error(error: &reqwest::Error) -> AppError {
+fn http_error(error: reqwest::Error) -> AppError {
+    // Signed download links (itch.io) must not end up in messages or logs.
+    let error = error.without_url();
     if error.is_timeout() || error.is_connect() {
         AppError::Offline("Der Server ist nicht erreichbar.".into())
     } else {
@@ -102,7 +104,7 @@ pub async fn probe(client: &reqwest::Client, url: &str) -> AppResult<Remote> {
         .header(ACCEPT_ENCODING, "identity")
         .send()
         .await
-        .map_err(|e| http_error(&e))?;
+        .map_err(http_error)?;
     let status = response.status();
     if !status.is_success() {
         return Err(status_error(status));
@@ -255,7 +257,7 @@ impl Job<'_> {
             .header(ACCEPT_ENCODING, "identity")
             .send();
         let response = tokio::select! {
-            response = request => response.map_err(|e| http_error(&e))?,
+            response = request => response.map_err(http_error)?,
             stop = self.stopped() => return Ok(Some(stop)),
         };
         if response.status() != StatusCode::PARTIAL_CONTENT {
@@ -281,7 +283,7 @@ impl Job<'_> {
                     },
                     stop = self.stopped() => return Ok(Some(stop)),
                 };
-                let bytes = bytes.map_err(|e| http_error(&e))?;
+                let bytes = bytes.map_err(http_error)?;
                 let len = bytes.len() as u64;
                 if written + len > end - start + 1 {
                     return Err(AppError::Download(
@@ -328,7 +330,7 @@ impl Job<'_> {
             .header(ACCEPT_ENCODING, "identity")
             .send();
         let response = tokio::select! {
-            response = request => response.map_err(|e| http_error(&e))?,
+            response = request => response.map_err(http_error)?,
             stop = self.stopped() => return Ok(stop),
         };
         if !response.status().is_success() {
@@ -347,7 +349,7 @@ impl Job<'_> {
                     return Ok(stop);
                 }
             };
-            let bytes = bytes.map_err(|e| http_error(&e))?;
+            let bytes = bytes.map_err(http_error)?;
             self.limiter.acquire(bytes.len() as u64).await;
             file.write_all(&bytes).await?;
             self.progress
@@ -447,6 +449,15 @@ pub(crate) mod tests {
 
     fn client() -> reqwest::Client {
         reqwest::Client::builder().gzip(false).build().unwrap()
+    }
+
+    #[tokio::test]
+    async fn errors_never_contain_the_download_url() {
+        let error = reqwest::get("http://127.0.0.1:1/file.zip?signature=supersecret")
+            .await
+            .unwrap_err();
+        let message = http_error(error).to_string();
+        assert!(!message.contains("supersecret"), "{message}");
     }
 
     #[test]
