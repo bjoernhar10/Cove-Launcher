@@ -796,7 +796,11 @@ mod tests {
             env[0],
             (
                 "STEAM_COMPAT_DATA_PATH".to_owned(),
-                "/data/compat/g".to_owned()
+                // Built with the host's separator (this test also runs on Windows).
+                PathBuf::from("/data/compat")
+                    .join("g")
+                    .to_string_lossy()
+                    .into_owned()
             )
         );
 

@@ -132,7 +132,14 @@ fn invoke_raw(app: &TestApp, cmd: &str, args: Value) -> Result<Value, Value> {
         cmd: cmd.into(),
         callback: CallbackFn(0),
         error: CallbackFn(1),
-        url: "tauri://localhost".parse().unwrap(),
+        // The app's own origin: Windows serves it as http://tauri.localhost.
+        url: if cfg!(windows) {
+            "http://tauri.localhost"
+        } else {
+            "tauri://localhost"
+        }
+        .parse()
+        .unwrap(),
         body: InvokeBody::Json(args),
         headers: tauri::http::HeaderMap::default(),
         invoke_key: INVOKE_KEY.to_string(),
