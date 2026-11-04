@@ -93,3 +93,5 @@ jobs:
           releaseDraft: true
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
+          # The signatures are inside latest.json; no separate .sig downloads.
+          uploadUpdaterSignatures: false
