@@ -54,7 +54,8 @@ export function GameCover({
       <img
         src={url}
         alt={image.alt}
-        className={cx(base, "w-full bg-skeleton object-cover")}
+        // Full width unless the caller sets one (thumbnails, the detail-page cover).
+        className={cx(base, unlessSet(className, ["w-"], "w-full"), "bg-skeleton object-cover")}
         loading="lazy"
         decoding="async"
         onError={() => {

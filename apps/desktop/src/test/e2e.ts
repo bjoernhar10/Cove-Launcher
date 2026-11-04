@@ -8,7 +8,8 @@
  *
  * URL parameters: `?games=2500` seeds a large library, `?theme=dark` forces dark mode.
  */
-import type { CoveEvents, DownloadItem, Genre, LibraryItem, StoreSource } from "@cove/shared";
+import type { CoveEvents, DownloadItem, Game, Genre, LibraryItem, Recommendation, StoreSource } from "@cove/shared";
+import { GENRE_LABELS } from "../lib/labels.ts";
 import { usePreferences } from "../stores/preferences.ts";
 import { emitCoreEvent, fakeDownload, fakeGame, fakeItem, installFakeCore, FAKE_CATALOG } from "./fakeCore.ts";
 
@@ -47,11 +48,64 @@ function demoItem(index: number): LibraryItem {
   return item;
 }
 
+/**
+ * Real catalogue data for the README screenshots (`e2e/screenshots.e2e.ts` fetches it
+ * from the Cove proxy and injects it as `window.__coveDemo`). Without it the tests use
+ * the invented titles above, so they never depend on the network.
+ */
+interface Demo {
+  library: Game[];
+  catalog: Game[];
+  total: number;
+}
+const demo = (window as unknown as { __coveDemo?: Demo }).__coveDemo;
+
+/** Deterministic pseudo-random number 0..1 per game and purpose. */
+function rand(id: string, salt: number): number {
+  let h = salt * 7919;
+  for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return (h % 10_000) / 10_000;
+}
+
+function realItem(game: Game, index: number): LibraryItem {
+  const sources: StoreSource[] = ["steam", "steam", "gog", "epic", "steam", "manual"];
+  const source = sources[index % sources.length] ?? "steam";
+  const installed = index < 6 || rand(game.id, 1) > 0.45;
+  const total = Math.round(rand(game.id, 2) ** 2 * 9000) + 30;
+  const achievements = rand(game.id, 3) > 0.3 ? Math.round(20 + rand(game.id, 4) * 60) : 0;
+  return {
+    game,
+    entry: {
+      ...fakeItem(game.id, game.title).entry,
+      source,
+      storeGameId: source === "manual" ? null : String(100_000 + index),
+      installed,
+      installPath: installed ? `/home/alex/Games/${game.title}` : null,
+      executablePath: installed || source !== "manual" ? `/home/alex/Games/${game.title}/start` : null,
+      installSizeBytes: installed ? Math.round((4 + rand(game.id, 5) * 90) * 1024 ** 3) : null,
+      favorite: index % 5 === 1,
+      playtimeMinutes: total,
+      lastPlayedAt: new Date(Date.UTC(2026, 10, 4, 19) - index ** 1.6 * 3_600_000 * 9).toISOString(),
+      achievements: { unlocked: Math.round(achievements * rand(game.id, 6)), total: achievements },
+      catalogId: game.id,
+      matchStatus: "matched",
+    },
+  };
+}
+
 const params = new URLSearchParams(window.location.search);
 const count = Number(params.get("games") ?? TITLES.length);
-const core = installFakeCore(Array.from({ length: count }, (_, i) => demoItem(i)));
+const core = installFakeCore(demo ? demo.library.map(realItem) : Array.from({ length: count }, (_, i) => demoItem(i)));
 core.coveAchievements = core.coveAchievements.map((a, i) => ({ ...a, unlockedAt: i === 0 ? "2026-11-02T18:00:00Z" : a.unlockedAt }));
-FAKE_CATALOG.push(...Array.from({ length: 21 }, (_, i) => ({ ...demoItem(i + 3).game, id: `igdb-${String(i + 10)}` })));
+if (demo) {
+  FAKE_CATALOG.splice(0, FAKE_CATALOG.length, ...demo.catalog);
+  const games = (store: StoreSource) => core.library.filter((i) => i.entry.source === store).length;
+  const synced = "2026-11-04T18:42:00Z";
+  for (const store of ["steam", "gog", "epic"] as const) {
+    Object.assign(core.accounts[store], { status: "connected", connected: true, accountName: "alex", gameCount: games(store), lastSyncedAt: synced });
+  }
+}
+else FAKE_CATALOG.push(...Array.from({ length: 21 }, (_, i) => ({ ...demoItem(i + 3).game, id: `igdb-${String(i + 10)}` })));
 
 const theme = params.get("theme");
 if (theme === "dark" || theme === "light") {
@@ -110,7 +164,63 @@ function simulateDownload(item: DownloadItem): void {
   }, 250);
 }
 
+/** Answers that make the screenshots look like a real profile (demo mode only). */
+function demoAnswer(command: string, args: Record<string, unknown> | undefined): { value: unknown } | null {
+  if (!demo) return null;
+  const owned = new Set(core.library.map((i) => i.game.id));
+  const fresh = demo.catalog.filter((g) => !owned.has(g.id));
+  const favourite = [...core.library].sort((a, b) => b.entry.playtimeMinutes - a.entry.playtimeMinutes)[0];
+  const limit = Number(args?.limit ?? 12);
+  switch (command) {
+    case "system_profile":
+      return { value: { id: "local", displayName: "Alex", avatarUrl: null } };
+    case "recommendations_for_user":
+      return {
+        value: fresh.slice(0, limit).map((game, i): Recommendation => {
+          const anchor = core.library[(i * 3) % core.library.length];
+          return {
+            game,
+            score: 1 - i / 20,
+            reason: i % 2 === 0 && anchor ? `Ähnlich wie ${anchor.game.title}` : `Weil du gern ${GENRE_LABELS[game.genres[0] ?? "adventure"]} spielst`,
+          };
+        }),
+      };
+    case "recommendations_discover":
+      return {
+        value: fresh.slice(limit, limit * 2).map((game, i): Recommendation => ({ game, score: 0.5 - i / 40, reason: `Neu für dich: ${GENRE_LABELS[game.genres[0] ?? "adventure"]}` })),
+      };
+    case "catalog_browse": {
+      const page = Number(args?.page ?? 0);
+      const items = demo.catalog.slice(page * 24, page * 24 + 24);
+      const reasons = Object.fromEntries(
+        items.map((g, i) => {
+          const anchor = core.library[(i * 5 + 2) % core.library.length] ?? favourite;
+          return [g.id, i % 3 === 1 ? `Beliebt bei ${GENRE_LABELS[g.genres[0] ?? "adventure"]}` : `Ähnlich wie ${anchor?.game.title ?? ""}`];
+        }),
+      );
+      const sort = (args?.sort as string | undefined) ?? "recommended";
+      return {
+        value: { items, page, hasMore: (page + 1) * 24 < demo.catalog.length, total: demo.total, offline: false, reasons: sort === "recommended" ? reasons : {} },
+      };
+    }
+    case "library_playtime": {
+      const gameId = String(args?.gameId);
+      const days = Array.from({ length: 14 }, (_, i) => ({
+        date: new Date(Date.UTC(2026, 9, 22 + i)).toISOString().slice(0, 10),
+        minutes: rand(gameId, 20 + i) > 0.55 ? Math.round(20 + rand(gameId, 40 + i) * 160) : 0,
+      }));
+      const recent = days.reduce((sum, d) => sum + d.minutes, 0);
+      const total = core.library.find((i) => i.game.id === gameId)?.entry.playtimeMinutes ?? recent;
+      return { value: { gameId, totalMinutes: Math.max(total, recent), last14DaysMinutes: recent, sessionCount: 12 + Math.round(rand(gameId, 9) * 80), days } };
+    }
+    default:
+      return null;
+  }
+}
+
 internals.invoke = async (command, args, options) => {
+  const answer = demoAnswer(command, args);
+  if (answer) return structuredClone(answer.value);
   if (command === "game_launch") {
     const gameId = String(args?.gameId);
     const startedAt = new Date().toISOString();

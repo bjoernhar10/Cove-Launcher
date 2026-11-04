@@ -13,7 +13,7 @@ playtime and achievements. No ads, no social feed, no accounts of its own.
 | ![Catalogue (dark)](docs/screenshots/catalogue-dark.png) | ![Downloads (light)](docs/screenshots/downloads-light.png) |
 
 > Status: early development (0.1). Everything below works; expect rough edges.
-> The screenshots show demo data with Cove's built-in placeholder artwork.
+> The screenshots show the real app with game data from IGDB and an example profile.
 
 ## Features
 
