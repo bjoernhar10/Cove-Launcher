@@ -21,9 +21,10 @@ use crate::models::{
 };
 use crate::models::{
     DirectDownloadInput, ItchGame, ItchStatus, ItchUpload, PluginGameInput, PluginManifestPreview,
-    PluginPermission,
+    PluginPermission, ServiceStatus, UpdateCheck,
 };
 use crate::scanner;
+use crate::sidecar::SidecarStatus;
 use crate::state::AppState;
 use crate::stores::login::{self, LOGIN_FINISHED};
 use crate::stores::ProgressFn;
@@ -462,26 +463,52 @@ pub fn system_profile() -> UserProfile {
 }
 
 #[tauri::command]
-pub fn system_about() -> AboutInfo {
+pub fn system_about(state: State<'_, AppState>) -> AboutInfo {
+    about(state.recommender.status(), state.stores.connector_status())
+}
+
+/// Version and service health for Settings → Über Cove. Never starts a sidecar.
+pub fn about(recommender: SidecarStatus, connectors: SidecarStatus) -> AboutInfo {
     let version = env!("CARGO_PKG_VERSION").to_owned();
+    let status = |s: SidecarStatus| match s {
+        SidecarStatus::Running => ServiceStatus::Running,
+        SidecarStatus::Idle => ServiceStatus::Idle,
+        SidecarStatus::Unavailable => ServiceStatus::Unavailable,
+        SidecarStatus::NotInstalled => ServiceStatus::NotInstalled,
+    };
     AboutInfo {
         app_version: version.clone(),
         components: vec![
             ComponentVersion {
                 name: "core".into(),
-                version,
+                version: version.clone(),
+                status: ServiceStatus::Running,
             },
             ComponentVersion {
                 name: "connectors".into(),
-                version: "nicht gestartet".into(),
+                version: version.clone(),
+                status: status(connectors),
             },
             ComponentVersion {
                 name: "recommender".into(),
-                version: "nicht gestartet".into(),
+                version,
+                status: status(recommender),
             },
         ],
         platform: Platform::current(),
     }
+}
+
+// ───────────── updates ─────────────
+
+#[tauri::command]
+pub async fn updates_check<R: Runtime>(app: AppHandle<R>) -> AppResult<UpdateCheck> {
+    crate::updates::check(&app).await
+}
+
+#[tauri::command]
+pub async fn updates_install<R: Runtime>(app: AppHandle<R>) -> AppResult<()> {
+    crate::updates::install(&app).await
 }
 
 // ───────────── catalogue ─────────────

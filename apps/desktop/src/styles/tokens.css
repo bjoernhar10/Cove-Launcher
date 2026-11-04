@@ -20,9 +20,11 @@
   --cove-skeleton: #ececef;
   --cove-border: #e6e6e9;
   --cove-border-strong: #d4d4d9;
+  /* Input outlines: at least 3:1 against the background (WCAG 1.4.11). */
+  --cove-border-input: #8e8e93;
   --cove-fg: #18181b;
-  --cove-fg-muted: #5c5c66;
-  --cove-fg-subtle: #85858f;
+  --cove-fg-muted: #50505a;
+  --cove-fg-subtle: #6a6a72;
   --cove-danger: #b0443b;
   --cove-danger-subtle: #fbeeec;
   --cove-overlay: rgb(24 24 27 / 0.36);
@@ -30,7 +32,7 @@
   /* Accent — default: muted blue */
   --cove-accent: #3b6fd8;
   --cove-accent-hover: #3363c4;
-  --cove-accent-text: #3b6fd8;
+  --cove-accent-text: #3666c7;
   --cove-accent-subtle: #edf2fc;
   --cove-on-accent: #ffffff;
 
@@ -72,9 +74,10 @@
     --cove-skeleton: #27272b;
     --cove-border: #2c2c31;
     --cove-border-strong: #3a3a41;
+    --cove-border-input: #6c6c72;
     --cove-fg: #ededef;
-    --cove-fg-muted: #a3a3ad;
-    --cove-fg-subtle: #75757f;
+    --cove-fg-muted: #b0b0b9;
+    --cove-fg-subtle: #93939b;
     color-scheme: dark;
   }
 }
@@ -90,13 +93,13 @@
   --cove-border: #2c2c31;
   --cove-border-strong: #3a3a41;
   --cove-fg: #ededef;
-  --cove-fg-muted: #a3a3ad;
-  --cove-fg-subtle: #75757f;
+  --cove-fg-muted: #b0b0b9;
+  --cove-fg-subtle: #93939b;
   --cove-danger: #e07a70;
   --cove-danger-subtle: #3a2523;
   --cove-overlay: rgb(0 0 0 / 0.5);
 
-  --cove-accent: #4774d6;
+  --cove-accent: #4673d4;
   --cove-accent-hover: #5682de;
   --cove-accent-text: #86a7ec;
   --cove-accent-subtle: #1f2940;
@@ -119,19 +122,20 @@
   --cove-tone-8-fg: #d8d5bd;
 
   color-scheme: dark;
+  --cove-border-input: #6c6c72;
 }
 
 /* Accent options (Settings → Aussehen). All muted; one is active at a time. */
 :root[data-accent="teal"] {
   --cove-accent: #2b7a84;
   --cove-accent-hover: #256c75;
-  --cove-accent-text: #2b7a84;
+  --cove-accent-text: #29747d;
   --cove-accent-subtle: #e8f2f3;
 }
 :root[data-accent="sage"] {
   --cove-accent: #4b7a57;
   --cove-accent-hover: #426c4d;
-  --cove-accent-text: #4b7a57;
+  --cove-accent-text: #477453;
   --cove-accent-subtle: #ecf3ee;
 }
 :root[data-accent="plum"] {
@@ -143,7 +147,7 @@
 :root[data-accent="clay"] {
   --cove-accent: #a95b39;
   --cove-accent-hover: #984f30;
-  --cove-accent-text: #a95b39;
+  --cove-accent-text: #a15636;
   --cove-accent-subtle: #faefea;
 }
 :root[data-theme="dark"][data-accent="teal"] {

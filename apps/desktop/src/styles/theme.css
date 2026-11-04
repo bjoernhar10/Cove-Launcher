@@ -63,6 +63,7 @@
   --color-skeleton: var(--cove-skeleton);
   --color-border: var(--cove-border);
   --color-border-strong: var(--cove-border-strong);
+  --color-border-input: var(--cove-border-input);
   --color-fg: var(--cove-fg);
   --color-fg-muted: var(--cove-fg-muted);
   --color-fg-subtle: var(--cove-fg-subtle);

@@ -121,7 +121,34 @@ async fn core_responses_match_shared_schema() {
         .unwrap();
     assert_valid("AppSettings", &settings);
     assert_valid("UserProfile", &crate::commands::system_profile());
-    assert_valid("AboutInfo", &crate::commands::system_about());
+    for status in [
+        crate::sidecar::SidecarStatus::Running,
+        crate::sidecar::SidecarStatus::Idle,
+        crate::sidecar::SidecarStatus::Unavailable,
+        crate::sidecar::SidecarStatus::NotInstalled,
+    ] {
+        assert_valid("AboutInfo", &crate::commands::about(status, status));
+    }
+    assert_valid(
+        "UpdateCheck",
+        &crate::models::UpdateCheck {
+            current_version: "0.1.0".into(),
+            available: Some(crate::models::UpdateInfo {
+                version: "0.2.0".into(),
+                notes: Some("Neu".into()),
+                date: None,
+            }),
+            can_install: false,
+            install_hint: Some("Paketverwaltung".into()),
+        },
+    );
+    assert_valid(
+        "UpdateProgress",
+        &crate::models::UpdateProgress {
+            downloaded_bytes: 1,
+            total_bytes: None,
+        },
+    );
     assert_valid(
         "ScanCandidate",
         &ScanCandidate {

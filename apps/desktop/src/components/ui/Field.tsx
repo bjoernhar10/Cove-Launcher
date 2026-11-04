@@ -3,8 +3,8 @@ import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttribu
 import { cx, unlessSet } from "../../lib/cx.ts";
 
 const CONTROL =
-  "h-9 rounded-md border border-border bg-surface px-3 text-sm text-fg placeholder:text-fg-subtle " +
-  "transition-colors duration-150 ease-out hover:border-border-strong focus-visible:border-accent focus-visible:outline-offset-0 " +
+  "h-9 rounded-md border border-border-input bg-surface px-3 text-sm text-fg placeholder:text-fg-subtle " +
+  "transition-colors duration-150 ease-out hover:border-fg-subtle focus-visible:border-accent focus-visible:outline-offset-0 " +
   "disabled:opacity-50 aria-invalid:border-danger";
 
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
@@ -41,7 +41,7 @@ export function Select<T extends string>({ value, options, onChange, className, 
           </option>
         ))}
       </select>
-      <ChevronDown className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-fg-subtle" aria-hidden />
+      <ChevronDown className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-fg-subtle" aria-hidden />
     </div>
   );
 }
@@ -59,7 +59,7 @@ export function Field({ label, description, error, children }: FieldProps) {
   const helpId = `${id}-help`;
   const help = error ?? description;
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <label htmlFor={id} className="text-sm font-medium text-fg">
         {label}
       </label>
@@ -95,7 +95,7 @@ export function Switch({ checked, onChange, label, disabled = false, id }: Switc
       }}
       className={cx(
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 ease-out disabled:opacity-50",
-        checked ? "bg-accent" : "bg-border-strong",
+        checked ? "bg-accent" : "bg-border-input",
       )}
     >
       <span
@@ -115,7 +115,7 @@ export function SettingRow({ title, description, children }: { title: string; de
     <div className="flex items-center justify-between gap-8 py-4">
       <div className="min-w-0">
         <p className="text-sm font-medium text-fg">{title}</p>
-        {description && <p className="mt-0.5 text-sm text-fg-muted">{description}</p>}
+        {description && <p className="mt-1 text-sm text-fg-muted">{description}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>

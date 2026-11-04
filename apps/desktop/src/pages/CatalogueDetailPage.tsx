@@ -216,7 +216,7 @@ export function CatalogueDetailPage() {
               <dl className="m-0 rounded-lg border border-border px-4">
                 <Fact label="Genres">
                   {game.genres.length > 0 ? (
-                    <span className="flex flex-wrap gap-1.5 pt-0.5">
+                    <span className="flex flex-wrap gap-2 pt-1">
                       {game.genres.map((g) => (
                         <Badge key={g}>{GENRE_LABELS[g]}</Badge>
                       ))}

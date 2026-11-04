@@ -235,6 +235,49 @@ describe("Catalogue settings", () => {
   });
 });
 
+describe("About and updates", () => {
+  it("shows which services run and what is off without them", async () => {
+    core.recommender = false;
+    renderAt("/settings/about");
+    expect(await screen.findByText("Nicht verfügbar")).toBeDefined();
+    expect(screen.getByText(/einfache Vorschläge statt persönlicher Empfehlungen/)).toBeDefined();
+    expect(screen.getByText("Startet bei Bedarf")).toBeDefined();
+  });
+
+  it("says when Cove is up to date", async () => {
+    renderAt("/settings/about");
+    fireEvent.click(await screen.findByRole("button", { name: "Nach Updates suchen" }));
+    expect(await screen.findByText("Cove ist auf dem neuesten Stand.")).toBeDefined();
+  });
+
+  it("installs an available update", async () => {
+    core.update = { version: "0.2.0", notes: "Ruhiger und schneller.", date: null };
+    renderAt("/settings/about");
+    fireEvent.click(await screen.findByRole("button", { name: "Nach Updates suchen" }));
+    expect(await screen.findByText(/ist verfügbar/)).toBeDefined();
+    expect(screen.getByText("Ruhiger und schneller.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Installieren und neu starten" }));
+    await waitFor(() => {
+      expect(core.updateInstalled).toBe(true);
+    });
+  });
+});
+
+describe("Errors", () => {
+  it("never shows technical exception text", async () => {
+    const { errorMessage } = await import("./stores/toasts.ts");
+    const quiet = console.error;
+    console.error = () => undefined;
+    try {
+      expect(errorMessage(new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe(
+        "Da ist etwas schiefgelaufen. Versuch es noch einmal.",
+      );
+    } finally {
+      console.error = quiet;
+    }
+  });
+});
+
 describe("Recommendations", () => {
   it("shows recommender reasons on Home", async () => {
     renderAt("/");

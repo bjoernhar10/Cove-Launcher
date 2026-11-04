@@ -21,7 +21,7 @@ use crate::models::{
     AchievementsSyncSummary, GameId, ImportSummary, LocalStoreGame, StoreAccount, StoreProblem,
     StoreProblemKind, StoreSource, SyncPhase, SyncProgress,
 };
-use crate::sidecar::{RpcError, Sidecar, SidecarErrors};
+use crate::sidecar::{RpcError, Sidecar, SidecarErrors, SidecarStatus};
 
 /// Refresh tokens this long before they expire.
 const REFRESH_MARGIN: chrono::TimeDelta = chrono::TimeDelta::minutes(5);
@@ -109,12 +109,21 @@ struct StoreAchievement {
 #[async_trait]
 pub trait ConnectorRpc: Send + Sync {
     async fn call(&self, method: &str, params: Value) -> AppResult<Value>;
+
+    /// Health for Settings → Über Cove.
+    fn status(&self) -> SidecarStatus {
+        SidecarStatus::Idle
+    }
 }
 
 #[async_trait]
 impl ConnectorRpc for Sidecar {
     async fn call(&self, method: &str, params: Value) -> AppResult<Value> {
         Sidecar::call(self, method, params).await
+    }
+
+    fn status(&self) -> SidecarStatus {
+        Sidecar::status(self)
     }
 }
 
@@ -191,6 +200,10 @@ impl StoreService {
     #[cfg(test)]
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
+    }
+
+    pub fn connector_status(&self) -> SidecarStatus {
+        self.rpc.status()
     }
 
     pub async fn list(&self) -> AppResult<Vec<StoreAccount>> {
@@ -349,7 +362,7 @@ impl StoreService {
         };
         let problem = StoreProblem {
             kind,
-            message: error.to_string(),
+            message: error.user_message(),
             help_url: help_url(error),
         };
         db::sources::set_problem(&self.pool, store, Some(&problem)).await

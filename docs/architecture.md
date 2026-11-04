@@ -44,8 +44,15 @@ hooks/       useCatalog (TanStack Query), useQuery, useHotkey, useHistoryNav, us
 components/  ui/ (primitives), layout/ (shell, sidebar, topbar/title bar, command palette), game/
 pages/       Home, Catalogue (+detail), Library (+detail), Downloads, Settings
 styles/      tokens.css (raw values) + theme.css (Tailwind v4 theme)
-test/        Fake core for UI tests (Tauri mockIPC)
+test/        Fake core for UI tests (Tauri mockIPC); e2e.ts = Playwright entry with live core behaviour
 ```
+
+- Large lists: `components/game/VirtualGrid.tsx` and `hooks/useMainVirtualizer.ts` render only the rows
+  near the viewport of `#main` (TanStack Virtual). Short lists render plainly. The list view of the
+  library uses spacer rows inside the table.
+- Code splitting: Home and Library are in the start bundle, every other page is a lazy route.
+- Errors: `RouteError` replaces React Router's developer screen; `errorMessage()` only shows texts
+  written for people (from the core or `UserFacingError`).
 
 - Routing: `createHashRouter`, behaves the same in the browser and under Tauri.
 - Custom title bar: `decorations: false`. The topbar is the drag region (`data-tauri-drag-region`),
@@ -218,7 +225,22 @@ Launch arguments are split shell-style (shlex); user environment variables overr
 - Plugin achievements are stored per plugin and evaluated by the same engine as Cove's own ones; they only
   count while the plugin is active.
 
+## Resilience and updates
+
+- `AppError::user_message` is what the UI sees. Internal errors (SQLite, I/O, JSON, keyring) are
+  logged with their details and shown as a plain sentence.
+- Sidecars start on first use and are restarted after a crash (at most three starts per minute).
+  When one cannot run, only its features are off: Home falls back to a simple ranking, store
+  sign-in and sync report that the connector service is unavailable. `system_about` reports each
+  sidecar's `ServiceStatus` without starting it.
+- If the database cannot be opened at start, Cove hides the window, shows a native dialog with the
+  data folder and exits instead of panicking.
+- Updates: `updates.rs` wraps the Tauri updater. `latest.json` comes from the GitHub release;
+  packages are verified with the public key in `tauri.conf.json` before they are installed. Only
+  Windows and the AppImage update themselves; `.deb`/`.rpm` installs get a hint instead.
+
 ## Open points
 
 - Playtime tracking on Windows via Job Objects instead of polling
 - Plugins: zip/URL install and update checks
+- E2E tests against the real Tauri app (WebDriver via `tauri-driver`); Playwright cannot drive the webview

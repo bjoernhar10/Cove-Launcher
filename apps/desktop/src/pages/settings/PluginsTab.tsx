@@ -21,7 +21,7 @@ function PermissionList({ permissions }: { permissions: PluginPermission[] }) {
     <ul className="flex flex-col gap-3">
       {permissions.map((p) => (
         <li key={p} className="flex gap-3">
-          <ShieldCheck aria-hidden className="mt-0.5 shrink-0 text-fg-subtle" />
+          <ShieldCheck aria-hidden className="mt-1 shrink-0 text-fg-subtle" />
           <div>
             <p className="text-sm font-medium text-fg">{PERMISSION_LABELS[p].title}</p>
             <p className="text-sm text-fg-muted">{PERMISSION_LABELS[p].description}</p>
@@ -186,7 +186,7 @@ function PluginRow({ plugin, onChanged, onReview }: { plugin: PluginInfo; onChan
           <p className="text-sm font-medium text-fg">
             {plugin.name} {plugin.version && <span className="num ml-1 text-xs font-normal text-fg-subtle">v{plugin.version}</span>}
           </p>
-          {plugin.description && <p className="mt-0.5 text-sm text-fg-muted">{plugin.description}</p>}
+          {plugin.description && <p className="mt-1 text-sm text-fg-muted">{plugin.description}</p>}
           <p className={plugin.status === "invalid" ? "mt-1 text-xs text-danger" : "mt-1 text-xs text-fg-subtle"}>
             {plugin.status === "invalid" ? plugin.error : `${STATUS_TEXT[plugin.status]} · von ${plugin.author}`}
           </p>
@@ -229,7 +229,7 @@ function PluginRow({ plugin, onChanged, onReview }: { plugin: PluginInfo; onChan
             }}
           >
             Berechtigungen ({plugin.permissions.length})
-            <ChevronDown aria-hidden className={open ? "size-3.5 rotate-180 transition-transform duration-150" : "size-3.5 transition-transform duration-150"} />
+            <ChevronDown aria-hidden className={open ? "rotate-180 transition-transform duration-150 ease-out" : "transition-transform duration-150 ease-out"} />
           </button>
           {open && (
             <div className="mt-3">

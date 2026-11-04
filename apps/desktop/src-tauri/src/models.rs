@@ -571,6 +571,17 @@ pub struct PluginGameInput {
 pub struct ComponentVersion {
     pub name: String,
     pub version: String,
+    pub status: ServiceStatus,
+}
+
+/// Health of a component (sidecars start on first use).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ServiceStatus {
+    Running,
+    Idle,
+    Unavailable,
+    NotInstalled,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -962,4 +973,32 @@ pub struct ItchUpload {
     pub file_name: String,
     pub size_bytes: Option<i64>,
     pub platforms: Vec<Platform>,
+}
+
+// ───────────── updates ─────────────
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub version: String,
+    pub notes: Option<String>,
+    pub date: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCheck {
+    pub current_version: String,
+    /// `None` when Cove is up to date.
+    pub available: Option<UpdateInfo>,
+    /// `false` for `.deb`/`.rpm` installs: the package manager updates those.
+    pub can_install: bool,
+    pub install_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProgress {
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
 }

@@ -51,7 +51,7 @@ export function Popover({ label, value, active = false, children, align = "start
           setOpen((o) => !o);
         }}
         className={cx(
-          "inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm transition-colors duration-150 ease-out",
+          "inline-flex h-8 items-center gap-2 rounded-md border px-3 text-sm transition-colors duration-150 ease-out",
           active ? "border-border-strong bg-active text-fg" : "border-border bg-surface text-fg-muted hover:bg-hover hover:text-fg",
         )}
       >
@@ -84,7 +84,7 @@ interface CheckOptionProps {
 
 export function CheckOption({ label, checked, onChange }: CheckOptionProps) {
   return (
-    <label className="flex h-8 cursor-pointer items-center gap-2.5 rounded-md px-2 text-sm text-fg hover:bg-hover">
+    <label className="flex h-8 cursor-pointer items-center gap-3 rounded-md px-2 text-sm text-fg hover:bg-hover">
       <input
         type="checkbox"
         className="size-4"
@@ -107,7 +107,7 @@ interface RadioOptionProps {
 
 export function RadioOption({ name, label, checked, onSelect }: RadioOptionProps) {
   return (
-    <label className="flex h-8 cursor-pointer items-center gap-2.5 rounded-md px-2 text-sm text-fg hover:bg-hover">
+    <label className="flex h-8 cursor-pointer items-center gap-3 rounded-md px-2 text-sm text-fg hover:bg-hover">
       <input type="radio" name={name} className="size-4" checked={checked} onChange={onSelect} />
       {label}
     </label>

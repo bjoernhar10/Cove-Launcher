@@ -20,6 +20,7 @@ import type {
   Game,
   LibraryItem,
   ScanCandidate,
+  UpdateInfo,
 } from "@cove/shared";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 
@@ -133,6 +134,9 @@ export interface FakeCore {
   plugins: PluginInfo[];
   pluginStorage: Record<string, Record<string, unknown>>;
   pluginAchievements: Record<string, unknown[]>;
+  /** What `updates_check` reports; `null` = up to date. */
+  update: UpdateInfo | null;
+  updateInstalled: boolean;
 }
 
 export function fakePlugin(id: string, overrides: Partial<PluginInfo> = {}): PluginInfo {
@@ -197,6 +201,8 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     plugins: [],
     pluginStorage: {},
     pluginAchievements: {},
+    update: null,
+    updateInstalled: false,
   };
   const plugin = (id: string) => core.plugins.find((p) => p.id === id) ?? reject("invalidInput", `Plugin nicht gefunden: ${id}`);
   const activate = (p: PluginInfo, enabled: boolean) => {
@@ -431,7 +437,21 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     downloads_reorder: () => null,
     downloads_clear_history: () => null,
     system_profile: () => ({ id: "local", displayName: "Testperson", avatarUrl: null }),
-    system_about: () => ({ appVersion: "0.1.0", platform: "linux", components: [{ name: "core", version: "0.1.0" }] }),
+    system_about: () => ({
+      appVersion: "0.1.0",
+      platform: "linux",
+      components: [
+        { name: "core", version: "0.1.0", status: "running" },
+        { name: "connectors", version: "0.1.0", status: "idle" },
+        { name: "recommender", version: "0.1.0", status: core.recommender ? "running" : "unavailable" },
+      ],
+    }),
+    updates_check: () => ({ currentVersion: "0.1.0", available: core.update, canInstall: true, installHint: null }),
+    updates_install: () => {
+      if (!core.update) reject("update", "Cove ist bereits auf dem neuesten Stand.");
+      core.updateInstalled = true;
+      return null;
+    },
     catalog_status: () => {
       const cove = core.catalog.cove && core.settings.catalog.useCoveService;
       return {

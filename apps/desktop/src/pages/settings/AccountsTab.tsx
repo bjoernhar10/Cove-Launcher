@@ -263,7 +263,7 @@ function AccountRow({
           <p className="num text-xs text-fg-muted" role="status">
             {PHASE_LABELS[progress.phase]} · {progress.done} / {progress.total}
           </p>
-          <ProgressBar value={progress.done} max={progress.total} label={PHASE_LABELS[progress.phase]} className="mt-1.5" />
+          <ProgressBar value={progress.done} max={progress.total} label={PHASE_LABELS[progress.phase]} className="mt-2" />
         </div>
       )}
     </li>

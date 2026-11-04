@@ -18,7 +18,7 @@ export function AchievementMeter({ progress, className }: { progress: Achievemen
         value={progress.unlocked}
         max={progress.total}
         label={`${String(progress.unlocked)} von ${String(progress.total)} Achievements`}
-        className="mt-1.5"
+        className="mt-2"
       />
     </div>
   );

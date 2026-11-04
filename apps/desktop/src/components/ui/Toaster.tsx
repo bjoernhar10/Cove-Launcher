@@ -18,8 +18,8 @@ export function Toaster() {
             t.tone === "danger" ? "text-danger" : "text-fg",
           )}
         >
-          {t.kind === "achievement" && <Trophy aria-hidden className="mt-0.5 shrink-0 text-accent-text" />}
-          <div className="min-w-0 flex-1 pt-0.5">
+          {t.kind === "achievement" && <Trophy aria-hidden className="mt-1 shrink-0 text-accent-text" />}
+          <div className="min-w-0 flex-1 pt-1">
             {t.title && <p className="text-xs text-fg-muted">{t.title}</p>}
             <p className={t.title ? "font-medium" : undefined}>{t.message}</p>
             {t.action && (

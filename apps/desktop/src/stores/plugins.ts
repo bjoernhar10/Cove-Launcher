@@ -2,7 +2,7 @@ import type { PluginFile } from "@cove/shared";
 import { create } from "zustand";
 import { api } from "../api/index.ts";
 import { MAX_FILE_BYTES, PluginHost, type SidebarEntry, type Spawn } from "../plugins/host.ts";
-import { toast } from "./toasts.ts";
+import { toast, UserFacingError } from "./toasts.ts";
 
 interface PluginsState {
   items: SidebarEntry[];
@@ -68,7 +68,7 @@ export const usePlugins = create<PluginsState>()((set, get) => ({
 /** Reads a picked file for a plugin (text, size-limited). */
 export async function readPickedFile(file: File, maxBytes: number): Promise<PluginFile> {
   if (file.size > Math.min(maxBytes, MAX_FILE_BYTES)) {
-    throw new Error(`Die Datei ist zu groß (höchstens ${String(Math.round(maxBytes / 1024))} KB).`);
+    throw new UserFacingError(`Die Datei ist zu groß (höchstens ${String(Math.round(maxBytes / 1024))} KB).`);
   }
   return { name: file.name, text: await file.text() };
 }

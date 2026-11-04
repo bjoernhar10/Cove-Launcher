@@ -502,6 +502,43 @@ pub(crate) mod tests {
         }
     }
 
+    /// Step 8 target: a library of 2500+ games must load fast enough for a start under 2 s.
+    #[tokio::test]
+    async fn lists_a_large_library_quickly() {
+        let pool = open_in_memory().await.unwrap();
+        sqlx::query(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2500) \
+             INSERT INTO games (id, title, release_date, created_at) \
+             SELECT 'g' || i, 'Spiel ' || i, '2020-01-01', '2026-01-01T00:00:00Z' FROM n",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO library_entries (game_id, source_id, added_at) \
+             SELECT id, 'manual', '2026-01-01T00:00:00Z' FROM games",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20000) \
+             INSERT INTO play_sessions (game_id, started_at, ended_at, duration_seconds) \
+             SELECT 'g' || (i % 2500 + 1), '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z', 3600 FROM n",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let started = std::time::Instant::now();
+        let items = list(&pool).await.unwrap();
+        let elapsed = started.elapsed();
+        assert_eq!(items.len(), 2500);
+        assert_eq!(items[0].entry.playtime_minutes, 8 * 60);
+        // Release builds take about 60 ms; debug builds are several times slower.
+        assert!(elapsed < std::time::Duration::from_secs(2), "{elapsed:?}");
+    }
+
     #[tokio::test]
     async fn adds_games_without_install_once() {
         let pool = open_in_memory().await.unwrap();

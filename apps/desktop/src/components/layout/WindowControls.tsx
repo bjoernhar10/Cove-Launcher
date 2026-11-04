@@ -21,7 +21,7 @@ const BUTTON = "inline-flex h-8 w-10 items-center justify-center rounded-md text
 export function WindowControls() {
   const hint = inTauri ? undefined : "Nur in der Desktop-App";
   return (
-    <div className="flex items-center gap-0.5" role="group" aria-label="Fenster">
+    <div className="flex items-center gap-1" role="group" aria-label="Fenster">
       <button type="button" aria-label="Minimieren" title={hint ?? "Minimieren"} className={cx(BUTTON, "hover:bg-hover hover:text-fg")} onClick={() => { run("minimize"); }}>
         <Minus aria-hidden />
       </button>

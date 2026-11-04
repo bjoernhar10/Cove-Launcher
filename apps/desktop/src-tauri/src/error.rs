@@ -36,7 +36,7 @@ pub enum AppError {
     CatalogAuth(String),
     #[error("Katalog-Anfrage fehlgeschlagen: {0}")]
     CatalogProvider(String),
-    #[error("Empfehlungen sind gerade nicht verfügbar: Der Recommender {0}.")]
+    #[error("Empfehlungen sind gerade nicht verfügbar: Der Empfehlungsdienst {0}.")]
     RecommenderUnavailable(String),
     #[error("Empfehlung fehlgeschlagen: {0}")]
     Recommender(String),
@@ -58,9 +58,55 @@ pub enum AppError {
     Itch(String),
     #[error("{0}")]
     Plugin(String),
+    #[error("{0}")]
+    Update(String),
+}
+
+/// Text for an I/O error that a person can act on (no OS error codes or paths).
+fn io_message(error: &std::io::Error) -> &'static str {
+    use std::io::ErrorKind;
+    match error.kind() {
+        ErrorKind::NotFound => "Eine Datei oder ein Ordner wurde nicht gefunden.",
+        ErrorKind::PermissionDenied => {
+            "Cove hat keine Berechtigung für diese Datei oder diesen Ordner."
+        }
+        ErrorKind::StorageFull => "Auf dem Laufwerk ist nicht genug Platz frei.",
+        ErrorKind::ReadOnlyFilesystem => "Das Laufwerk ist schreibgeschützt.",
+        ErrorKind::AlreadyExists => "Die Datei gibt es dort schon.",
+        _ => "Ein Dateizugriff ist fehlgeschlagen. Versuch es noch einmal.",
+    }
 }
 
 impl AppError {
+    /// The message shown in the UI. Internal failures (database, files,
+    /// keyring, malformed data) get a plain explanation; their technical
+    /// details only go to the log (see [`Self::is_internal`]).
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::Database(_) | Self::Migration(_) => {
+                "Cove konnte nicht auf seine Daten zugreifen. Versuch es noch einmal; wenn es bleibt, starte Cove neu.".into()
+            }
+            Self::Io(error) => io_message(error).into(),
+            Self::Serialization(_) => {
+                "Cove hat unerwartete Daten erhalten. Versuch es noch einmal.".into()
+            }
+            Self::Keyring(_) => "Der Schlüsselbund des Systems ist nicht erreichbar. Ist er entsperrt?".into(),
+            other => other.to_string(),
+        }
+    }
+
+    /// Whether the technical text differs from what the user sees.
+    fn is_internal(&self) -> bool {
+        matches!(
+            self,
+            Self::Database(_)
+                | Self::Migration(_)
+                | Self::Io(_)
+                | Self::Serialization(_)
+                | Self::Keyring(_)
+        )
+    }
+
     /// Stable machine-readable kind (camelCase), mirrors `AppErrorKind` in TS.
     pub fn kind(&self) -> &'static str {
         match self {
@@ -90,15 +136,20 @@ impl AppError {
             Self::Download(_) => "download",
             Self::Itch(_) => "itch",
             Self::Plugin(_) => "plugin",
+            Self::Update(_) => "update",
         }
     }
 }
 
 impl Serialize for AppError {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // Every error reaching the UI passes here once: keep the details for the log.
+        if self.is_internal() {
+            eprintln!("[cove] {}: {self}", self.kind());
+        }
         let mut s = serializer.serialize_struct("AppError", 2)?;
         s.serialize_field("kind", self.kind())?;
-        s.serialize_field("message", &self.to_string())?;
+        s.serialize_field("message", &self.user_message())?;
         s.end()
     }
 }
@@ -116,7 +167,7 @@ impl From<&AppError> for AppErrorPayload {
     fn from(error: &AppError) -> Self {
         Self {
             kind: error.kind().to_owned(),
-            message: error.to_string(),
+            message: error.user_message(),
         }
     }
 }
@@ -132,6 +183,34 @@ mod tests {
         assert_eq!(
             json["message"],
             "„Tidewater“ ist nicht in deiner Bibliothek."
+        );
+    }
+
+    #[test]
+    fn internal_errors_hide_technical_details() {
+        let io = AppError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "/home/someone/.secret: os error 13",
+        ));
+        let json = serde_json::to_value(&io).unwrap();
+        assert_eq!(json["kind"], "io");
+        let message = json["message"].as_str().unwrap();
+        assert!(message.contains("Berechtigung"), "{message}");
+        assert!(!message.contains("/home"), "{message}");
+
+        let db = AppError::Database(sqlx::Error::RowNotFound);
+        let message = AppErrorPayload::from(&db).message;
+        assert!(
+            !message.contains("RowNotFound") && !message.contains("no rows"),
+            "{message}"
+        );
+
+        let keyring = AppError::Keyring("Platform secure storage failure: DBus error".into());
+        assert!(!keyring.user_message().contains("DBus"));
+        // Readable errors stay as they are.
+        assert_eq!(
+            AppError::InvalidInput("Bitte gib einen Namen ein.".into()).user_message(),
+            "Bitte gib einen Namen ein."
         );
     }
 }

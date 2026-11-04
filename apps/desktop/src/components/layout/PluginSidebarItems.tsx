@@ -37,7 +37,7 @@ function PluginItem({ entry, collapsed }: { entry: SidebarEntry; collapsed: bool
         title={collapsed ? `${entry.label} (${entry.pluginName})` : `Plugin: ${entry.pluginName}`}
         className={cx(
           "group flex h-9 items-center gap-3 rounded-md text-sm text-fg-muted transition-colors duration-150 ease-out hover:bg-hover hover:text-fg",
-          collapsed ? "mx-auto w-10 justify-center" : "px-2.5 text-left",
+          collapsed ? "mx-auto w-10 justify-center" : "px-3 text-left",
         )}
       >
         <Icon aria-hidden className="shrink-0 text-fg-subtle group-hover:text-fg-muted" />
@@ -75,8 +75,8 @@ export function PluginSidebarItems({ collapsed }: { collapsed: boolean }) {
   const items = usePlugins((s) => s.items);
   if (items.length === 0) return null;
   return (
-    <nav aria-label="Plugins" className={cx("mt-6 flex flex-col gap-0.5", collapsed ? "px-0" : "px-3")}>
-      {!collapsed && <p className="px-2.5 pb-1 text-xs font-medium text-fg-subtle">Plugins</p>}
+    <nav aria-label="Plugins" className={cx("mt-6 flex flex-col gap-1", collapsed ? "px-0" : "px-3")}>
+      {!collapsed && <p className="px-3 pb-1 text-xs font-medium text-fg-subtle">Plugins</p>}
       {items.map((entry) => (
         <PluginItem key={`${entry.pluginId}:${entry.id}`} entry={entry} collapsed={collapsed} />
       ))}

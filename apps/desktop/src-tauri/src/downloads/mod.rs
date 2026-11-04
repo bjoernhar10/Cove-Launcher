@@ -218,7 +218,7 @@ impl DownloadManager {
                 eprintln!("[cove] Download {id}: {error}");
                 let message = match &error {
                     AppError::Download(m) | AppError::Itch(m) | AppError::Offline(m) => m.clone(),
-                    other => other.to_string(),
+                    other => other.user_message(),
                 };
                 if let Err(e) = db::downloads::fail(&self.pool, &id, &message).await {
                     eprintln!("[cove] Download {id}: {e}");
@@ -343,7 +343,7 @@ impl DownloadManager {
             let path = part.clone();
             let actual = tokio::task::spawn_blocking(move || transfer::sha256_file(&path))
                 .await
-                .map_err(|e| AppError::Download(e.to_string()))??;
+                .map_err(background_failed("Die Datei konnte nicht geprüft werden."))??;
             if &actual != expected {
                 let _ = tokio::fs::remove_file(&part).await;
                 db::downloads::save_progress(&self.pool, id, 0, &[]).await?;
@@ -385,7 +385,7 @@ impl DownloadManager {
                 Ok((dir.clone(), executable, extract::dir_size(&dir)))
             })
             .await
-            .map_err(|e| AppError::Download(e.to_string()))??;
+            .map_err(background_failed("Das Spiel konnte nicht entpackt werden."))??;
         let (exe, compat) = executable.map_or(
             (None, crate::models::CompatibilityTool::Native),
             |(e, c)| (Some(e), c),
@@ -631,6 +631,14 @@ impl DownloadManager {
             (self.hooks.changed)();
         }
         Ok(())
+    }
+}
+
+/// A blocking task that died (panic): log it, show `message`.
+fn background_failed(message: &'static str) -> impl FnOnce(tokio::task::JoinError) -> AppError {
+    move |error| {
+        eprintln!("[cove] Hintergrundaufgabe: {error}");
+        AppError::Download(message.into())
     }
 }
 

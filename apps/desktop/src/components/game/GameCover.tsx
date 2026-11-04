@@ -56,6 +56,7 @@ export function GameCover({
         alt={image.alt}
         className={cx(base, "w-full bg-skeleton object-cover")}
         loading="lazy"
+        decoding="async"
         onError={() => {
           setFailedUrl(url);
         }}
@@ -72,7 +73,12 @@ export function GameCover({
   };
 
   return (
-    <div role="img" aria-label={image.alt} className={base} style={{ ...style, containerType: "size" }}>
+    <div
+      // Without alt text the placeholder is decoration (the title is next to it).
+      {...(image.alt ? { role: "img", "aria-label": image.alt } : { "aria-hidden": true })}
+      className={base}
+      style={{ ...style, containerType: "size" }}
+    >
       <div aria-hidden className="absolute inset-0">
         {shape === 0 && <div className="absolute -right-[18cqmin] -bottom-[22cqmin] size-[80cqmin] rounded-full bg-current/15" />}
         {shape === 1 && <div className="absolute -bottom-[40cqmin] left-1/2 size-[80cqmin] -translate-x-1/2 rounded-full border-[6cqmin] border-current/15" />}

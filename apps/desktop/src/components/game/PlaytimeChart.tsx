@@ -20,7 +20,7 @@ export function PlaytimeChart({ days, title }: { days: PlaytimeDay[]; title: str
         <div className="absolute top-0 right-0 text-xs text-fg-subtle num" aria-hidden>
           {formatMinutesShort(ceiling)}
         </div>
-        <div className="flex h-36 items-end gap-0.5 border-b border-border pt-6" aria-hidden onMouseLeave={() => { setHovered(null); }}>
+        <div className="flex h-36 items-end gap-1 border-b border-border pt-6" aria-hidden onMouseLeave={() => { setHovered(null); }}>
           {days.map((day, index) => {
             const pct = (day.minutes / ceiling) * 100;
             return (
@@ -46,7 +46,7 @@ export function PlaytimeChart({ days, title }: { days: PlaytimeDay[]; title: str
         </div>
         {active && hovered !== null && (
           <div
-            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md border border-border bg-raised px-2.5 py-1.5 text-xs"
+            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md border border-border bg-raised px-3 py-2 text-xs"
             style={{ left: `${String(((hovered + 0.5) / days.length) * 100)}%` }}
           >
             <p className="text-fg-muted">

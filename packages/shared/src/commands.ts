@@ -5,6 +5,8 @@
  */
 import type {
   AboutInfo,
+  UpdateCheck,
+  UpdateProgress,
   Achievement,
   AchievementUnlock,
   AppSettings,
@@ -119,6 +121,10 @@ export interface CoveCommands {
   downloads_clear_history: { args: NoArgs; result: null };
   system_profile: { args: NoArgs; result: UserProfile };
   system_about: { args: NoArgs; result: AboutInfo };
+  /** Asks the release server for a newer version (signed `latest.json`). */
+  updates_check: { args: NoArgs; result: UpdateCheck };
+  /** Downloads, verifies and installs the update, then restarts Cove. */
+  updates_install: { args: NoArgs; result: null };
   catalog_status: { args: NoArgs; result: CatalogStatus };
   catalog_set_credentials: { args: { credentials: CatalogCredentials }; result: CatalogStatus };
   catalog_clear_credentials: { args: { provider: CatalogProviderId }; result: CatalogStatus };
@@ -147,6 +153,7 @@ export interface CoveEvents {
   "connector-login-finished": ConnectorLoginFinished;
   "store-sync-progress": SyncProgress;
   "achievement-unlocked": CoveAchievement;
+  "update-progress": UpdateProgress;
 }
 
 export type CoveEvent = keyof CoveEvents;

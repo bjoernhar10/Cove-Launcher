@@ -35,7 +35,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, c
   }
 
   return (
-    <div role="radiogroup" aria-label={label} className={cx("inline-flex rounded-md border border-border bg-sidebar p-0.5", className)}>
+    <div role="radiogroup" aria-label={label} className={cx("inline-flex rounded-md border border-border bg-sidebar p-1", className)}>
       {options.map((option, index) => {
         const selected = option.value === value;
         const Icon = option.icon;
@@ -58,7 +58,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, c
               onKeyDown(e, index);
             }}
             className={cx(
-              "inline-flex h-7 items-center gap-1.5 rounded-md text-sm transition-colors duration-150 ease-out",
+              "inline-flex h-7 items-center gap-2 rounded-md text-sm transition-colors duration-150 ease-out",
               option.iconOnly ? "w-8 justify-center" : "px-3",
               selected ? "border border-border bg-surface font-medium text-fg" : "border border-transparent text-fg-muted hover:text-fg",
             )}

@@ -37,7 +37,7 @@ export function Section({ title, description, actions, children, className }: Se
       <div className="mb-4 flex items-end justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-fg">{title}</h2>
-          {description && <p className="mt-0.5 text-sm text-fg-muted">{description}</p>}
+          {description && <p className="mt-1 text-sm text-fg-muted">{description}</p>}
         </div>
         {actions && <div className="flex items-center gap-1">{actions}</div>}
       </div>

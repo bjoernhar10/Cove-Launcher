@@ -20,7 +20,7 @@ function SidebarLink({ item, collapsed, badge }: { item: NavItem; collapsed: boo
       className={({ isActive }) =>
         cx(
           "group relative flex h-9 items-center gap-3 rounded-md text-sm transition-colors duration-150 ease-out",
-          collapsed ? "mx-auto w-10 justify-center" : "px-2.5",
+          collapsed ? "mx-auto w-10 justify-center" : "px-3",
           isActive ? "bg-active font-medium text-fg" : "text-fg-muted hover:bg-hover hover:text-fg",
         )
       }
@@ -60,7 +60,7 @@ function DownloadIndicator({ collapsed }: { collapsed: boolean }) {
       to="/downloads"
       aria-label={`Download läuft: ${running.game.title}, ${pct}`}
       title={collapsed ? `${running.game.title} · ${pct}` : undefined}
-      className={cx("mb-2 block rounded-md transition-colors duration-150 ease-out hover:bg-hover", collapsed ? "mx-auto w-10 px-1.5 py-2" : "mx-0 px-2.5 py-2")}
+      className={cx("mb-2 block rounded-md transition-colors duration-150 ease-out hover:bg-hover", collapsed ? "mx-auto w-10 px-2 py-2" : "mx-0 px-3 py-2")}
     >
       {collapsed ? (
         <Download aria-hidden className="mx-auto text-accent-text" />
@@ -95,7 +95,7 @@ export function Sidebar() {
         </span>
       </div>
 
-      <nav aria-label="Bereiche" className={cx("flex flex-col gap-0.5 pt-3", collapsed ? "px-0" : "px-3")}>
+      <nav aria-label="Bereiche" className={cx("flex flex-col gap-1 pt-3", collapsed ? "px-0" : "px-3")}>
         {MAIN_NAV.map((item) => (
           <SidebarLink key={item.to} item={item} collapsed={collapsed} {...(item.to === "/downloads" ? { badge: pending } : {})} />
         ))}
@@ -110,7 +110,7 @@ export function Sidebar() {
         <SidebarLink item={SETTINGS_NAV} collapsed={collapsed} />
       </div>
 
-      <div className={cx("flex h-14 shrink-0 items-center gap-2.5 border-t border-border", collapsed ? "justify-center" : "px-5")}>
+      <div className={cx("flex h-14 shrink-0 items-center gap-3 border-t border-border", collapsed ? "justify-center" : "px-5")}>
         {profile.status === "success" ? (
           <>
             <Avatar name={profile.data.displayName} />

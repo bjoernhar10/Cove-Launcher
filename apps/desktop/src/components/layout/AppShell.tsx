@@ -47,6 +47,28 @@ export function AppShell() {
     [],
   );
 
+  // Release builds look for an update once, shortly after start. Silent when
+  // offline or up to date; Settings → Über Cove has the manual check.
+  useEffect(() => {
+    if (!import.meta.env.PROD) return;
+    const timer = setTimeout(() => {
+      api.system.checkForUpdates().then(
+        (check) => {
+          if (!check.available) return;
+          toast(`Cove ${check.available.version} ist verfügbar.`, "neutral", {
+            title: "Update",
+            action: { label: "Ansehen", to: "/settings/about" },
+            durationMs: 8000,
+          });
+        },
+        () => undefined,
+      );
+    }, 15_000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
+
   useEffect(() => {
     void usePlugins.getState().start();
     return () => {

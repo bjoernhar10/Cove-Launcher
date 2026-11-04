@@ -79,7 +79,7 @@ export function ProgressBar({ value, max, label, className, tone = "accent" }: P
 
 export function Badge({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <span className={cx("inline-flex h-5 items-center rounded-md border border-border px-1.5 text-xs text-fg-muted", className)}>
+    <span className={cx("inline-flex h-5 items-center rounded-md border border-border px-2 text-xs text-fg-muted", className)}>
       {children}
     </span>
   );
@@ -116,7 +116,7 @@ export function OfflineBadge() {
     <span
       role="status"
       title="Der Katalog ist nicht erreichbar. Cove zeigt gespeicherte Daten."
-      className="inline-flex h-5 items-center gap-1 rounded-full border border-border px-2 text-xs text-fg-muted [&_svg]:size-3"
+      className="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-xs text-fg-muted"
     >
       <WifiOff aria-hidden />
       Offline

@@ -46,6 +46,20 @@ export function toast(message: string, tone?: Toast["tone"], options?: ToastOpti
   useToasts.getState().push(message, tone, options);
 }
 
+/** An error whose message is written for the user (German UI text). */
+export class UserFacingError extends Error {
+  override readonly name = "UserFacingError";
+}
+
+const GENERIC = "Da ist etwas schiefgelaufen. Versuch es noch einmal.";
+
+/**
+ * Text for the UI. Messages from the core (`CoveError`) and `UserFacingError`
+ * are already written for people; anything else is a programming error whose
+ * details belong in the console, not in front of the user.
+ */
 export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error && (error.name === "CoveError" || error instanceof UserFacingError)) return error.message;
+  console.error("[cove]", error);
+  return GENERIC;
 }

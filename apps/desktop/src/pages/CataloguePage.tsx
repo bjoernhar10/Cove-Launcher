@@ -1,7 +1,8 @@
 import type { Genre, Platform, YearRange } from "@cove/shared";
 import { Compass, SearchX, X } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { COVER_GRID, GameCard, GameCardSkeleton } from "../components/game/GameCard.tsx";
+import { VirtualGrid, type GridCell } from "../components/game/VirtualGrid.tsx";
 import { Button, ButtonLink } from "../components/ui/Button.tsx";
 import { EmptyState, ErrorState, LoadingRegion, OfflineBadge } from "../components/ui/Feedback.tsx";
 import { Input, Select } from "../components/ui/Field.tsx";
@@ -165,11 +166,20 @@ export function CataloguePage() {
     };
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const pages = query.data?.pages ?? [];
-  const reasons: Record<string, string> = Object.assign({}, ...pages.map((p) => p.reasons)) as Record<string, string>;
-  // Providers can repeat a game across pages when the ranking shifts; show each once.
-  const seen = new Set<string>();
-  const items = pages.flatMap((p) => p.items).filter((g) => !seen.has(g.id) && seen.add(g.id));
+  const pages = useMemo(() => query.data?.pages ?? [], [query.data]);
+  const cells = useMemo(() => {
+    const reasons: Record<string, string> = Object.assign({}, ...pages.map((p) => p.reasons)) as Record<string, string>;
+    // Providers can repeat a game across pages when the ranking shifts; show each once.
+    const seen = new Set<string>();
+    const list: GridCell[] = pages
+      .flatMap((p) => p.items)
+      .filter((g) => !seen.has(g.id) && seen.add(g.id))
+      .map((game) => ({ key: game.id, node: <GameCard game={game} to={`/catalogue/${game.id}`} meta={reasons[game.id]} /> }));
+    return list;
+  }, [pages]);
+  const loadingCells = isFetchingNextPage
+    ? Array.from({ length: 6 }, (_, i) => ({ key: `skeleton-${String(i)}`, node: <GameCardSkeleton /> }))
+    : [];
   const total = pages[0]?.total ?? null;
   const offline = pages.some((p) => p.offline);
   const notConfigured = query.error instanceof CoveError && query.error.kind === "catalogNotConfigured";
@@ -209,7 +219,7 @@ export function CataloguePage() {
 
           {query.isError && <ErrorState message={errorMessage(query.error)} onRetry={() => void query.refetch()} />}
 
-          {query.isSuccess && items.length === 0 && (
+          {query.isSuccess && cells.length === 0 && (
             <EmptyState
               icon={SearchX}
               title="Keine Spiele gefunden"
@@ -218,21 +228,9 @@ export function CataloguePage() {
             />
           )}
 
-          {items.length > 0 && (
+          {cells.length > 0 && (
             <>
-              <ul className={COVER_GRID} aria-label="Spiele">
-                {items.map((game) => (
-                  <li key={game.id}>
-                    <GameCard game={game} to={`/catalogue/${game.id}`} meta={reasons[game.id]} />
-                  </li>
-                ))}
-                {isFetchingNextPage &&
-                  Array.from({ length: 6 }, (_, i) => (
-                    <li key={`s${String(i)}`} aria-hidden>
-                      <GameCardSkeleton />
-                    </li>
-                  ))}
-              </ul>
+              <VirtualGrid cells={loadingCells.length > 0 ? [...cells, ...loadingCells] : cells} label="Spiele" />
               <div ref={sentinel} className="h-px" />
               {query.isFetchNextPageError && (
                 <div className="mt-8 flex justify-center">

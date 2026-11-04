@@ -39,7 +39,7 @@ export function Topbar() {
           openPalette(true);
         }}
         aria-keyshortcuts="Control+K"
-        className="ml-3 flex h-8 w-full max-w-sm items-center gap-2 rounded-md border border-border bg-sidebar px-2.5 text-sm text-fg-subtle transition-colors duration-150 ease-out hover:border-border-strong"
+        className="ml-3 flex h-8 w-full max-w-sm items-center gap-2 rounded-md border border-border bg-sidebar px-3 text-sm text-fg-subtle transition-colors duration-150 ease-out hover:border-border-strong"
       >
         <Search aria-hidden />
         <span className="flex-1 text-left">Spiele, Seiten, Aktionen suchen …</span>

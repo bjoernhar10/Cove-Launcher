@@ -59,7 +59,7 @@ function HandedOff({ item }: { item: DownloadItem }) {
         <Link to={`/library/${game.id}`} className="block truncate text-base font-medium text-fg hover:underline">
           {game.title}
         </Link>
-        <p className="mt-1 flex items-center gap-1.5 text-sm text-fg-muted">
+        <p className="mt-1 flex items-center gap-2 text-sm text-fg-muted">
           <ExternalLink aria-hidden />
           Installation läuft in {download.origin === "steam" || navigator.userAgent.includes("Windows") ? store : `Heroic (${store})`}.
         </p>
@@ -103,7 +103,7 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
           tone={paused ? "muted" : "accent"}
           className="mt-3"
         />
-        <p className="num mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
+        <p className="num mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
           <span>
             {formatBytes(download.downloadedBytes)}
             {known && <> von {formatBytes(download.totalBytes)}</>}
@@ -237,7 +237,7 @@ function HistoryRow({ item }: { item: DownloadItem }) {
               <span className="num">{formatBytes(download.totalBytes)}</span> · {ORIGIN_LABELS[download.origin]}
               {download.checksumVerified && (
                 <span className="ml-2 inline-flex items-center gap-1 align-middle">
-                  <ShieldCheck aria-hidden className="size-3.5" />
+                  <ShieldCheck aria-hidden />
                   Prüfsumme bestätigt
                 </span>
               )}
@@ -245,7 +245,7 @@ function HistoryRow({ item }: { item: DownloadItem }) {
           )}
         </p>
       </div>
-      <span className={cx("flex items-center gap-1.5 text-xs", meta.className)}>
+      <span className={cx("flex items-center gap-2 text-xs", meta.className)}>
         <Icon aria-hidden />
         {meta.label}
       </span>
@@ -255,7 +255,7 @@ function HistoryRow({ item }: { item: DownloadItem }) {
           Erneut
         </Button>
       ) : (
-        <span className="w-[86px]" aria-hidden />
+        <span className="w-22" aria-hidden />
       )}
     </li>
   );

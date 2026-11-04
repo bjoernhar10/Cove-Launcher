@@ -108,6 +108,10 @@ impl Recommender {
         }
     }
 
+    pub fn status(&self) -> crate::sidecar::SidecarStatus {
+        self.sidecar.status()
+    }
+
     pub fn is_available(&self) -> bool {
         self.sidecar.is_configured()
     }

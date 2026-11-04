@@ -70,7 +70,7 @@ function Overview({ item }: { item: LibraryItem }) {
             ["Hinzugefügt", formatDate(entry.addedAt)],
             ["Entwickler", game.developer],
           ].map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-4 border-b border-border py-2.5 last:border-b-0">
+            <div key={label} className="flex justify-between gap-4 border-b border-border py-3 last:border-b-0">
               <dt className="text-fg-subtle">{label}</dt>
               <dd className="m-0 min-w-0 truncate text-right text-fg" title={value}>
                 {value}
@@ -154,7 +154,7 @@ function Achievements({ item }: { item: LibraryItem }) {
             <Skeleton className="size-10" />
             <div className="flex-1">
               <Skeleton className="h-4 w-1/3" />
-              <Skeleton className="mt-1.5 h-3 w-1/2" />
+              <Skeleton className="mt-2 h-3 w-1/2" />
             </div>
           </div>
         ))}

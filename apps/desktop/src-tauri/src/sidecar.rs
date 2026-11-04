@@ -186,6 +186,21 @@ pub struct Sidecar {
     errors: SidecarErrors,
     running: Mutex<Option<Running>>,
     starts: std::sync::Mutex<VecDeque<Instant>>,
+    /// Set when the last start or call failed, cleared by the next success.
+    failed: std::sync::atomic::AtomicBool,
+}
+
+/// What `system_about` reports for a sidecar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SidecarStatus {
+    /// Answered its last request.
+    Running,
+    /// Configured, but not started yet (starts on first use).
+    Idle,
+    /// The last start or request failed; features using it are off for now.
+    Unavailable,
+    /// No binary in this build.
+    NotInstalled,
 }
 
 impl Sidecar {
@@ -199,6 +214,7 @@ impl Sidecar {
             errors,
             running: Mutex::new(None),
             starts: std::sync::Mutex::new(VecDeque::new()),
+            failed: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -206,8 +222,33 @@ impl Sidecar {
         self.config.is_some()
     }
 
-    fn unavailable(&self, message: impl Into<String>) -> AppError {
-        (self.errors.unavailable)(message.into())
+    /// The error for a sidecar that cannot serve requests. `reason` completes
+    /// a user-facing sentence ("Der Dienst …"); technical details are logged.
+    fn unavailable(&self, reason: &str, detail: Option<&dyn std::fmt::Display>) -> AppError {
+        let name = self.config.as_ref().map_or("sidecar", |c| c.name.as_str());
+        match detail {
+            Some(detail) => eprintln!("[{name}] {reason}: {detail}"),
+            None => eprintln!("[{name}] {reason}"),
+        }
+        self.failed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        (self.errors.unavailable)(reason.to_owned())
+    }
+
+    /// Current state, without starting the process.
+    pub fn status(&self) -> SidecarStatus {
+        if self.config.is_none() {
+            return SidecarStatus::NotInstalled;
+        }
+        if self.failed.load(std::sync::atomic::Ordering::Relaxed) {
+            return SidecarStatus::Unavailable;
+        }
+        match self.running.try_lock() {
+            // Busy with a request right now.
+            Err(_) => SidecarStatus::Running,
+            Ok(guard) if guard.is_some() => SidecarStatus::Running,
+            Ok(_) => SidecarStatus::Idle,
+        }
     }
 
     fn note_start(&self) -> AppResult<()> {
@@ -223,7 +264,10 @@ impl Sidecar {
             starts.pop_front();
         }
         if starts.len() >= MAX_STARTS_PER_MINUTE {
-            return Err(self.unavailable("stürzt wiederholt ab, nächster Versuch in einer Minute"));
+            return Err(self.unavailable(
+                "lässt sich gerade nicht starten; nächster Versuch in einer Minute",
+                None,
+            ));
         }
         starts.push_back(now);
         Ok(())
@@ -242,19 +286,15 @@ impl Sidecar {
             command.current_dir(cwd);
         }
         let mut child = command.spawn().map_err(|e| {
-            self.unavailable(format!(
-                "{} konnte nicht gestartet werden: {e}",
-                config.program.display()
-            ))
+            let detail = format!("{}: {e}", config.program.display());
+            self.unavailable("konnte nicht gestartet werden", Some(&detail))
         })?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| self.unavailable("kein stdin"))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| self.unavailable("kein stdout"))?;
+        let stdin = child.stdin.take().ok_or_else(|| {
+            self.unavailable("konnte nicht gestartet werden", Some(&"kein stdin"))
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            self.unavailable("konnte nicht gestartet werden", Some(&"kein stdout"))
+        })?;
         if let Some(stderr) = child.stderr.take() {
             let name = config.name.clone();
             tokio::spawn(async move {
@@ -282,7 +322,7 @@ impl Sidecar {
             Ok(_) => Ok(running),
             Err(e) => {
                 let _ = running.child.kill().await;
-                Err(self.unavailable(format!("startet nicht ({e})")))
+                Err(self.unavailable("startet nicht", Some(&e)))
             }
         }
     }
@@ -350,7 +390,7 @@ impl Sidecar {
     /// Calls `method`; starts or restarts the process as needed.
     pub async fn call(&self, method: &str, params: Value) -> AppResult<Value> {
         let Some(config) = &self.config else {
-            return Err(self.unavailable("nicht installiert"));
+            return Err(self.unavailable("ist in diesem Build nicht enthalten", None));
         };
         let mut guard = self.running.lock().await;
         // A process that exited since the last call is replaced.
@@ -364,20 +404,28 @@ impl Sidecar {
         }
         let running = guard
             .as_mut()
-            .ok_or_else(|| self.unavailable("nicht gestartet"))?;
+            .ok_or_else(|| self.unavailable("konnte nicht gestartet werden", None))?;
         match Self::exchange(running, method, params, config.request_timeout).await {
-            Ok(value) => Ok(value),
+            Ok(value) => {
+                self.failed
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                Ok(value)
+            }
             Err(Exchange::Rpc(error)) => Err((self.errors.rpc)(error)),
             Err(other) => {
                 if let Some(mut dead) = guard.take() {
                     let _ = dead.child.kill().await;
                 }
-                Err(self.unavailable(match other {
-                    Exchange::Timeout => "antwortet nicht (Zeitüberschreitung)".to_owned(),
-                    Exchange::Broken(e) | Exchange::Rpc(RpcError { message: e, .. }) => {
-                        format!("abgestürzt ({e})")
+                Err(match other {
+                    Exchange::Timeout => {
+                        self.unavailable("antwortet nicht", Some(&"Zeitüberschreitung"))
                     }
-                }))
+                    Exchange::Broken(e) | Exchange::Rpc(RpcError { message: e, .. }) => self
+                        .unavailable(
+                            "ist abgestürzt und wird beim nächsten Versuch neu gestartet",
+                            Some(&e),
+                        ),
+                })
             }
         }
     }
@@ -457,6 +505,7 @@ for line in sys.stdin:
         assert_eq!(first["method"], "recommend_for_user");
         let second = sidecar.call("discover_new", json!({})).await.unwrap();
         assert_eq!(pid(&first), pid(&second), "same process");
+        assert_eq!(sidecar.status(), SidecarStatus::Running);
     }
 
     #[tokio::test]
@@ -480,7 +529,7 @@ for line in sys.stdin:
         let started = Instant::now();
         let err = sidecar.call("hang", json!({})).await.unwrap_err();
         assert!(started.elapsed() < Duration::from_secs(3));
-        assert!(err.to_string().contains("Zeitüberschreitung"), "{err}");
+        assert!(err.to_string().contains("antwortet nicht"), "{err}");
         assert_ne!(pid(&sidecar.call("a", json!({})).await.unwrap()), before);
     }
 
@@ -506,17 +555,20 @@ for line in sys.stdin:
             ));
         }
         let err = dead.call("a", json!({})).await.unwrap_err();
-        assert!(err.to_string().contains("wiederholt"), "{err}");
+        assert!(err.to_string().contains("nächster Versuch"), "{err}");
+        assert_eq!(dead.status(), SidecarStatus::Unavailable);
 
         let mut config = SidecarConfig::new("x", PathBuf::from("/definitely/missing"), Vec::new());
         config.start_timeout = Duration::from_millis(200);
         let missing = Sidecar::new(Some(config));
-        assert!(matches!(
-            missing.call("a", json!({})).await,
-            Err(AppError::RecommenderUnavailable(_))
-        ));
+        assert_eq!(missing.status(), SidecarStatus::Idle);
+        let err = missing.call("a", json!({})).await.unwrap_err();
+        assert!(matches!(err, AppError::RecommenderUnavailable(_)));
+        // The UI text never shows the binary's path or the OS error.
+        assert!(!err.to_string().contains("/definitely"), "{err}");
         let none = Sidecar::new(None);
         assert!(!none.is_configured());
+        assert_eq!(none.status(), SidecarStatus::NotInstalled);
         assert!(matches!(
             none.call("a", json!({})).await,
             Err(AppError::RecommenderUnavailable(_))

@@ -636,7 +636,8 @@ export type AppErrorKind =
   | "connectorsUnavailable"
   | "download"
   | "itch"
-  | "plugin";
+  | "plugin"
+  | "update";
 
 /** Error shape of every rejected Tauri command. */
 export interface AppErrorPayload {
@@ -644,9 +645,13 @@ export interface AppErrorPayload {
   message: string;
 }
 
+/** Health of a component. Sidecars start on first use, so `idle` is normal. */
+export type ServiceStatus = "running" | "idle" | "unavailable" | "notInstalled";
+
 export interface ComponentVersion {
   name: "core" | "connectors" | "recommender";
   version: string;
+  status: ServiceStatus;
 }
 
 export interface AboutInfo {
@@ -762,4 +767,27 @@ export interface ProxySteamAchievement {
 export interface ProxySteamAchievements {
   private: boolean;
   achievements: ProxySteamAchievement[];
+}
+
+// ───────────── updates (Tauri updater) ─────────────
+
+export interface UpdateInfo {
+  version: string;
+  notes: string | null;
+  date: string | null;
+}
+
+export interface UpdateCheck {
+  currentVersion: string;
+  /** `null` when Cove is up to date. */
+  available: UpdateInfo | null;
+  /** `false` for `.deb`/`.rpm` installs: the package manager updates those. */
+  canInstall: boolean;
+  installHint: string | null;
+}
+
+/** Event `update-progress` while an update downloads. */
+export interface UpdateProgress {
+  downloadedBytes: number;
+  totalBytes: number | null;
 }

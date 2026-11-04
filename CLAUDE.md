@@ -38,7 +38,10 @@ the TS types (`packages/shared/src/methods.ts`), the JSON schema (`packages/shar
 - Always use `GameCover` for game artwork. Without an image URL it renders a calm, flat placeholder.
 - Every page needs a skeleton loading state (no spinners), an empty state with friendly text (`EmptyState`) and an error state with a retry action.
 - Focus states are always visible (`:focus-visible`). Everything must be usable with the keyboard.
-- The UI copy is currently German.
+- **Contrast WCAG 2.1 AA:** text at least 4.5:1 on every surface it can sit on (`bg`, `bg-sidebar`, `hover`, `active`), input outlines and switch tracks at least 3:1 (`border-input`). Check new tokens in both themes and all five accents; `e2e/a11y.e2e.ts` runs axe on every page in light and dark mode.
+- Use only 4px-grid spacing utilities (`1`, `2`, `3` …), no half steps (`1.5`, `2.5`). Icons stay 18px, also next to small text.
+- Game covers without alt text are decoration (`aria-hidden`); give their link an `aria-label` with the title.
+- The UI copy is currently German (the main navigation labels Home, Catalogue, My Library, Downloads, Settings stay English on purpose).
 
 ## Code rules
 
@@ -83,7 +86,12 @@ the TS types (`packages/shared/src/methods.ts`), the JSON schema (`packages/shar
   5. handler in the test fake `src/test/fakeCore.ts`
 
   Also cover the command in `src-tauri/src/ipc_tests.rs` with the real JSON payload.
-- **Errors** from Rust are `AppError` (thiserror) and reach the frontend as `{ kind, message }`, there as `CoveError`. The `message` is user-facing text (currently German). A new `kind` also goes into `AppErrorKind` in `models.ts`.
+- **Errors** from Rust are `AppError` (thiserror) and reach the frontend as `{ kind, message }`, there as `CoveError`. The `message` is user-facing text (currently German, `AppError::user_message`): database, file, keyring and JSON errors get a plain sentence, their technical text only goes to stderr. Never put paths, URLs, OS error codes or stack traces into a message. A new `kind` also goes into `AppErrorKind` in `models.ts`.
+  - In the UI always show errors through `errorMessage()` (`stores/toasts.ts`): it passes `CoveError` and `UserFacingError` through and replaces anything else (a programming error) with a generic sentence. Page crashes end in `RouteError`, never in React Router's developer screen.
+  - Sidecars are never required: when one is missing or crashes, the app keeps working and only its features are off (`SidecarStatus`, shown in Settings → Über Cove). A broken database at start shows a dialog (`report_startup_failure`), not a panic.
+- **Performance (step 8):** lists that can hold thousands of games use `VirtualGrid` / `useMainVirtualizer` (TanStack Virtual on `#main`; plain rendering up to `VIRTUALIZE_FROM` items). Images load lazily (`loading="lazy"`, `decoding="async"`). Pages other than Home and Library are lazy routes in `router.tsx`. The core logs `Oberfläche geladen nach … ms` once per start; keep it well under 2 s (currently about 0.6 s with 2500 games).
+- **Updates:** `src-tauri/src/updates.rs` (Tauri updater plugin, commands `updates_check` / `updates_install`, event `update-progress`). Releases come from `.github/workflows/release.yml` on a `v*` tag; `latest.json` and signatures are uploaded there. The private signing key lives only in `~/.tauri/cove-updater.key` and the GitHub secret `TAURI_SIGNING_PRIVATE_KEY`; never commit it. `tauri.release.conf.json` switches on `createUpdaterArtifacts` for those builds only.
+- **E2E tests:** Playwright in `apps/desktop/e2e/*.e2e.ts`, against a production build of `e2e.html` (`src/test/e2e.ts`: the fake core plus the live behaviour of the Rust core). New main flows get an E2E test; README screenshots come from `COVE_SCREENSHOTS=1 npx playwright test screenshots`.
 - **Rust types** in `src-tauri/src/models.rs` mirror `packages/shared/src/models.ts`. `contract_tests.rs` validates serialized values against `models.schema.json`.
 - **Database:** SQLite via sqlx with runtime queries (no `query!` macro, so no `DATABASE_URL` needed). Schema changes always come as a **new** file `src-tauri/migrations/NNNN_*.sql`; never edit existing migrations. DB functions get tests using `db::open_in_memory()`.
 - **Data types** (Game, LibraryEntry, Achievement, Download, CatalogFilter …) live in `packages/shared/src/models.ts`. After every change regenerate the schema with `npm run schemas -w @cove/shared`. One test checks the schema is up to date, another that mock and fake data match it.
@@ -103,6 +111,7 @@ npm run dev              # starts the desktop app (Tauri + Vite)
 npm run lint             # ESLint + tsc for all workspaces
 npm run test             # Vitest (shared, desktop) + node:test (plugins)
 npm run check            # lint + test
+npm run test:e2e -w @cove/desktop # Playwright (once: npx playwright install chromium in apps/desktop)
 npm run schemas -w @cove/shared   # regenerate the JSON schema from models.ts
 ```
 
@@ -116,6 +125,8 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 cargo test
 ```
+
+CI: `.github/workflows/ci.yml` (lint + tests for all five languages, E2E, Rust on Linux and Windows) and `release.yml` (AppImage, .deb, .rpm, MSI, NSIS; draft release on `v*` tags).
 
 App data (SQLite `cove.db`, Proton prefixes under `compat/`, plugins under `plugins/`) lives in Tauri's app data folder, on Linux `~/.local/share/app.cove.desktop/`. In the browser (`npm run dev -w @cove/desktop`) only the catalogue works; everything from the core shows "only available in the desktop app".
 

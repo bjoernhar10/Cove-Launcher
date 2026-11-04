@@ -169,7 +169,8 @@
         "connectorsUnavailable",
         "download",
         "itch",
-        "plugin"
+        "plugin",
+        "update"
       ],
       "type": "string"
     },
@@ -484,13 +485,17 @@
           ],
           "type": "string"
         },
+        "status": {
+          "$ref": "#/definitions/ServiceStatus"
+        },
         "version": {
           "type": "string"
         }
       },
       "required": [
         "name",
-        "version"
+        "version",
+        "status"
       ],
       "type": "object"
     },
@@ -2266,6 +2271,16 @@
       ],
       "type": "object"
     },
+    "ServiceStatus": {
+      "description": "Health of a component. Sidecars start on first use, so `idle` is normal.",
+      "enum": [
+        "running",
+        "idle",
+        "unavailable",
+        "notInstalled"
+      ],
+      "type": "string"
+    },
     "StartPage": {
       "enum": [
         "home",
@@ -2422,6 +2437,88 @@
         "dark"
       ],
       "type": "string"
+    },
+    "UpdateCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/UpdateInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`null` when Cove is up to date."
+        },
+        "canInstall": {
+          "description": "`false` for `.deb`/`.rpm` installs: the package manager updates those.",
+          "type": "boolean"
+        },
+        "currentVersion": {
+          "type": "string"
+        },
+        "installHint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "currentVersion",
+        "available",
+        "canInstall",
+        "installHint"
+      ],
+      "type": "object"
+    },
+    "UpdateInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "notes",
+        "date"
+      ],
+      "type": "object"
+    },
+    "UpdateProgress": {
+      "additionalProperties": false,
+      "description": "Event `update-progress` while an update downloads.",
+      "properties": {
+        "downloadedBytes": {
+          "type": "number"
+        },
+        "totalBytes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "downloadedBytes",
+        "totalBytes"
+      ],
+      "type": "object"
     },
     "UserProfile": {
       "additionalProperties": false,

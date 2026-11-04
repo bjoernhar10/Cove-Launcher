@@ -150,7 +150,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
           const selected = index === safeIndex;
           return (
             <li key={command.id} role="presentation">
-              {showGroup && <p className="px-3 pt-3 pb-1.5 text-xs font-medium text-fg-subtle first:pt-1">{command.group}</p>}
+              {showGroup && <p className="px-3 pt-3 pb-2 text-xs font-medium text-fg-subtle first:pt-1">{command.group}</p>}
               <div
                 id={`${listId}-${command.id}`}
                 role="option"

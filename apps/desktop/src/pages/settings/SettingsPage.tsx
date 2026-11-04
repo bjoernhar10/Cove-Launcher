@@ -4,14 +4,18 @@ import type {
   CatalogCredentials,
   CatalogProviderId,
   CatalogSource,
+  ComponentVersion,
+  ServiceStatus,
   ThemePreference,
+  UpdateCheck,
+  UpdateProgress,
 } from "@cove/shared";
-import { Check, ChevronRight, ExternalLink, FolderOpen, FolderSearch, Monitor, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Download, ExternalLink, FolderOpen, FolderSearch, Monitor, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { Navigate, NavLink, useParams } from "react-router";
 import { api } from "../../api/index.ts";
 import { Button } from "../../components/ui/Button.tsx";
-import { EmptyState, ErrorState } from "../../components/ui/Feedback.tsx";
+import { EmptyState, ErrorState, ProgressBar } from "../../components/ui/Feedback.tsx";
 import { Field, Input, Select, SettingRow, Switch } from "../../components/ui/Field.tsx";
 import { Page } from "../../components/ui/Page.tsx";
 import { useCatalogStatus } from "../../hooks/useCatalog.ts";
@@ -22,6 +26,7 @@ import { useQuery } from "../../hooks/useQuery.ts";
 import { queryClient } from "../../lib/queryClient.ts";
 import { cx } from "../../lib/cx.ts";
 import { modKeyLabel } from "../../lib/env.ts";
+import { formatPercent } from "../../lib/format.ts";
 import { ACCENT_LABELS, PLATFORM_LABELS, THEME_LABELS } from "../../lib/labels.ts";
 import { usePreferences } from "../../stores/preferences.ts";
 import { invalidateQueries } from "../../stores/query.ts";
@@ -171,9 +176,9 @@ function ThemeCard({ theme, selected, onSelect }: { theme: ThemePreference; sele
         selected ? "border-accent" : "border-border hover:border-border-strong",
       )}
     >
-      <span data-preview={theme} className="flex h-20 gap-1.5 border-b border-border bg-(--pv-bg) p-2">
+      <span data-preview={theme} className="flex h-20 gap-2 border-b border-border bg-(--pv-bg) p-2">
         <span className="w-6 rounded-md bg-(--pv-side)" />
-        <span className="flex flex-1 flex-col gap-1.5">
+        <span className="flex flex-1 flex-col gap-2">
           <span className="h-2 w-3/4 rounded-full bg-(--pv-line)" />
           <span className="h-2 w-1/2 rounded-full bg-(--pv-line)" />
           <span className="mt-auto h-3 w-8 rounded-md bg-accent" />
@@ -215,7 +220,7 @@ function AppearanceTab() {
         </div>
         <div>
           <h3 className="text-sm font-medium text-fg">Akzentfarbe</h3>
-          <p className="mt-0.5 mb-3 text-sm text-fg-muted">Eine ruhige Farbe für aktive Elemente und Hervorhebungen.</p>
+          <p className="mt-1 mb-3 text-sm text-fg-muted">Eine ruhige Farbe für aktive Elemente und Hervorhebungen.</p>
           <div role="radiogroup" aria-label="Akzentfarbe" className="flex flex-wrap gap-4">
             {ACCENTS.map((a) => (
               <AccentSwatch
@@ -393,8 +398,8 @@ function ProviderCard({ provider, configured }: { provider: (typeof PROVIDERS)[n
     <form className="rounded-lg border border-border p-5" onSubmit={(e) => void save(e)}>
       <div className="flex items-center justify-between gap-4">
         <h3 className="text-sm font-medium text-fg">{provider.name}</h3>
-        <span className={cx("inline-flex items-center gap-1.5 text-xs", configured ? "text-accent-text" : "text-fg-subtle")}>
-          {configured && <Check aria-hidden className="size-3.5" />}
+        <span className={cx("inline-flex items-center gap-2 text-xs", configured ? "text-accent-text" : "text-fg-subtle")}>
+          {configured && <Check aria-hidden />}
           {configured ? "Eingerichtet" : "Nicht eingerichtet"}
         </span>
       </div>
@@ -629,6 +634,106 @@ function DownloadsTab() {
   );
 }
 
+const COMPONENT_LABELS: Record<ComponentVersion["name"], string> = {
+  core: "Kern",
+  connectors: "Store-Verbindungen",
+  recommender: "Empfehlungen",
+};
+
+/** What is off while a service is unavailable (the rest of Cove keeps working). */
+const COMPONENT_IMPACT: Record<ComponentVersion["name"], string> = {
+  core: "",
+  connectors: "Anmelden und Abgleichen mit Steam, GOG und Epic ist gerade aus.",
+  recommender: "Cove zeigt einfache Vorschläge statt persönlicher Empfehlungen.",
+};
+
+const SERVICE_STATUS_LABELS: Record<ServiceStatus, string> = {
+  running: "Läuft",
+  idle: "Startet bei Bedarf",
+  unavailable: "Nicht verfügbar",
+  notInstalled: "Nicht enthalten",
+};
+
+function UpdateSection() {
+  const [state, setState] = useState<
+    | { phase: "idle" }
+    | { phase: "checking" }
+    | { phase: "result"; check: UpdateCheck }
+    | { phase: "installing"; progress: UpdateProgress | null }
+  >({ phase: "idle" });
+
+  async function check(): Promise<void> {
+    setState({ phase: "checking" });
+    try {
+      setState({ phase: "result", check: await api.system.checkForUpdates() });
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+      setState({ phase: "idle" });
+    }
+  }
+
+  async function install(check: UpdateCheck): Promise<void> {
+    setState({ phase: "installing", progress: null });
+    const unsubscribe = api.system.subscribeUpdateProgress((progress) => {
+      setState({ phase: "installing", progress });
+    });
+    try {
+      // Cove restarts when the update is installed.
+      await api.system.installUpdate();
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+      setState({ phase: "result", check });
+    } finally {
+      unsubscribe();
+    }
+  }
+
+  const available = state.phase === "result" ? state.check.available : null;
+  return (
+    <div aria-live="polite">
+      <h3 className="mb-3 text-sm font-medium text-fg">Updates</h3>
+      {state.phase === "installing" ? (
+        <div className="max-w-md">
+          <p className="text-sm text-fg-muted">
+            Update wird geladen und geprüft{" "}
+            {state.progress?.totalBytes ? <span className="num">{formatPercent(state.progress.downloadedBytes / state.progress.totalBytes)}</span> : "…"}
+          </p>
+          <ProgressBar value={state.progress?.downloadedBytes ?? 0} max={state.progress?.totalBytes ?? 0} label="Update-Fortschritt" className="mt-3" />
+        </div>
+      ) : (
+        <div className="flex max-w-md flex-col items-start gap-3">
+          {state.phase === "result" && !available && <p className="text-sm text-fg-muted">Cove ist auf dem neuesten Stand.</p>}
+          {state.phase === "result" && available && (
+            <div className="text-sm">
+              <p className="text-fg">
+                Version <span className="num">{available.version}</span> ist verfügbar.
+              </p>
+              {available.notes && <p className="mt-1 whitespace-pre-line text-fg-muted">{available.notes}</p>}
+              {state.check.installHint && <p className="mt-2 text-fg-muted">{state.check.installHint}</p>}
+            </div>
+          )}
+          <div className="flex gap-2">
+            {state.phase === "result" && available && state.check.canInstall && (
+              <Button
+                variant="primary"
+                icon={Download}
+                onClick={() => {
+                  void install(state.check);
+                }}
+              >
+                Installieren und neu starten
+              </Button>
+            )}
+            <Button icon={RefreshCw} disabled={state.phase === "checking"} onClick={() => void check()}>
+              {state.phase === "checking" ? "Suche …" : "Nach Updates suchen"}
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AboutTab() {
   const query = useQuery("about", api.system.getAbout);
 
@@ -648,7 +753,7 @@ function AboutTab() {
               Game data provided by{" "}
               <a
                 href={IGDB_URL}
-                className="inline-flex items-center gap-1 text-accent-text underline-offset-2 hover:underline [&_svg]:size-3.5"
+                className="inline-flex items-center gap-1 text-accent-text underline-offset-2 hover:underline"
                 onClick={(e) => {
                   e.preventDefault();
                   api.system.openExternal(IGDB_URL).catch((error: unknown) => {
@@ -665,25 +770,17 @@ function AboutTab() {
             <h3 className="mb-3 text-sm font-medium text-fg">Komponenten</h3>
             <dl className="m-0 max-w-md rounded-lg border border-border px-4 text-sm">
               {query.data.components.map((c) => (
-                <div key={c.name} className="flex justify-between border-b border-border py-2.5 last:border-b-0">
+                <div key={c.name} className="flex items-start justify-between gap-4 border-b border-border py-3 last:border-b-0">
                   <dt className="text-fg-muted">
-                    {{ core: "Core (Rust)", connectors: "Connectors (C#)", recommender: "Recommender (Python)" }[c.name]}
+                    {COMPONENT_LABELS[c.name]}
+                    {c.status === "unavailable" && <span className="mt-1 block text-xs text-fg-subtle">{COMPONENT_IMPACT[c.name]}</span>}
                   </dt>
-                  <dd className="num m-0 text-fg">{c.version}</dd>
+                  <dd className="m-0 text-right text-fg">{c.name === "core" ? <span className="num">{c.version}</span> : SERVICE_STATUS_LABELS[c.status]}</dd>
                 </div>
               ))}
             </dl>
           </div>
-          <div>
-            <Button
-              icon={RefreshCw}
-              onClick={() => {
-                toast("Cove ist auf dem neuesten Stand.");
-              }}
-            >
-              Nach Updates suchen
-            </Button>
-          </div>
+          <UpdateSection />
         </div>
       )}
     </Panel>
@@ -712,7 +809,7 @@ export function SettingsPage() {
       <h1 className="mb-8 text-xl font-semibold tracking-tight text-fg">Settings</h1>
       <div className="grid grid-cols-[200px_1fr] gap-12">
         <nav aria-label="Einstellungen">
-          <ul className="flex flex-col gap-0.5">
+          <ul className="flex flex-col gap-1">
             {TABS.map((t) => (
               <li key={t.id}>
                 <NavLink

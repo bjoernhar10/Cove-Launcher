@@ -30,7 +30,7 @@ function ContinueCard({ item }: { item: LibraryItem }) {
       <div className="flex items-center gap-4 p-4">
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-base font-medium text-fg">{game.title}</h3>
-          <p className="mt-0.5 truncate text-sm text-fg-muted">
+          <p className="mt-1 truncate text-sm text-fg-muted">
             <span className="num">{formatPlaytime(entry.playtimeMinutes)}</span>
             {entry.lastPlayedAt && <> · {formatRelative(entry.lastPlayedAt)}</>}
           </p>
@@ -167,7 +167,7 @@ function RecentAchievements() {
               <Skeleton className="size-10" />
               <div className="flex-1">
                 <Skeleton className="h-4 w-1/2" />
-                <Skeleton className="mt-1.5 h-3 w-1/3" />
+                <Skeleton className="mt-2 h-3 w-1/3" />
               </div>
             </div>
           ))}
@@ -245,7 +245,7 @@ function CoveAchievements() {
                   <p className="num text-xs text-fg-muted">
                     {a.current} / {a.target}
                   </p>
-                  <ProgressBar value={a.current} max={a.target} label={`Fortschritt ${a.title}`} className="mt-1.5" />
+                  <ProgressBar value={a.current} max={a.target} label={`Fortschritt ${a.title}`} className="mt-2" />
                 </div>
               )}
             </li>

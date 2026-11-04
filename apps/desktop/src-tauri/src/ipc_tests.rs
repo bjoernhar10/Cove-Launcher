@@ -242,6 +242,17 @@ async fn settings_and_misc_commands() {
     ] {
         invoke_raw(&app, cmd, args).unwrap_or_else(|e| panic!("{cmd} failed: {e}"));
     }
+
+    // Sidecars start on first use: asking for the status must not start them.
+    let about: Value = invoke(&app, "system_about", json!({}));
+    assert_eq!(about["components"][0]["status"], "running");
+    assert_ne!(about["components"][2]["status"], "running");
+
+    // The test app has no updater plugin: a clear error instead of a panic.
+    for cmd in ["updates_check", "updates_install"] {
+        let error = invoke_raw(&app, cmd, json!({})).unwrap_err();
+        assert_eq!(error["kind"], "update", "{cmd}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

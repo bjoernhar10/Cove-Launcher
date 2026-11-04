@@ -39,6 +39,22 @@
     "externalBin": [
       "binaries/cove-recommender",
       "binaries/cove-connectors"
-    ]
+    ],
+    "category": "Game",
+    "shortDescription": "Ein ruhiger Launcher für alle deine Spiele",
+    "publisher": "Cove",
+    "homepage": "https://github.com/bjoernhar10/Cove-Launcher",
+    "license": "MIT"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIzMUFGOTdFQ0FCMkI3MzUKUldRMXQ3TEtmdmthc3pLTThYWmIydWpWb2E1S1VIYllXVUlreTFwR2pVeU5IM0JCQWw3MjRpRzMK",
+      "endpoints": [
+        "https://github.com/bjoernhar10/Cove-Launcher/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

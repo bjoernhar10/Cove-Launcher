@@ -16,6 +16,7 @@ mod scanner;
 mod sidecar;
 mod state;
 mod stores;
+mod updates;
 
 #[cfg(test)]
 mod contract_tests;
@@ -88,6 +89,8 @@ macro_rules! cove_handlers {
             $crate::commands::downloads_clear_history,
             $crate::commands::system_profile,
             $crate::commands::system_about,
+            $crate::commands::updates_check,
+            $crate::commands::updates_install,
             $crate::commands::catalog_status,
             $crate::commands::catalog_set_credentials,
             $crate::commands::catalog_clear_credentials,
@@ -321,10 +324,49 @@ async fn serve_image<R: tauri::Runtime>(
     }
 }
 
+/// Shown instead of a panic when the core cannot start (e.g. a broken database).
+fn report_startup_failure(app: &tauri::App, error: &dyn std::error::Error) {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+    eprintln!("[cove] Start fehlgeschlagen: {error}");
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map(|d| d.display().to_string())
+        .unwrap_or_default();
+    let handle = app.handle().clone();
+    app.dialog()
+        .message(format!(
+            "Cove konnte seine Daten nicht laden und wird beendet.\n\n\
+             Deine Spiele und Einstellungen liegen unverändert in:\n{data_dir}\n\n\
+             Starte Cove noch einmal. Wenn der Fehler bleibt, melde ihn bitte auf GitHub \
+             und füge diese Meldung bei:\n{error}"
+        ))
+        .title("Cove konnte nicht starten")
+        .kind(MessageDialogKind::Error)
+        .show(move |_| handle.exit(1));
+}
+
 /// Builds and runs the Tauri application.
 pub fn run() {
+    let started = std::time::Instant::now();
+    let logged_start = std::sync::atomic::AtomicBool::new(false);
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .on_page_load(move |_, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished
+                && !logged_start.swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                eprintln!(
+                    "[cove] Oberfläche geladen nach {} ms",
+                    started.elapsed().as_millis()
+                );
+            }
+        })
         .register_asynchronous_uri_scheme_protocol(plugins::SCHEME, |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             let path = request.uri().path().to_owned();
@@ -343,9 +385,16 @@ pub fn run() {
             },
         )
         .setup(|app| {
-            let state = init_state(app)?;
+            let state = match init_state(app) {
+                Ok(state) => state,
+                Err(error) => {
+                    report_startup_failure(app, error.as_ref());
+                    return Ok(());
+                }
+            };
             let downloads = state.downloads.clone();
             app.manage(state);
+            app.manage(updates::UpdaterRegistered);
             // After `manage`: the download hooks look up the state.
             downloads.start();
             Ok(())

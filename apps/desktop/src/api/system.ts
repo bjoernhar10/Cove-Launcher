@@ -1,5 +1,5 @@
-import type { AboutInfo, UserProfile } from "@cove/shared";
-import { call } from "./transport.ts";
+import type { AboutInfo, UpdateCheck, UpdateProgress, UserProfile } from "@cove/shared";
+import { call, subscribe } from "./transport.ts";
 
 export function getProfile(): Promise<UserProfile> {
   return call("system_profile", {});
@@ -7,6 +7,20 @@ export function getProfile(): Promise<UserProfile> {
 
 export function getAbout(): Promise<AboutInfo> {
   return call("system_about", {});
+}
+
+/** Asks the release server whether a newer Cove exists. */
+export function checkForUpdates(): Promise<UpdateCheck> {
+  return call("updates_check", {});
+}
+
+/** Downloads, verifies and installs the update; Cove restarts when done. */
+export async function installUpdate(): Promise<void> {
+  await call("updates_install", {});
+}
+
+export function subscribeUpdateProgress(handler: (progress: UpdateProgress) => void): () => void {
+  return subscribe("update-progress", handler);
 }
 
 /** Opens a web link in the user's default browser. */

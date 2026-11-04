@@ -139,7 +139,7 @@ function OwnedGames({ onSelect }: { onSelect: (game: ItchGame) => void }) {
                 }}
               >
                 {game.coverUrl ? (
-                  <img src={game.coverUrl} alt="" className="size-10 shrink-0 rounded-md border border-border object-cover" loading="lazy" />
+                  <img src={game.coverUrl} alt="" className="size-10 shrink-0 rounded-md border border-border object-cover" loading="lazy" decoding="async" />
                 ) : (
                   <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-sidebar text-fg-subtle">
                     <Gamepad2 />

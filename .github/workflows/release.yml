@@ -1,0 +1,95 @@
+# Desktop builds: Linux (AppImage, .deb, .rpm) and Windows (MSI, NSIS).
+#
+# Every push to main builds all bundles and keeps them as workflow artifacts.
+# A tag `v*` (e.g. v0.2.0) additionally creates a draft GitHub release with
+# signed updater artifacts and `latest.json` for the Tauri updater.
+#
+# Secrets (Settings → Secrets and variables → Actions), only needed for tags:
+#   TAURI_SIGNING_PRIVATE_KEY           contents of ~/.tauri/cove-updater.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (empty for the generated key)
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  bundle:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux (AppImage, deb, rpm)
+            os: ubuntu-22.04
+            bundles: appimage,deb,rpm
+          - name: Windows (MSI, NSIS)
+            os: windows-latest
+            bundles: msi,nsis
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Tauri system packages (+ clang for the Native AOT connectors)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libayatana-appindicator3-dev libdbus-1-dev patchelf clang zlib1g-dev rpm
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: services/connectors/global.json
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+
+      - run: npm ci
+
+      # `beforeBuildCommand` builds both sidecars (PyInstaller, .NET) and the UI.
+      - name: Build (workflow artifacts)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: tauri-apps/tauri-action@v1
+        with:
+          projectPath: apps/desktop
+          args: --bundles ${{ matrix.bundles }}
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "cove-[platform]-[arch]"
+
+      - name: Build and publish a draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          args: --bundles ${{ matrix.bundles }} --config src-tauri/tauri.release.conf.json
+          tagName: ${{ github.ref_name }}
+          releaseName: Cove ${{ github.ref_name }}
+          releaseBody: Was neu ist, steht in den Commits seit dem letzten Release.
+          releaseDraft: true
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
