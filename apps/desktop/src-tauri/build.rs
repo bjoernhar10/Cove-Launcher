@@ -10,7 +10,29 @@ fn main() {
     );
     ensure_sidecar_placeholder("cove-recommender", "build:recommender");
     ensure_sidecar_placeholder("cove-connectors", "build:connectors");
-    tauri_build::build();
+    embed_windows_manifest();
+    let windows = tauri_build::WindowsAttributes::new_without_app_manifest();
+    if let Err(error) =
+        tauri_build::try_build(tauri_build::Attributes::new().windows_attributes(windows))
+    {
+        panic!("tauri build failed: {error:#}");
+    }
+}
+
+/// Windows: Tauri only embeds its app manifest (Common Controls v6) into the
+/// app binary, so `cargo test` binaries die at start with
+/// `STATUS_ENTRYPOINT_NOT_FOUND`. A linker argument puts the same manifest into
+/// every binary of the crate, tests included.
+fn embed_windows_manifest() {
+    let manifest = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default())
+        .join("windows-app-manifest.xml");
+    println!("cargo:rerun-if-changed={}", manifest.display());
+    let windows = std::env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "windows");
+    let msvc = std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|env| env == "msvc");
+    if windows && msvc {
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+    }
 }
 
 /// Tauri refuses to build when an `externalBin` is missing. Without a built
