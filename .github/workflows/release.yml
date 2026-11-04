@@ -61,7 +61,7 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: services/connectors/global.json
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: "3.12"
 
