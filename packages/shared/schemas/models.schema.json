@@ -166,7 +166,9 @@
         "reauthRequired",
         "privateProfile",
         "storeUnavailable",
-        "connectorsUnavailable"
+        "connectorsUnavailable",
+        "download",
+        "itch"
       ],
       "type": "string"
     },
@@ -627,6 +629,35 @@
       ],
       "type": "object"
     },
+    "DirectDownloadInput": {
+      "additionalProperties": false,
+      "description": "A direct link (DRM-free game, mod, patch).",
+      "properties": {
+        "sha256": {
+          "description": "Expected SHA-256 (hex); null = not checked.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "Library title; null = derived from the file name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "title",
+        "sha256"
+      ],
+      "type": "object"
+    },
     "Download": {
       "additionalProperties": false,
       "properties": {
@@ -634,11 +665,27 @@
           "description": "Current speed, 0 when not downloading.",
           "type": "number"
         },
+        "checksumVerified": {
+          "description": "True once the SHA-256 matched the expected value.",
+          "type": "boolean"
+        },
         "downloadedBytes": {
           "type": "number"
         },
         "error": {
           "description": "Human-readable error for failed downloads.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executablePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fileName": {
           "type": [
             "string",
             "null"
@@ -659,6 +706,16 @@
         },
         "id": {
           "type": "string"
+        },
+        "installPath": {
+          "description": "Game folder after a successful install.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "$ref": "#/definitions/DownloadOrigin"
         },
         "queuePosition": {
           "description": "Position in the queue (0-based) for active/queued items, null otherwise.",
@@ -691,7 +748,12 @@
         "queuePosition",
         "queuedAt",
         "finishedAt",
-        "error"
+        "error",
+        "origin",
+        "fileName",
+        "checksumVerified",
+        "installPath",
+        "executablePath"
       ],
       "type": "object"
     },
@@ -709,6 +771,46 @@
       "required": [
         "download",
         "game"
+      ],
+      "type": "object"
+    },
+    "DownloadOrigin": {
+      "description": "Where a download comes from. Store games are never downloaded by Cove itself.",
+      "enum": [
+        "direct",
+        "itch",
+        "steam",
+        "gog",
+        "epic"
+      ],
+      "type": "string"
+    },
+    "DownloadProgress": {
+      "additionalProperties": false,
+      "description": "Event `download-progress`, at most about 4 per second and download.",
+      "properties": {
+        "bytesPerSecond": {
+          "type": "number"
+        },
+        "downloadedBytes": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/DownloadStatus"
+        },
+        "totalBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "downloadedBytes",
+        "totalBytes",
+        "bytesPerSecond"
       ],
       "type": "object"
     },
@@ -741,9 +843,12 @@
         "downloading",
         "paused",
         "queued",
+        "verifying",
+        "extracting",
         "completed",
         "failed",
-        "cancelled"
+        "cancelled",
+        "handedOff"
       ],
       "type": "string"
     },
@@ -1057,6 +1162,94 @@
     "IsoDateTime": {
       "description": "ISO-8601 timestamp, e.g. `2026-11-03T09:52:57Z`.",
       "type": "string"
+    },
+    "ItchGame": {
+      "additionalProperties": false,
+      "description": "An itch.io game the user owns (or a free one).",
+      "properties": {
+        "coverUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "downloadKeyId": {
+          "description": "Purchase key; null for free games.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gameId": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "gameId",
+        "title",
+        "coverUrl",
+        "downloadKeyId",
+        "url"
+      ],
+      "type": "object"
+    },
+    "ItchStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "connected": {
+          "type": "boolean"
+        },
+        "userName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "connected",
+        "userName"
+      ],
+      "type": "object"
+    },
+    "ItchUpload": {
+      "additionalProperties": false,
+      "properties": {
+        "fileName": {
+          "type": "string"
+        },
+        "platforms": {
+          "items": {
+            "$ref": "#/definitions/Platform"
+          },
+          "type": "array"
+        },
+        "sizeBytes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "uploadId": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "uploadId",
+        "fileName",
+        "sizeBytes",
+        "platforms"
+      ],
+      "type": "object"
     },
     "Language": {
       "enum": [

@@ -52,6 +52,10 @@ pub enum AppError {
     StoreUnavailable(String),
     #[error("Store-Verbindungen sind gerade nicht verfügbar: Der Dienst {0}.")]
     ConnectorsUnavailable(String),
+    #[error("Download fehlgeschlagen: {0}")]
+    Download(String),
+    #[error("itch.io: {0}")]
+    Itch(String),
 }
 
 impl AppError {
@@ -81,6 +85,8 @@ impl AppError {
             Self::PrivateProfile(_) => "privateProfile",
             Self::StoreUnavailable(_) => "storeUnavailable",
             Self::ConnectorsUnavailable(_) => "connectorsUnavailable",
+            Self::Download(_) => "download",
+            Self::Itch(_) => "itch",
         }
     }
 }

@@ -176,7 +176,22 @@ export interface PlaytimeStats {
   days: PlaytimeDay[];
 }
 
-export type DownloadStatus = "downloading" | "paused" | "queued" | "completed" | "failed" | "cancelled";
+export type DownloadStatus =
+  | "downloading"
+  | "paused"
+  | "queued"
+  /** SHA-256 check after the transfer. */
+  | "verifying"
+  /** Unpacking the archive into the game folder. */
+  | "extracting"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  /** Store game: the installation was handed over to the store's own client. */
+  | "handedOff";
+
+/** Where a download comes from. Store games are never downloaded by Cove itself. */
+export type DownloadOrigin = "direct" | "itch" | "steam" | "gog" | "epic";
 
 export interface Download {
   id: string;
@@ -193,6 +208,53 @@ export interface Download {
   finishedAt: IsoDateTime | null;
   /** Human-readable error for failed downloads. */
   error: string | null;
+  origin: DownloadOrigin;
+  fileName: string | null;
+  /** True once the SHA-256 matched the expected value. */
+  checksumVerified: boolean;
+  /** Game folder after a successful install. */
+  installPath: string | null;
+  executablePath: string | null;
+}
+
+/** Event `download-progress`, at most about 4 per second and download. */
+export interface DownloadProgress {
+  id: string;
+  status: DownloadStatus;
+  downloadedBytes: number;
+  totalBytes: number;
+  bytesPerSecond: number;
+}
+
+/** A direct link (DRM-free game, mod, patch). */
+export interface DirectDownloadInput {
+  url: string;
+  /** Library title; null = derived from the file name. */
+  title: string | null;
+  /** Expected SHA-256 (hex); null = not checked. */
+  sha256: string | null;
+}
+
+export interface ItchStatus {
+  connected: boolean;
+  userName: string | null;
+}
+
+/** An itch.io game the user owns (or a free one). */
+export interface ItchGame {
+  gameId: number;
+  title: string;
+  coverUrl: string | null;
+  /** Purchase key; null for free games. */
+  downloadKeyId: number | null;
+  url: string | null;
+}
+
+export interface ItchUpload {
+  uploadId: number;
+  fileName: string;
+  sizeBytes: number | null;
+  platforms: Platform[];
 }
 
 /** Download joined with its game metadata. */
@@ -524,7 +586,9 @@ export type AppErrorKind =
   | "reauthRequired"
   | "privateProfile"
   | "storeUnavailable"
-  | "connectorsUnavailable";
+  | "connectorsUnavailable"
+  | "download"
+  | "itch";
 
 /** Error shape of every rejected Tauri command. */
 export interface AppErrorPayload {

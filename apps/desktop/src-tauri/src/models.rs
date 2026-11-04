@@ -277,14 +277,17 @@ pub struct PlaytimeStats {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum DownloadStatus {
     Downloading,
     Paused,
     Queued,
+    Verifying,
+    Extracting,
     Completed,
     Failed,
     Cancelled,
+    HandedOff,
 }
 
 impl DownloadStatus {
@@ -296,6 +299,9 @@ impl DownloadStatus {
             Self::Completed => "completed",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
+            Self::Verifying => "verifying",
+            Self::Extracting => "extracting",
+            Self::HandedOff => "handedOff",
         }
     }
 
@@ -303,10 +309,45 @@ impl DownloadStatus {
         match value {
             "downloading" => Self::Downloading,
             "paused" => Self::Paused,
+            "verifying" => Self::Verifying,
+            "extracting" => Self::Extracting,
+            "handedOff" => Self::HandedOff,
             "completed" => Self::Completed,
             "failed" => Self::Failed,
             "cancelled" => Self::Cancelled,
             _ => Self::Queued,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadOrigin {
+    Direct,
+    Itch,
+    Steam,
+    Gog,
+    Epic,
+}
+
+impl DownloadOrigin {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Itch => "itch",
+            Self::Steam => "steam",
+            Self::Gog => "gog",
+            Self::Epic => "epic",
+        }
+    }
+
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "itch" => Self::Itch,
+            "steam" => Self::Steam,
+            "gog" => Self::Gog,
+            "epic" => Self::Epic,
+            _ => Self::Direct,
         }
     }
 }
@@ -325,6 +366,11 @@ pub struct Download {
     pub queued_at: String,
     pub finished_at: Option<String>,
     pub error: Option<String>,
+    pub origin: DownloadOrigin,
+    pub file_name: Option<String>,
+    pub checksum_verified: bool,
+    pub install_path: Option<String>,
+    pub executable_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -819,4 +865,48 @@ pub struct RecommenderLibraryGame {
 /// Current UTC time as ISO-8601 with second precision (`2026-11-03T09:52:57Z`).
 pub fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadProgress<'a> {
+    pub id: &'a str,
+    pub status: DownloadStatus,
+    pub downloaded_bytes: i64,
+    pub total_bytes: i64,
+    pub bytes_per_second: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectDownloadInput {
+    pub url: String,
+    pub title: Option<String>,
+    pub sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItchStatus {
+    pub connected: bool,
+    pub user_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItchGame {
+    pub game_id: i64,
+    pub title: String,
+    pub cover_url: Option<String>,
+    pub download_key_id: Option<i64>,
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItchUpload {
+    pub upload_id: i64,
+    pub file_name: String,
+    pub size_bytes: Option<i64>,
+    pub platforms: Vec<Platform>,
 }

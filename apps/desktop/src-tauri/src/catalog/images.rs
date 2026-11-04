@@ -21,6 +21,8 @@ pub const ALLOWED_HOSTS: &[&str] = &[
     "cdn.akamai.steamstatic.com",
     "cdn.cloudflare.steamstatic.com",
     "shared.akamai.steamstatic.com",
+    // itch.io cover images
+    "img.itch.zone",
     // GOG product images
     "images.gog.com",
     "images.gog-statics.com",

@@ -35,6 +35,11 @@ import type {
   MatchCandidate,
   Recommendation,
   ConnectorLoginStart,
+  DirectDownloadInput,
+  DownloadProgress,
+  ItchGame,
+  ItchStatus,
+  ItchUpload,
   ConnectorLoginFinished,
   LocalStoreGame,
   ImportSummary,
@@ -78,7 +83,20 @@ export interface CoveCommands {
   plugins_list: { args: NoArgs; result: PluginInfo[] };
   plugins_set_enabled: { args: { id: string; enabled: boolean }; result: PluginInfo };
   downloads_list: { args: NoArgs; result: DownloadItem[] };
+  /** Store games: hands the installation over to Steam/GOG/Epic. */
   downloads_enqueue: { args: { gameId: GameId }; result: null };
+  downloads_add_url: { args: { input: DirectDownloadInput }; result: DownloadItem };
+  downloads_add_itch: {
+    args: { gameId: number; uploadId: number; downloadKeyId: number | null; title: string };
+    result: DownloadItem;
+  };
+  itch_status: { args: NoArgs; result: ItchStatus };
+  itch_set_api_key: { args: { apiKey: string }; result: ItchStatus };
+  itch_clear_api_key: { args: NoArgs; result: ItchStatus };
+  itch_owned_games: { args: NoArgs; result: ItchGame[] };
+  /** A free game by its page, e.g. https://someone.itch.io/game */
+  itch_lookup: { args: { url: string }; result: ItchGame };
+  itch_uploads: { args: { gameId: number; downloadKeyId: number | null }; result: ItchUpload[] };
   downloads_set_status: { args: { id: string; status: DownloadStatus }; result: null };
   downloads_reorder: { args: { orderedIds: string[] }; result: null };
   downloads_clear_history: { args: NoArgs; result: null };
@@ -107,6 +125,7 @@ export type CoveCommand = keyof CoveCommands;
 export interface CoveEvents {
   "game-state-changed": GameStateEvent;
   "downloads-changed": DownloadItem[];
+  "download-progress": DownloadProgress;
   "library-match-changed": LibraryMatchEvent;
   "connector-login-finished": ConnectorLoginFinished;
   "store-sync-progress": SyncProgress;

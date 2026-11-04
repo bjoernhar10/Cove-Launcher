@@ -90,6 +90,21 @@ async fn app() -> TestApp {
             Arc::new(|_| {}),
         )),
         open_url: Arc::new(|_| Ok(())),
+        downloads: Arc::new(crate::downloads::DownloadManager::new(
+            pool.clone(),
+            default_settings(None),
+            crate::downloads::itch::ItchApi::new(
+                Arc::new(crate::catalog::secrets::MemoryStore::default()),
+                "http://127.0.0.1:1",
+            ),
+            None,
+            crate::downloads::Hooks {
+                changed: Arc::new(|| {}),
+                progress: Arc::new(|_| {}),
+                installed: Arc::new(|_| {}),
+                open_url: Arc::new(|_| Ok(())),
+            },
+        )),
         pool,
     };
     let app = mock_builder()
@@ -328,4 +343,77 @@ async fn connector_commands_accept_frontend_payloads() {
     let achievements: Vec<crate::models::CoveAchievement> =
         invoke(&app, "cove_achievements_list", json!({}));
     assert_eq!(achievements.len(), 6);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn download_commands_accept_frontend_payloads() {
+    let app = app().await;
+    let item: Value = invoke(
+        &app,
+        "downloads_add_url",
+        json!({ "input": { "url": "http://127.0.0.1:1/files/lantern-linux.zip", "title": null, "sha256": null } }),
+    );
+    assert_eq!(item["download"]["status"], "queued");
+    assert_eq!(item["download"]["origin"], "direct");
+    assert_eq!(item["download"]["checksumVerified"], false);
+
+    let bad = invoke_raw(
+        &app,
+        "downloads_add_url",
+        json!({ "input": { "url": "ftp://x/y", "title": "X", "sha256": null } }),
+    )
+    .unwrap_err();
+    assert_eq!(bad["kind"], "invalidInput");
+
+    let id = item["download"]["id"].as_str().unwrap();
+    invoke_raw(
+        &app,
+        "downloads_set_status",
+        json!({ "id": id, "status": "paused" }),
+    )
+    .unwrap();
+    invoke_raw(
+        &app,
+        "downloads_set_status",
+        json!({ "id": id, "status": "cancelled" }),
+    )
+    .unwrap();
+    let list: Vec<crate::models::DownloadItem> = invoke(&app, "downloads_list", json!({}));
+    assert_eq!(
+        list[0].download.status,
+        crate::models::DownloadStatus::Cancelled
+    );
+
+    let status: Value = invoke(&app, "itch_status", json!({}));
+    assert_eq!(status, json!({ "connected": false, "userName": null }));
+    let key = invoke_raw(&app, "itch_set_api_key", json!({ "apiKey": "not a key!" })).unwrap_err();
+    assert_eq!(key["kind"], "invalidInput");
+    let owned = invoke_raw(&app, "itch_owned_games", json!({})).unwrap_err();
+    assert_eq!(owned["kind"], "itch");
+    let uploads = invoke_raw(
+        &app,
+        "itch_uploads",
+        json!({ "gameId": 1, "downloadKeyId": null }),
+    )
+    .unwrap_err();
+    assert_eq!(uploads["kind"], "itch");
+    let add = invoke_raw(
+        &app,
+        "downloads_add_itch",
+        json!({ "gameId": 1, "uploadId": 2, "downloadKeyId": 3, "title": "Zeta" }),
+    )
+    .unwrap_err();
+    assert_eq!(add["kind"], "itch");
+    let lookup = invoke_raw(&app, "itch_lookup", json!({ "url": "nonsense" })).unwrap_err();
+    assert_eq!(lookup["kind"], "invalidInput");
+    invoke_raw(&app, "itch_clear_api_key", json!({})).unwrap();
+
+    // Manual games cannot be handed to a store.
+    let handoff = invoke_raw(
+        &app,
+        "downloads_enqueue",
+        json!({ "gameId": list[0].game.id }),
+    )
+    .unwrap_err();
+    assert_eq!(handoff["kind"], "notInLibrary");
 }

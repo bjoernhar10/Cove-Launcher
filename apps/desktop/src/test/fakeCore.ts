@@ -9,6 +9,8 @@ import type {
   ConnectableStore,
   CoveAchievement,
   LocalStoreGame,
+  DownloadItem,
+  ItchGame,
   StoreAccount,
   CoveEvents,
   MatchCandidate,
@@ -125,6 +127,35 @@ export interface FakeCore {
   accounts: Record<ConnectableStore, StoreAccount>;
   local: LocalStoreGame[];
   coveAchievements: CoveAchievement[];
+  downloads: DownloadItem[];
+  itchKey: string | null;
+}
+
+export const FAKE_ITCH_GAME: ItchGame = { gameId: 7, title: "Zeta", coverUrl: null, downloadKeyId: 11, url: "https://a.itch.io/zeta" };
+
+export function fakeDownload(id: string, title: string, overrides: Partial<DownloadItem["download"]> = {}): DownloadItem {
+  return {
+    game: fakeGame(`dl-${id}`, title),
+    download: {
+      id,
+      gameId: `dl-${id}`,
+      source: "manual",
+      status: "queued",
+      totalBytes: 0,
+      downloadedBytes: 0,
+      bytesPerSecond: 0,
+      queuePosition: 0,
+      queuedAt: "2026-11-04T10:00:00Z",
+      finishedAt: null,
+      error: null,
+      origin: "direct",
+      fileName: null,
+      checksumVerified: false,
+      installPath: null,
+      executablePath: null,
+      ...overrides,
+    },
+  };
 }
 
 /** Installs the fake core. Returns its (mutable) state for assertions. */
@@ -139,6 +170,8 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     accounts: { steam: fakeAccount("steam"), gog: fakeAccount("gog"), epic: fakeAccount("epic") },
     local: structuredClone(FAKE_LOCAL),
     coveAchievements: structuredClone(FAKE_COVE_ACHIEVEMENTS),
+    downloads: [],
+    itchKey: null,
   };
   const requireCatalog = () => {
     const cove = core.catalog.cove && core.settings.catalog.useCoveService;
@@ -252,9 +285,52 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     plugins_set_enabled: () => {
       reject("invalidInput", "Plugin nicht gefunden");
     },
-    downloads_list: () => [],
-    downloads_enqueue: () => null,
-    downloads_set_status: () => null,
+    downloads_list: () => core.downloads,
+    downloads_enqueue: ({ gameId }) => {
+      const item = require(gameId);
+      const store = item.entry.source;
+      if (store === "manual") reject("invalidInput", "Dieses Spiel stammt aus keinem Store.");
+      core.downloads.push(fakeDownload(`h-${gameId}`, item.game.title, { status: "handedOff", origin: store }));
+      return null;
+    },
+    downloads_set_status: ({ id, status }) => {
+      const item = core.downloads.find((d) => d.download.id === id) ?? reject("invalidInput", "Download nicht gefunden");
+      item.download.status = status;
+      if (status === "cancelled") item.download.queuePosition = null;
+      return null;
+    },
+    downloads_add_url: ({ input }) => {
+      if (!/^https?:\/\//.test(input.url)) reject("invalidInput", "Das ist kein gültiger Link.");
+      const name = input.title ?? input.url.split("/").pop() ?? "Download";
+      const item = fakeDownload(`u${String(core.downloads.length)}`, name, { queuePosition: core.downloads.length });
+      core.downloads.push(item);
+      return item;
+    },
+    downloads_add_itch: ({ title }) => {
+      if (!core.itchKey) reject("itch", "Verbinde zuerst dein itch.io-Konto.");
+      const item = fakeDownload(`i${String(core.downloads.length)}`, title, { origin: "itch", queuePosition: core.downloads.length });
+      core.downloads.push(item);
+      return item;
+    },
+    itch_status: () => ({ connected: core.itchKey !== null, userName: core.itchKey ? "Kiefer" : null }),
+    itch_set_api_key: ({ apiKey }) => {
+      if (apiKey !== "goodkey") reject("itch", "Der API-Schlüssel ist ungültig oder abgelaufen.");
+      core.itchKey = apiKey;
+      return { connected: true, userName: "Kiefer" };
+    },
+    itch_clear_api_key: () => {
+      core.itchKey = null;
+      return { connected: false, userName: null };
+    },
+    itch_owned_games: () => {
+      if (!core.itchKey) reject("itch", "Verbinde zuerst dein itch.io-Konto.");
+      return [FAKE_ITCH_GAME];
+    },
+    itch_lookup: ({ url }) => {
+      if (!url.includes("itch.io")) reject("invalidInput", "Bitte gib die Adresse einer itch.io-Spielseite ein.");
+      return { gameId: 99, title: "Free Game", coverUrl: null, downloadKeyId: null, url };
+    },
+    itch_uploads: () => [{ uploadId: 100, fileName: "zeta-linux.zip", sizeBytes: 1_000_000, platforms: ["linux"] }],
     downloads_reorder: () => null,
     downloads_clear_history: () => null,
     system_profile: () => ({ id: "local", displayName: "Testperson", avatarUrl: null }),

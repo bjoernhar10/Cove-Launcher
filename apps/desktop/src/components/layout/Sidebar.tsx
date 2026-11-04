@@ -4,7 +4,7 @@ import { api } from "../../api/index.ts";
 import { useQuery } from "../../hooks/useQuery.ts";
 import { cx } from "../../lib/cx.ts";
 import { formatPercent } from "../../lib/format.ts";
-import { selectActive, selectQueued, useDownloads } from "../../stores/downloads.ts";
+import { selectActive, selectQueued, selectRunning, useDownloads } from "../../stores/downloads.ts";
 import { usePreferences } from "../../stores/preferences.ts";
 import { Avatar, ProgressBar, Skeleton } from "../ui/Feedback.tsx";
 import { MAIN_NAV, SETTINGS_NAV, type NavItem } from "./nav.ts";
@@ -49,10 +49,11 @@ function SidebarLink({ item, collapsed, badge }: { item: NavItem; collapsed: boo
 
 function DownloadIndicator({ collapsed }: { collapsed: boolean }) {
   const items = useDownloads((s) => s.items);
-  const running = selectActive(items).find((i) => i.download.status === "downloading");
+  const running = selectRunning(items);
   if (!running) return null;
-  const { downloadedBytes, totalBytes } = running.download;
-  const pct = formatPercent(downloadedBytes / totalBytes);
+  const { downloadedBytes, totalBytes, status } = running.download;
+  const pct =
+    status === "verifying" ? "Prüfen" : status === "extracting" ? "Entpacken" : totalBytes > 0 ? formatPercent(downloadedBytes / totalBytes) : "…";
   return (
     <NavLink
       to="/downloads"

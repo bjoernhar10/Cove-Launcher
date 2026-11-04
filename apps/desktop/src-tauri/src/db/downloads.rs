@@ -1,16 +1,21 @@
-//! Download queue persistence. The actual transfer is done by the store
-//! connectors later; this module only manages queue state.
+//! Download queue persistence. The engine (`crate::downloads`) does the
+//! transfers; this module only stores state, so downloads survive restarts.
 
 use sqlx::{FromRow, SqlitePool};
 
 use crate::db::library::{GameRow, GAME_COLUMNS};
+use crate::db::slugify;
 use crate::error::{AppError, AppResult};
-use crate::models::{now_iso, Download, DownloadItem, DownloadStatus, StoreSource};
+use crate::models::{
+    now_iso, CompatibilityTool, Download, DownloadItem, DownloadOrigin, DownloadStatus, Platform,
+    StoreSource,
+};
 
 #[derive(Debug, FromRow)]
 struct DownloadRow {
     download_id: String,
     source_id: String,
+    origin: String,
     status: String,
     total_bytes: i64,
     downloaded_bytes: i64,
@@ -18,6 +23,10 @@ struct DownloadRow {
     queued_at: String,
     finished_at: Option<String>,
     error: Option<String>,
+    file_name: Option<String>,
+    checksum_verified: bool,
+    install_path: Option<String>,
+    executable_path: Option<String>,
     #[sqlx(flatten)]
     game: GameRow,
 }
@@ -38,21 +47,106 @@ impl DownloadRow {
                 queued_at: self.queued_at,
                 finished_at: self.finished_at,
                 error: self.error,
+                origin: DownloadOrigin::parse(&self.origin),
+                file_name: self.file_name,
+                checksum_verified: self.checksum_verified,
+                install_path: self.install_path,
+                executable_path: self.executable_path,
             },
             game,
         })
     }
 }
 
+const SELECT: &str = "SELECT d.id AS download_id, d.source_id, d.origin, d.status, d.total_bytes, d.downloaded_bytes, \
+       d.queue_position, d.queued_at, d.finished_at, d.error, d.file_name, d.checksum_verified, d.install_path, \
+       d.executable_path";
+
 pub async fn list(pool: &SqlitePool) -> AppResult<Vec<DownloadItem>> {
     let rows: Vec<DownloadRow> = sqlx::query_as(&format!(
-        "SELECT d.id AS download_id, d.source_id, d.status, d.total_bytes, d.downloaded_bytes, d.queue_position, \
-           d.queued_at, d.finished_at, d.error, {GAME_COLUMNS} \
-         FROM downloads d JOIN games g ON g.id = d.game_id ORDER BY d.queue_position IS NULL, d.queue_position, d.finished_at DESC"
+        "{SELECT}, {GAME_COLUMNS} FROM downloads d JOIN games g ON g.id = d.game_id \
+         ORDER BY d.queue_position IS NULL, d.queue_position, d.finished_at DESC"
     ))
     .fetch_all(pool)
     .await?;
     rows.into_iter().map(DownloadRow::into_item).collect()
+}
+
+pub async fn get(pool: &SqlitePool, id: &str) -> AppResult<DownloadItem> {
+    let row: Option<DownloadRow> = sqlx::query_as(&format!(
+        "{SELECT}, {GAME_COLUMNS} FROM downloads d JOIN games g ON g.id = d.game_id WHERE d.id = ?"
+    ))
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    row.ok_or_else(|| AppError::InvalidInput(format!("Download nicht gefunden: {id}")))?
+        .into_item()
+}
+
+/// Everything the engine needs to (re)start a transfer.
+#[derive(Debug, Clone, FromRow, PartialEq, Eq)]
+pub struct Record {
+    pub id: String,
+    pub game_id: String,
+    pub origin: String,
+    pub status: String,
+    pub total_bytes: i64,
+    pub downloaded_bytes: i64,
+    pub url: Option<String>,
+    pub file_name: Option<String>,
+    pub checksum_sha256: Option<String>,
+    pub etag: Option<String>,
+    pub chunk_size: i64,
+    pub chunks_done: String,
+    pub target_dir: Option<String>,
+    pub itch_game_id: Option<i64>,
+    pub itch_upload_id: Option<i64>,
+    pub itch_download_key_id: Option<i64>,
+    pub title: String,
+}
+
+pub async fn record(pool: &SqlitePool, id: &str) -> AppResult<Record> {
+    sqlx::query_as(
+        "SELECT d.id, d.game_id, d.origin, d.status, d.total_bytes, d.downloaded_bytes, d.url, d.file_name, \
+           d.checksum_sha256, d.etag, d.chunk_size, d.chunks_done, d.target_dir, d.itch_game_id, d.itch_upload_id, \
+           d.itch_download_key_id, g.title \
+         FROM downloads d JOIN games g ON g.id = d.game_id WHERE d.id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::InvalidInput(format!("Download nicht gefunden: {id}")))
+}
+
+/// Queued transfers (direct + itch) in queue order.
+pub async fn queued(pool: &SqlitePool) -> AppResult<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM downloads WHERE status = 'queued' AND origin IN ('direct', 'itch') \
+         ORDER BY queue_position",
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+/// `(download id, store, store game id, game id)` of installs handed to a store client.
+pub async fn handed_off(pool: &SqlitePool) -> AppResult<Vec<(String, String, String, String)>> {
+    Ok(sqlx::query_as(
+        "SELECT d.id, d.origin, e.store_game_id, d.game_id FROM downloads d \
+         JOIN library_entries e ON e.game_id = d.game_id \
+         WHERE d.status = 'handedOff' AND e.store_game_id IS NOT NULL",
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
+/// After a restart, transfers that were running continue from where they stopped.
+pub async fn requeue_interrupted(pool: &SqlitePool) -> AppResult<u64> {
+    Ok(sqlx::query(
+        "UPDATE downloads SET status = 'queued' WHERE status IN ('downloading', 'verifying', 'extracting')",
+    )
+    .execute(pool)
+    .await?
+    .rows_affected())
 }
 
 async fn renumber(pool: &SqlitePool) -> AppResult<()> {
@@ -71,40 +165,146 @@ async fn renumber(pool: &SqlitePool) -> AppResult<()> {
     Ok(())
 }
 
-/// Queues a library game for installation (no-op if it is already queued or running).
-pub async fn enqueue(pool: &SqlitePool, game_id: &str) -> AppResult<()> {
-    let source: Option<String> =
-        sqlx::query_scalar("SELECT source_id FROM library_entries WHERE game_id = ?")
+fn new_id(base: &str) -> String {
+    format!("dl-{base}-{}", chrono::Utc::now().timestamp_micros())
+}
+
+/// Store games: the installation is handed over to the store's client.
+/// Returns the download id (an existing active one is reused).
+pub async fn enqueue_handoff(
+    pool: &SqlitePool,
+    game_id: &str,
+) -> AppResult<(String, StoreSource, String)> {
+    let entry: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT source_id, store_game_id FROM library_entries WHERE game_id = ?")
             .bind(game_id)
             .fetch_optional(pool)
             .await?;
-    let source = source.ok_or_else(|| AppError::NotInLibrary(game_id.to_owned()))?;
-    if source == "manual" {
+    let (source, store_game_id) =
+        entry.ok_or_else(|| AppError::NotInLibrary(game_id.to_owned()))?;
+    let store = StoreSource::parse(&source).filter(|s| *s != StoreSource::Manual);
+    let (Some(store), Some(store_game_id)) = (store, store_game_id) else {
         return Err(AppError::InvalidInput(
-            "Manuell hinzugefügte Spiele können nicht heruntergeladen werden. Lege stattdessen den Pfad fest.".into(),
+            "Dieses Spiel stammt aus keinem Store. Lade es über einen Link oder itch.io herunter oder lege den Pfad fest.".into(),
         ));
-    }
-    let active: Option<i64> = sqlx::query_scalar(
-        "SELECT 1 FROM downloads WHERE game_id = ? AND queue_position IS NOT NULL",
+    };
+    let active: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM downloads WHERE game_id = ? AND queue_position IS NOT NULL",
     )
     .bind(game_id)
     .fetch_optional(pool)
     .await?;
-    if active.is_some() {
-        return Ok(());
+    if let Some(id) = active {
+        return Ok((id, store, store_game_id));
+    }
+    let id = new_id(game_id);
+    sqlx::query(
+        "INSERT INTO downloads (id, game_id, source_id, origin, status, queue_position, queued_at) \
+         VALUES (?, ?, ?, ?, 'handedOff', (SELECT COALESCE(MAX(queue_position), -1) + 1 FROM downloads), ?)",
+    )
+    .bind(&id)
+    .bind(game_id)
+    .bind(store.as_str())
+    .bind(store.as_str())
+    .bind(now_iso())
+    .execute(pool)
+    .await?;
+    Ok((id, store, store_game_id))
+}
+
+/// A file transfer (direct link or itch.io).
+#[derive(Debug, Clone, Default)]
+pub struct NewTransfer {
+    pub title: String,
+    pub origin: Option<DownloadOrigin>,
+    pub url: Option<String>,
+    pub file_name: Option<String>,
+    pub sha256: Option<String>,
+    pub target_dir: String,
+    pub itch_game_id: Option<i64>,
+    pub itch_upload_id: Option<i64>,
+    pub itch_download_key_id: Option<i64>,
+}
+
+/// Creates the game (metadata only; it joins the library once installed) and queues the transfer.
+pub async fn enqueue_transfer(pool: &SqlitePool, input: &NewTransfer) -> AppResult<String> {
+    let title = input.title.trim();
+    if title.is_empty() {
+        return Err(AppError::InvalidInput("Bitte gib einen Namen ein.".into()));
+    }
+    let origin = input.origin.unwrap_or(DownloadOrigin::Direct);
+    let base = match (origin, input.itch_game_id) {
+        (DownloadOrigin::Itch, Some(id)) => format!("itch-{id}"),
+        _ => format!("dl-{}", slugify(title)),
+    };
+    let mut game_id = base.clone();
+    let mut n = 2;
+    loop {
+        let in_library: Option<i64> =
+            sqlx::query_scalar("SELECT 1 FROM library_entries WHERE game_id = ?")
+                .bind(&game_id)
+                .fetch_optional(pool)
+                .await?;
+        let active: Option<i64> = sqlx::query_scalar(
+            "SELECT 1 FROM downloads WHERE game_id = ? AND queue_position IS NOT NULL",
+        )
+        .bind(&game_id)
+        .fetch_optional(pool)
+        .await?;
+        if active.is_some() && origin == DownloadOrigin::Itch {
+            return Err(AppError::InvalidInput(format!(
+                "„{title}“ wird bereits heruntergeladen."
+            )));
+        }
+        if in_library.is_none() && active.is_none() {
+            break;
+        }
+        game_id = format!("{base}-{n}");
+        n += 1;
     }
     let now = now_iso();
+    let note = match origin {
+        DownloadOrigin::Itch => "Von itch.io heruntergeladen.",
+        _ => "Über einen Link heruntergeladen.",
+    };
     sqlx::query(
-        "INSERT INTO downloads (id, game_id, source_id, status, queue_position, queued_at) \
-         VALUES (?, ?, ?, 'queued', (SELECT COALESCE(MAX(queue_position), -1) + 1 FROM downloads), ?)",
+        "INSERT INTO games (id, title, summary, description, platforms, release_date, created_at) \
+         VALUES (?, ?, ?, ?, ?, '', ?) \
+         ON CONFLICT (id) DO UPDATE SET title = excluded.title",
     )
-    .bind(format!("dl-{game_id}-{}", chrono::Utc::now().timestamp_millis()))
-    .bind(game_id)
-    .bind(source)
+    .bind(&game_id)
+    .bind(title)
+    .bind(note)
+    .bind(
+        input
+            .url
+            .as_deref()
+            .map_or_else(|| note.to_owned(), |u| format!("{note}\n\nQuelle: {u}")),
+    )
+    .bind(serde_json::to_string(&[Platform::current()])?)
     .bind(&now)
     .execute(pool)
     .await?;
-    Ok(())
+    let id = new_id(&game_id);
+    sqlx::query(
+        "INSERT INTO downloads (id, game_id, source_id, origin, status, queue_position, queued_at, url, file_name, \
+           checksum_sha256, target_dir, itch_game_id, itch_upload_id, itch_download_key_id) \
+         VALUES (?, ?, 'manual', ?, 'queued', (SELECT COALESCE(MAX(queue_position), -1) + 1 FROM downloads), ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(&game_id)
+    .bind(origin.as_str())
+    .bind(&now)
+    .bind(&input.url)
+    .bind(&input.file_name)
+    .bind(input.sha256.as_ref().map(|s| s.trim().to_lowercase()))
+    .bind(&input.target_dir)
+    .bind(input.itch_game_id)
+    .bind(input.itch_upload_id)
+    .bind(input.itch_download_key_id)
+    .execute(pool)
+    .await?;
+    Ok(id)
 }
 
 pub async fn set_status(pool: &SqlitePool, id: &str, status: DownloadStatus) -> AppResult<()> {
@@ -140,6 +340,96 @@ pub async fn set_status(pool: &SqlitePool, id: &str, status: DownloadStatus) -> 
     renumber(pool).await
 }
 
+pub async fn fail(pool: &SqlitePool, id: &str, message: &str) -> AppResult<()> {
+    // Message first: whoever sees `failed` also sees why.
+    sqlx::query("UPDATE downloads SET error = ? WHERE id = ?")
+        .bind(message)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    set_status(pool, id, DownloadStatus::Failed).await
+}
+
+/// What the server told us about the file.
+pub async fn set_remote(
+    pool: &SqlitePool,
+    id: &str,
+    total_bytes: i64,
+    etag: Option<&str>,
+    file_name: &str,
+) -> AppResult<()> {
+    sqlx::query("UPDATE downloads SET total_bytes = ?, etag = ?, file_name = ? WHERE id = ?")
+        .bind(total_bytes)
+        .bind(etag)
+        .bind(file_name)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn save_progress(
+    pool: &SqlitePool,
+    id: &str,
+    downloaded: i64,
+    chunks_done: &[u64],
+) -> AppResult<()> {
+    sqlx::query("UPDATE downloads SET downloaded_bytes = ?, chunks_done = ? WHERE id = ?")
+        .bind(downloaded)
+        .bind(serde_json::to_string(chunks_done)?)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn set_checksum_verified(pool: &SqlitePool, id: &str) -> AppResult<()> {
+    sqlx::query("UPDATE downloads SET checksum_verified = 1 WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Puts the installed game into the library (or updates the existing entry) and completes the download.
+pub async fn complete_install(
+    pool: &SqlitePool,
+    id: &str,
+    game_id: &str,
+    install_path: &str,
+    executable_path: Option<&str>,
+    size_bytes: i64,
+    compat: CompatibilityTool,
+) -> AppResult<()> {
+    let now = now_iso();
+    sqlx::query(
+        "INSERT INTO library_entries (game_id, source_id, installed, install_path, executable_path, install_size_bytes, \
+           compatibility_tool, added_at) VALUES (?, 'manual', 1, ?, ?, ?, ?, ?) \
+         ON CONFLICT (game_id) DO UPDATE SET installed = 1, install_path = excluded.install_path, \
+           executable_path = excluded.executable_path, install_size_bytes = excluded.install_size_bytes",
+    )
+    .bind(game_id)
+    .bind(install_path)
+    .bind(executable_path)
+    .bind(size_bytes)
+    .bind(compat.as_str())
+    .bind(&now)
+    .execute(pool)
+    .await?;
+    sqlx::query("UPDATE downloads SET install_path = ?, executable_path = ? WHERE id = ?")
+        .bind(install_path)
+        .bind(executable_path)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    set_status(pool, id, DownloadStatus::Completed).await
+}
+
+/// A store client finished the install it was handed.
+pub async fn complete_handoff(pool: &SqlitePool, id: &str) -> AppResult<()> {
+    set_status(pool, id, DownloadStatus::Completed).await
+}
+
 /// `ordered_ids`: queued downloads in their new order; they follow the active ones.
 pub async fn reorder(pool: &SqlitePool, ordered_ids: &[String]) -> AppResult<()> {
     for (i, id) in ordered_ids.iter().enumerate() {
@@ -169,21 +459,21 @@ mod tests {
     async fn queue_lifecycle() {
         let pool = open_in_memory().await.unwrap();
         for id in ["a", "b", "c"] {
-            insert_store_game(
+            enqueue_transfer(
                 &pool,
-                &sample_game(id, id),
-                StoreSource::Steam,
-                Some(id),
-                None,
+                &NewTransfer {
+                    title: id.into(),
+                    url: Some(format!("https://x.test/{id}.zip")),
+                    target_dir: "/g".into(),
+                    ..NewTransfer::default()
+                },
             )
             .await
             .unwrap();
-            enqueue(&pool, id).await.unwrap();
         }
-        enqueue(&pool, "a").await.unwrap(); // idempotent
         let ids =
             |items: &[DownloadItem]| items.iter().map(|i| i.game.id.clone()).collect::<Vec<_>>();
-        assert_eq!(ids(&list(&pool).await.unwrap()), ["a", "b", "c"]);
+        assert_eq!(ids(&list(&pool).await.unwrap()), ["dl-a", "dl-b", "dl-c"]);
 
         let all = list(&pool).await.unwrap();
         reorder(
@@ -196,7 +486,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(ids(&list(&pool).await.unwrap()), ["c", "b", "a"]);
+        assert_eq!(ids(&list(&pool).await.unwrap()), ["dl-c", "dl-b", "dl-a"]);
 
         set_status(&pool, &all[1].download.id, DownloadStatus::Cancelled)
             .await
@@ -211,6 +501,21 @@ mod tests {
         );
         clear_history(&pool).await.unwrap();
         assert_eq!(list(&pool).await.unwrap().len(), 2);
+
+        // Store games are handed off (once).
+        insert_store_game(
+            &pool,
+            &sample_game("s", "S"),
+            StoreSource::Steam,
+            Some("620"),
+            None,
+        )
+        .await
+        .unwrap();
+        let (first, store, store_id) = enqueue_handoff(&pool, "s").await.unwrap();
+        assert_eq!((store, store_id.as_str()), (StoreSource::Steam, "620"));
+        assert_eq!(enqueue_handoff(&pool, "s").await.unwrap().0, first);
+        assert_eq!(handed_off(&pool).await.unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -220,8 +525,75 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(
-            enqueue(&pool, "m").await,
+            enqueue_handoff(&pool, "m").await,
             Err(AppError::InvalidInput(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn transfers_create_a_game_and_join_the_library_when_installed() {
+        let pool = open_in_memory().await.unwrap();
+        let input = NewTransfer {
+            title: "Lantern".into(),
+            url: Some("https://example.test/lantern.zip".into()),
+            sha256: Some(" ABCDEF ".into()),
+            target_dir: "/games".into(),
+            ..NewTransfer::default()
+        };
+        let id = enqueue_transfer(&pool, &input).await.unwrap();
+        let saved = record(&pool, &id).await.unwrap();
+        assert_eq!(
+            (saved.game_id.as_str(), saved.title.as_str()),
+            ("dl-lantern", "Lantern")
+        );
+        assert_eq!(saved.checksum_sha256.as_deref(), Some("abcdef"));
+        assert_eq!(queued(&pool).await.unwrap(), std::slice::from_ref(&id));
+        assert!(
+            crate::db::library::get(&pool, "dl-lantern")
+                .await
+                .unwrap()
+                .is_none(),
+            "not in the library yet"
+        );
+
+        save_progress(&pool, &id, 10, &[0, 2]).await.unwrap();
+        set_status(&pool, &id, DownloadStatus::Downloading)
+            .await
+            .unwrap();
+        assert_eq!(requeue_interrupted(&pool).await.unwrap(), 1);
+        assert_eq!(record_status(&pool, &id).await, "queued");
+
+        complete_install(
+            &pool,
+            &id,
+            "dl-lantern",
+            "/games/lantern",
+            Some("/games/lantern/run"),
+            99,
+            CompatibilityTool::Native,
+        )
+        .await
+        .unwrap();
+        let item = crate::db::library::require(&pool, "dl-lantern")
+            .await
+            .unwrap();
+        assert!(item.entry.installed);
+        assert_eq!(
+            item.entry.executable_path.as_deref(),
+            Some("/games/lantern/run")
+        );
+        let download = get(&pool, &id).await.unwrap().download;
+        assert_eq!(
+            (download.status, download.queue_position),
+            (DownloadStatus::Completed, None)
+        );
+
+        // The same title again gets its own game.
+        let again = enqueue_transfer(&pool, &input).await.unwrap();
+        assert_eq!(record(&pool, &again).await.unwrap().game_id, "dl-lantern-2");
+    }
+
+    async fn record_status(pool: &SqlitePool, id: &str) -> String {
+        record(pool, id).await.unwrap().status
     }
 }

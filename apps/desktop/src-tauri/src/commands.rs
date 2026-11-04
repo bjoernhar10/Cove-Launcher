@@ -19,6 +19,7 @@ use crate::models::{
     Platform, PlaytimeStats, PluginInfo, Recommendation, RunningGame, ScanCandidate, StoreAccount,
     StoreSource, SyncPhase, SyncProgress, UserProfile,
 };
+use crate::models::{DirectDownloadInput, ItchGame, ItchStatus, ItchUpload};
 use crate::state::AppState;
 use crate::stores::login::{self, LOGIN_FINISHED};
 use crate::stores::ProgressFn;
@@ -26,6 +27,7 @@ use crate::{plugins, scanner};
 
 pub const DOWNLOADS_CHANGED: &str = "downloads-changed";
 pub const LIBRARY_MATCH_CHANGED: &str = "library-match-changed";
+pub const DOWNLOAD_PROGRESS: &str = "download-progress";
 pub const STORE_SYNC_PROGRESS: &str = "store-sync-progress";
 pub const ACHIEVEMENT_UNLOCKED: &str = "achievement-unlocked";
 
@@ -170,6 +172,8 @@ pub async fn settings_update(
     settings: AppSettings,
 ) -> AppResult<AppSettings> {
     db::settings::save(&state.pool, &settings).await?;
+    // Bandwidth limit and parallel downloads apply at once.
+    state.downloads.wake();
     db::settings::load(&state.pool, &state.defaults).await
 }
 
@@ -201,25 +205,87 @@ pub async fn downloads_list(state: State<'_, AppState>) -> AppResult<Vec<Downloa
     db::downloads::list(&state.pool).await
 }
 
+/// Store games: hands the installation to the store's client.
 #[tauri::command]
-pub async fn downloads_enqueue<R: Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, AppState>,
-    game_id: String,
-) -> AppResult<()> {
-    db::downloads::enqueue(&state.pool, &game_id).await?;
-    downloads_changed(&app, &state).await
+pub async fn downloads_enqueue(state: State<'_, AppState>, game_id: String) -> AppResult<()> {
+    state.downloads.hand_off(&game_id).await
 }
 
+/// Pause (`paused`), resume or retry (`queued`), cancel (`cancelled`).
 #[tauri::command]
-pub async fn downloads_set_status<R: Runtime>(
-    app: AppHandle<R>,
+pub async fn downloads_set_status(
     state: State<'_, AppState>,
     id: String,
     status: DownloadStatus,
 ) -> AppResult<()> {
-    db::downloads::set_status(&state.pool, &id, status).await?;
-    downloads_changed(&app, &state).await
+    state.downloads.control(&id, status).await
+}
+
+#[tauri::command]
+pub async fn downloads_add_url(
+    state: State<'_, AppState>,
+    input: DirectDownloadInput,
+) -> AppResult<DownloadItem> {
+    let id = state.downloads.add_url(&input).await?;
+    db::downloads::get(&state.pool, &id).await
+}
+
+#[tauri::command]
+pub async fn downloads_add_itch(
+    state: State<'_, AppState>,
+    game_id: i64,
+    upload_id: i64,
+    download_key_id: Option<i64>,
+    title: String,
+) -> AppResult<DownloadItem> {
+    let id = state
+        .downloads
+        .add_itch(game_id, upload_id, download_key_id, &title)
+        .await?;
+    db::downloads::get(&state.pool, &id).await
+}
+
+#[tauri::command]
+pub async fn itch_status(state: State<'_, AppState>) -> AppResult<ItchStatus> {
+    state.downloads.itch.status().await
+}
+
+#[tauri::command]
+pub async fn itch_set_api_key(
+    state: State<'_, AppState>,
+    api_key: String,
+) -> AppResult<ItchStatus> {
+    state.downloads.itch.set_key(&api_key).await
+}
+
+#[tauri::command]
+pub fn itch_clear_api_key(state: State<'_, AppState>) -> AppResult<ItchStatus> {
+    state.downloads.itch.clear_key()
+}
+
+#[tauri::command]
+pub async fn itch_owned_games(state: State<'_, AppState>) -> AppResult<Vec<ItchGame>> {
+    state.downloads.itch.owned().await
+}
+
+#[tauri::command]
+pub async fn itch_lookup(state: State<'_, AppState>, url: String) -> AppResult<ItchGame> {
+    state.downloads.itch.lookup(&url).await
+}
+
+#[tauri::command]
+pub async fn itch_uploads(
+    state: State<'_, AppState>,
+    game_id: i64,
+    download_key_id: Option<i64>,
+) -> AppResult<Vec<ItchUpload>> {
+    state.downloads.itch.uploads(game_id, download_key_id).await
+}
+
+/// A downloaded or store game was installed: complete its metadata and check achievements.
+pub fn after_install<R: Runtime>(app: &AppHandle<R>, state: &AppState, game_id: GameId) {
+    spawn_match(app, state, game_id);
+    state.cove_achievements.check_in_background();
 }
 
 #[tauri::command]

@@ -1,5 +1,5 @@
 import type { ConnectableStore, ConnectorLoginStart, LocalStoreGame, StoreAccount, SyncProgress } from "@cove/shared";
-import { ExternalLink, HardDrive, LogIn, RefreshCw, Trophy } from "lucide-react";
+import { ExternalLink, Gamepad2, HardDrive, LogIn, RefreshCw, Trophy } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import { api } from "../../api/index.ts";
 import { Button } from "../../components/ui/Button.tsx";
@@ -270,6 +270,91 @@ function AccountRow({
   );
 }
 
+const ITCH_KEYS_URL = "https://itch.io/user/settings/api-keys";
+
+/** itch.io uses a personal API key (stored only in the OS keyring). */
+function ItchAccount() {
+  const status = useQuery("itch/status", api.downloads.itchStatus);
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const keyId = useId();
+
+  async function run(action: () => Promise<unknown>, message: string): Promise<void> {
+    setBusy(true);
+    try {
+      await action();
+      setKey("");
+      toast(message);
+      invalidateQueries();
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-border px-4 py-4">
+      <div className="flex items-center gap-4">
+        <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-sidebar text-fg-muted">
+          <Gamepad2 />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-fg">itch.io</p>
+          <p className="truncate text-sm text-fg-muted">
+            {status.status === "loading" && "Wird geprüft …"}
+            {status.status === "error" && status.error}
+            {status.status === "success" &&
+              (status.data.connected ? `Verbunden als ${status.data.userName ?? "unbekannt"}` : "Nicht verbunden · für Downloads deiner itch.io-Spiele")}
+          </p>
+        </div>
+        {status.status === "success" && status.data.connected && (
+          <Button variant="ghost" disabled={busy} onClick={() => void run(api.downloads.clearItchApiKey, "itch.io getrennt")}>
+            Trennen
+          </Button>
+        )}
+      </div>
+      {status.status === "success" && !status.data.connected && (
+        <form
+          className="mt-3 flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(() => api.downloads.setItchApiKey(key), "Mit itch.io verbunden");
+          }}
+        >
+          <label htmlFor={keyId} className="sr-only">
+            itch.io-API-Schlüssel
+          </label>
+          <Input
+            id={keyId}
+            type="password"
+            autoComplete="off"
+            placeholder="API-Schlüssel"
+            className="w-72"
+            value={key}
+            onChange={(e) => {
+              setKey(e.target.value);
+            }}
+          />
+          <Button type="submit" variant="primary" disabled={busy || key.trim() === ""}>
+            Verbinden
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            icon={ExternalLink}
+            onClick={() => {
+              void api.system.openExternal(ITCH_KEYS_URL);
+            }}
+          >
+            Schlüssel erstellen
+          </Button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 function LocalGames() {
   const [state, setState] = useState<
     { status: "idle" } | { status: "loading" } | { status: "error"; error: string } | { status: "done"; games: LocalStoreGame[] }
@@ -424,6 +509,7 @@ export function AccountsTab() {
           ))}
         </ul>
       )}
+      <ItchAccount />
       <p className="mt-4 text-xs text-fg-subtle">
         Du meldest dich direkt beim Store an. Cove sieht und speichert keine Passwörter, nur die Zugangstokens des Stores, und
         die ausschließlich im Schlüsselbund deines Systems.

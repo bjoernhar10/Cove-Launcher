@@ -176,8 +176,32 @@ Launch arguments are split shell-style (shlex); user environment variables overr
 - GOG and Epic use the same public launcher clients as Heroic and Legendary. This is unofficial and may
   break when the stores change something; endpoints live in `Config/connectors.json`.
 
+### Downloads
+
+- `DownloadManager` (`src-tauri/src/downloads/`) runs a scheduler: it starts queued transfers up to
+  `downloads.maxConcurrent`, applies the bandwidth limit from the settings to all of them together and is woken
+  by every queue or settings change.
+- Sources:
+  - Direct links: DRM-free games, mods, patches. Optional SHA-256.
+  - itch.io: official server-side API with the user's API key (OS keyring). Owned games come from
+    `/profile/owned-keys`; free games are found by their page (`data.json`). The download URL is resolved
+    right before each start because it expires.
+  - Store games are handed to the store client (`steam://install/<id>`; on Windows the Epic and GOG Galaxy
+    schemes; on Linux Heroic). Cove only watches: every 30 seconds it checks the local store manifests and
+    marks the install as done.
+- Transfer: a probe request (`Range: bytes=0-0`) tells whether the server supports ranges. With ranges, the file
+  is split into 8 MiB chunks fetched over 4 connections into a preallocated `.part` file; finished chunks are
+  saved so a restart only fetches the rest. A different `ETag`/size restarts the download. Without ranges the
+  file is streamed once. Failed chunks are retried with backoff.
+- After the transfer: SHA-256 check (status `verifying`), then unpacking into `<download folder>/<game>` (status
+  `extracting`). Zip and 7z entries with `..` or absolute paths are skipped, tar uses `unpack_in`, symlinks in
+  zips are ignored, and lost executable bits are restored for ELF files and scripts. The scanner then picks the
+  executable (native first, otherwise a Windows `.exe` with Proton), the game joins the library and the
+  catalogue match runs.
+- Events: `downloads-changed` (full list on status changes) and `download-progress` (bytes and smoothed speed,
+  every 250 ms per download). The sidebar shows the running download.
+
 ## Open points
 
-- Real downloader (connectors). The queue in `downloads` exists but transfers nothing yet.
 - Playtime tracking on Windows via Job Objects instead of polling
 - Plugin API and sandboxing

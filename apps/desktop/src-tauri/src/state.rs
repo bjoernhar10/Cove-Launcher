@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use crate::catalog::CatalogService;
 use crate::cove_achievements::CoveAchievements;
+use crate::downloads::DownloadManager;
 use crate::launcher::{HostEnv, Launcher};
 use crate::models::{
     AppSettings, AppearanceSettings, CatalogSettings, DownloadSettings, GeneralSettings,
@@ -29,6 +30,7 @@ pub struct AppState {
     pub stores: Arc<StoreService>,
     pub login_flows: Arc<LoginFlows>,
     pub cove_achievements: Arc<CoveAchievements>,
+    pub downloads: Arc<DownloadManager>,
     /// Opens a URL in the system browser.
     pub open_url: OpenUrl,
 }

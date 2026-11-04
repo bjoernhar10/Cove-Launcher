@@ -104,7 +104,12 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
 
   if (download) {
     const { downloadedBytes, totalBytes, status } = download.download;
-    const text = status === "queued" || totalBytes === 0 ? "In Warteschlange" : formatPercent(downloadedBytes / totalBytes);
+    const text =
+      status === "handedOff"
+        ? `Installation in ${SOURCE_LABELS[entry.source]}`
+        : status === "queued" || totalBytes === 0
+          ? "In Warteschlange"
+          : formatPercent(downloadedBytes / totalBytes);
     return (
       <Button variant="secondary" size={size} icon={Download} iconOnly={iconOnly} label={label(text)} disabled className={className} />
     );
@@ -122,7 +127,7 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
       onClick={() =>
         void run(async () => {
           await api.downloads.enqueueDownload(game.id);
-          toast(`„${game.title}“ zur Download-Warteschlange hinzugefügt`);
+          toast(`Installation von „${game.title}“ an ${SOURCE_LABELS[entry.source]} übergeben`);
           invalidateQueries();
         })
       }

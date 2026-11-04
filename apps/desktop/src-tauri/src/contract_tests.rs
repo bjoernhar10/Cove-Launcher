@@ -90,7 +90,9 @@ async fn core_responses_match_shared_schema() {
         .execute(&pool)
         .await
         .unwrap();
-    db::downloads::enqueue(&pool, "orbit").await.unwrap();
+    db::downloads::enqueue_handoff(&pool, "orbit")
+        .await
+        .unwrap();
 
     assert_valid("LibraryItem", &manual);
     assert_valid("LibraryItem", &store);

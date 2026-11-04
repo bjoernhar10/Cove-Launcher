@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App.tsx";
 import { usePreferences } from "./stores/preferences.ts";
-import { emitCoreEvent, fakeItem, installFakeCore, type FakeCore } from "./test/fakeCore.ts";
+import { emitCoreEvent, fakeDownload, fakeItem, installFakeCore, type FakeCore } from "./test/fakeCore.ts";
 
 let core: FakeCore;
 
@@ -257,5 +257,75 @@ describe("Recommendations", () => {
     renderAt("/catalogue");
     const list = await screen.findByRole("list", { name: "Spiele" });
     expect(within(list).getByText("Ähnlich wie Hollow Lantern")).toBeDefined();
+  });
+});
+
+describe("Downloads", () => {
+  it("shows live progress from the core", async () => {
+    core.downloads = [fakeDownload("d1", "Lantern", { status: "downloading", totalBytes: 1000, downloadedBytes: 0 })];
+    renderAt("/downloads");
+    expect(await screen.findByRole("article", { name: "Download Lantern" })).toBeDefined();
+    await act(() => emitCoreEvent("download-progress", { id: "d1", status: "downloading", downloadedBytes: 500, totalBytes: 1000, bytesPerSecond: 250 }));
+    // Page and sidebar indicator both follow the event.
+    expect(await screen.findAllByText("50 %")).toHaveLength(2);
+    expect(screen.getByRole("progressbar", { name: "Fortschritt Lantern" }).getAttribute("aria-valuenow")).toBe("500");
+  });
+
+  it("adds a direct download and validates the link", async () => {
+    renderAt("/downloads");
+    fireEvent.click(await screen.findByRole("button", { name: "Download per Link" }));
+    const dialog = await screen.findByRole("dialog", { name: "Download per Link" });
+    fireEvent.change(within(dialog).getByLabelText("Link"), { target: { value: "ftp://nope" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Herunterladen" }));
+    expect(await within(dialog).findByText("Das ist kein gültiger Link.")).toBeDefined();
+    fireEvent.change(within(dialog).getByLabelText("Link"), { target: { value: "https://example.com/lantern.zip" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Herunterladen" }));
+    await waitFor(() => {
+      expect(core.downloads).toHaveLength(1);
+    });
+    expect(await screen.findByText("lantern.zip")).toBeDefined();
+  });
+
+  it("hands store installs to the client and shows that", async () => {
+    core.library = [fakeItem("steam-620", "Portal 2", { source: "steam", storeGameId: "620", installed: false, executablePath: null })];
+    core.downloads = [];
+    renderAt("/library/steam-620");
+    fireEvent.click(await screen.findByRole("button", { name: "Installieren" }));
+    await waitFor(() => {
+      expect(core.downloads[0]?.download.status).toBe("handedOff");
+    });
+    renderAt("/downloads");
+    expect((await screen.findAllByText(/Installation läuft in Steam/)).length).toBeGreaterThan(0);
+  });
+
+  it("downloads an owned itch.io game", async () => {
+    core.itchKey = "goodkey";
+    renderAt("/downloads");
+    fireEvent.click(await screen.findByRole("button", { name: "Von itch.io" }));
+    const dialog = await screen.findByRole("dialog", { name: "Von itch.io herunterladen" });
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Zeta" }));
+    fireEvent.click(await within(dialog).findByRole("button", { name: "Herunterladen" }));
+    await waitFor(() => {
+      expect(core.downloads[0]?.download.origin).toBe("itch");
+    });
+  });
+
+  it("asks to connect itch.io first", async () => {
+    renderAt("/downloads");
+    fireEvent.click(await screen.findByRole("button", { name: "Von itch.io" }));
+    expect(await screen.findByText("itch.io ist nicht verbunden")).toBeDefined();
+  });
+});
+
+describe("itch.io account", () => {
+  it("connects with an API key", async () => {
+    renderAt("/settings/accounts");
+    const input = await screen.findByLabelText("itch.io-API-Schlüssel");
+    fireEvent.change(input, { target: { value: "wrong" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verbinden" }));
+    expect(await screen.findByText("Der API-Schlüssel ist ungültig oder abgelaufen.")).toBeDefined();
+    fireEvent.change(screen.getByLabelText("itch.io-API-Schlüssel"), { target: { value: "goodkey" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verbinden" }));
+    expect(await screen.findByText("Verbunden als Kiefer")).toBeDefined();
   });
 });

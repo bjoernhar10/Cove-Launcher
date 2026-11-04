@@ -16,7 +16,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { DownloadItem } from "@cove/shared";
-import { CircleAlert, CircleCheck, CircleX, Download, GripVertical, Pause, Play, RotateCcw, X } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleX, Download, ExternalLink, Gamepad2, GripVertical, Link2, Pause, Play, RotateCcw, ShieldCheck, X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api/index.ts";
@@ -26,7 +26,8 @@ import { EmptyState, ErrorState, LoadingRegion, ProgressBar, Skeleton } from "..
 import { Page, PageHeader, Section } from "../components/ui/Page.tsx";
 import { cx } from "../lib/cx.ts";
 import { formatBytes, formatEta, formatPercent, formatRelative, formatSpeed } from "../lib/format.ts";
-import { SOURCE_LABELS } from "../lib/labels.ts";
+import { AddDownloadDialog } from "../features/AddDownloadDialog.tsx";
+import { ItchDialog } from "../features/ItchDialog.tsx";
 import { selectActive, selectHistory, selectQueued, useDownloads } from "../stores/downloads.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 
@@ -39,11 +40,49 @@ async function act(action: () => Promise<void>): Promise<void> {
   await useDownloads.getState().refresh();
 }
 
+const ORIGIN_LABELS: Record<DownloadItem["download"]["origin"], string> = {
+  direct: "Link",
+  itch: "itch.io",
+  steam: "Steam",
+  gog: "GOG",
+  epic: "Epic",
+};
+
+/** Store install running in the store's own client. */
+function HandedOff({ item }: { item: DownloadItem }) {
+  const { download, game } = item;
+  const store = ORIGIN_LABELS[download.origin];
+  return (
+    <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={`Installation ${game.title}`}>
+      <GameCover game={game} kind="header" aspect="landscape" showTitle={false} className="w-36 shrink-0 rounded-md" />
+      <div className="min-w-0 flex-1">
+        <Link to={`/library/${game.id}`} className="block truncate text-base font-medium text-fg hover:underline">
+          {game.title}
+        </Link>
+        <p className="mt-1 flex items-center gap-1.5 text-sm text-fg-muted">
+          <ExternalLink aria-hidden />
+          Installation läuft in {download.origin === "steam" || navigator.userAgent.includes("Windows") ? store : `Heroic (${store})`}.
+        </p>
+        <p className="mt-1 text-xs text-fg-subtle">Cove erkennt automatisch, wenn das Spiel installiert ist.</p>
+      </div>
+      <Button
+        iconOnly
+        icon={X}
+        label={`${game.title} nicht mehr verfolgen`}
+        onClick={() => void act(() => api.downloads.cancelDownload(download.id))}
+      />
+    </article>
+  );
+}
+
 function ActiveDownload({ item }: { item: DownloadItem }) {
   const { download, game } = item;
+  if (download.status === "handedOff") return <HandedOff item={item} />;
   const paused = download.status === "paused";
+  const busy = download.status === "verifying" || download.status === "extracting";
+  const known = download.totalBytes > 0;
   const remaining = download.totalBytes - download.downloadedBytes;
-  const eta = download.bytesPerSecond > 0 ? remaining / download.bytesPerSecond : Number.POSITIVE_INFINITY;
+  const eta = download.bytesPerSecond > 0 && known ? remaining / download.bytesPerSecond : Number.POSITIVE_INFINITY;
 
   return (
     <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={`Download ${game.title}`}>
@@ -53,32 +92,36 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
           <Link to={`/library/${game.id}`} className="truncate text-base font-medium text-fg hover:underline">
             {game.title}
           </Link>
-          <span className="num shrink-0 text-sm font-medium text-fg">{formatPercent(download.downloadedBytes / download.totalBytes)}</span>
+          <span className="num shrink-0 text-sm font-medium text-fg">
+            {busy ? "100 %" : known ? formatPercent(download.downloadedBytes / download.totalBytes) : ""}
+          </span>
         </div>
         <ProgressBar
-          value={download.downloadedBytes}
-          max={download.totalBytes}
+          value={busy ? 1 : download.downloadedBytes}
+          max={busy ? 1 : Math.max(download.totalBytes, 1)}
           label={`Fortschritt ${game.title}`}
           tone={paused ? "muted" : "accent"}
           className="mt-3"
         />
         <p className="num mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
           <span>
-            {formatBytes(download.downloadedBytes)} von {formatBytes(download.totalBytes)}
+            {formatBytes(download.downloadedBytes)}
+            {known && <> von {formatBytes(download.totalBytes)}</>}
           </span>
-          {paused ? (
-            <span>Pausiert</span>
-          ) : (
+          {download.status === "verifying" && <span>Prüfsumme wird geprüft</span>}
+          {download.status === "extracting" && <span>Wird entpackt und eingerichtet</span>}
+          {paused && <span>Pausiert</span>}
+          {download.status === "downloading" && (
             <>
               <span>{formatSpeed(download.bytesPerSecond)}</span>
-              <span>Noch {formatEta(eta)}</span>
+              {known && <span>Noch {formatEta(eta)}</span>}
             </>
           )}
-          <span>{SOURCE_LABELS[download.source]}</span>
+          <span>{ORIGIN_LABELS[download.origin]}</span>
         </p>
       </div>
       <div className="flex shrink-0 gap-1">
-        {paused ? (
+        {busy ? null : paused ? (
           <Button iconOnly icon={Play} label={`${game.title} fortsetzen`} onClick={() => void act(() => api.downloads.resumeDownload(download.id))} />
         ) : (
           <Button iconOnly icon={Pause} label={`${game.title} pausieren`} onClick={() => void act(() => api.downloads.pauseDownload(download.id))} />
@@ -115,7 +158,7 @@ function QueueRow({ item, position }: { item: DownloadItem; position: number }) 
       <GameCover game={game} aspect="square" showTitle={false} className="w-9 shrink-0 rounded-md" />
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{game.title}</span>
       <span className="num text-xs text-fg-muted">{formatBytes(download.totalBytes)}</span>
-      <span className="w-14 text-xs text-fg-subtle">{SOURCE_LABELS[download.source]}</span>
+      <span className="w-14 text-xs text-fg-subtle">{ORIGIN_LABELS[download.origin]}</span>
       <Button
         variant="ghost"
         size="sm"
@@ -188,7 +231,19 @@ function HistoryRow({ item }: { item: DownloadItem }) {
         <Link to={`/library/${game.id}`} className="block truncate text-sm font-medium text-fg hover:underline">
           {game.title}
         </Link>
-        <p className="truncate text-xs text-fg-subtle">{download.error ?? formatBytes(download.totalBytes)}</p>
+        <p className={cx("truncate text-xs", download.error ? "text-danger" : "text-fg-subtle")}>
+          {download.error ?? (
+            <>
+              <span className="num">{formatBytes(download.totalBytes)}</span> · {ORIGIN_LABELS[download.origin]}
+              {download.checksumVerified && (
+                <span className="ml-2 inline-flex items-center gap-1 align-middle">
+                  <ShieldCheck aria-hidden className="size-3.5" />
+                  Prüfsumme bestätigt
+                </span>
+              )}
+            </>
+          )}
+        </p>
       </div>
       <span className={cx("flex items-center gap-1.5 text-xs", meta.className)}>
         <Icon aria-hidden />
@@ -215,6 +270,31 @@ export function DownloadsPage() {
   const queued = selectQueued(items);
   const history = selectHistory(items);
   const totalSpeed = active.reduce((sum, i) => sum + i.download.bytesPerSecond, 0);
+  const [dialog, setDialog] = useState<"url" | "itch" | null>(null);
+  const close = () => {
+    setDialog(null);
+  };
+  const addActions = (
+    <>
+      <Button
+        icon={Gamepad2}
+        onClick={() => {
+          setDialog("itch");
+        }}
+      >
+        Von itch.io
+      </Button>
+      <Button
+        variant="primary"
+        icon={Link2}
+        onClick={() => {
+          setDialog("url");
+        }}
+      >
+        Download per Link
+      </Button>
+    </>
+  );
 
   return (
     <Page className="max-w-5xl">
@@ -224,10 +304,13 @@ export function DownloadsPage() {
           active.some((i) => i.download.status === "downloading") ? (
             <span className="num">Gesamt {formatSpeed(totalSpeed)}</span>
           ) : (
-            "Installationen und Updates"
+            "Downloads, Installationen und Store-Übergaben"
           )
         }
+        actions={addActions}
       />
+      <AddDownloadDialog open={dialog === "url"} onClose={close} />
+      <ItchDialog open={dialog === "itch"} onClose={close} />
 
       {!loaded && (
         <LoadingRegion label="Downloads werden geladen" className="flex flex-col gap-3">
@@ -242,7 +325,7 @@ export function DownloadsPage() {
         <EmptyState
           icon={Download}
           title="Keine Downloads"
-          description="Hier erscheinen Installationen aus deinen Stores. Die Downloads selbst übernimmt bald der Connector-Service."
+          description="Lade DRM-freie Spiele per Link oder von itch.io herunter. Store-Spiele installierst du über die Bibliothek; Cove übergibt sie an Steam, GOG oder Epic."
           actions={<ButtonLink to="/library">Zur Bibliothek</ButtonLink>}
         />
       )}

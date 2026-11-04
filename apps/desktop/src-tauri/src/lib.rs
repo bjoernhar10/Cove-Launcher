@@ -6,6 +6,7 @@ mod catalog;
 mod commands;
 mod cove_achievements;
 mod db;
+mod downloads;
 mod error;
 mod launcher;
 mod models;
@@ -63,6 +64,14 @@ macro_rules! cove_handlers {
             $crate::commands::plugins_set_enabled,
             $crate::commands::downloads_list,
             $crate::commands::downloads_enqueue,
+            $crate::commands::downloads_add_url,
+            $crate::commands::downloads_add_itch,
+            $crate::commands::itch_status,
+            $crate::commands::itch_set_api_key,
+            $crate::commands::itch_clear_api_key,
+            $crate::commands::itch_owned_games,
+            $crate::commands::itch_lookup,
+            $crate::commands::itch_uploads,
             $crate::commands::downloads_set_status,
             $crate::commands::downloads_reorder,
             $crate::commands::downloads_clear_history,
@@ -173,8 +182,11 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         std::time::Duration::from_millis(1100),
     ));
 
+    let downloads = build_downloads(app, &pool, &defaults, &stores, open_url.clone());
+
     Ok(AppState {
         recommender,
+        downloads,
         stores,
         login_flows: Arc::new(stores::login::LoginFlows::default()),
         cove_achievements,
@@ -186,6 +198,49 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         pool,
         plugin_dirs,
     })
+}
+
+/// The download manager with its hooks into the app (events, library follow-ups).
+fn build_downloads(
+    app: &tauri::App,
+    pool: &sqlx::SqlitePool,
+    defaults: &models::AppSettings,
+    stores: &Arc<stores::StoreService>,
+    open_url: launcher::OpenUrlFn,
+) -> Arc<downloads::DownloadManager> {
+    let list_handle = app.handle().clone();
+    let progress_handle = app.handle().clone();
+    let installed_handle = app.handle().clone();
+    let list_pool = pool.clone();
+    Arc::new(downloads::DownloadManager::new(
+        pool.clone(),
+        defaults.clone(),
+        downloads::itch::ItchApi::new(
+            Arc::new(catalog::secrets::KeyringStore),
+            downloads::itch::API_BASE,
+        ),
+        Some(stores.clone()),
+        downloads::Hooks {
+            changed: Arc::new(move || {
+                let app = list_handle.clone();
+                let pool = list_pool.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Ok(items) = db::downloads::list(&pool).await {
+                        let _ = app.emit(commands::DOWNLOADS_CHANGED, items);
+                    }
+                });
+            }),
+            progress: Arc::new(move |progress| {
+                let _ = progress_handle.emit(commands::DOWNLOAD_PROGRESS, progress);
+            }),
+            installed: Arc::new(move |game_id| {
+                if let Some(state) = installed_handle.try_state::<AppState>() {
+                    commands::after_install(&installed_handle, &state, game_id);
+                }
+            }),
+            open_url,
+        },
+    ))
 }
 
 /// Answers a `cove-img://` request from the local image cache (downloading on first use).
@@ -234,7 +289,10 @@ pub fn run() {
         )
         .setup(|app| {
             let state = init_state(app)?;
+            let downloads = state.downloads.clone();
             app.manage(state);
+            // After `manage`: the download hooks look up the state.
+            downloads.start();
             Ok(())
         })
         .invoke_handler(cove_handlers!())
