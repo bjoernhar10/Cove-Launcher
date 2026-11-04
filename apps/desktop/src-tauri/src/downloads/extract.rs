@@ -157,6 +157,7 @@ fn make_executable(path: &Path) -> AppResult<()> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)] // same signature as the Unix version
 fn make_executable(_path: &Path) -> AppResult<()> {
     Ok(())
 }

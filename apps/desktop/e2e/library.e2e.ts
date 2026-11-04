@@ -42,12 +42,23 @@ test.describe("Bibliothek", () => {
     await expect(page.getByRole("button", { name: "Spielen", exact: true })).toBeVisible();
   });
 
-  test("2500 Spiele: nur sichtbare Karten im DOM, flüssiges Scrollen", async ({ page }) => {
+  test("2500 Spiele: nur sichtbare Karten im DOM, flüssiges Scrollen", async ({ page, browserName }) => {
     await openCove(page, "/library", { games: "2500" });
     const list = page.getByRole("list", { name: "Spiele" });
     await expect(list.getByRole("listitem").first()).toBeVisible();
     expect(await list.getByRole("listitem").count()).toBeLessThan(150);
     await expect(list.getByRole("listitem").first()).toHaveAttribute("aria-setsize", "2500");
+
+    if (browserName !== "chromium") {
+      // Frame timing is measured in Chromium only (CI's software WebKit is too slow to be meaningful);
+      // here it is enough that the end of the virtual list is reachable.
+      await page.evaluate(() => {
+        const main = document.getElementById("main");
+        main?.scrollTo({ top: main.scrollHeight });
+      });
+      await expect(list.getByRole("listitem").filter({ hasText: "Quiet Harbor 105" })).toBeVisible();
+      return;
+    }
 
     // Scroll through the whole library and record frame times.
     const frames = await page.evaluate(async () => {

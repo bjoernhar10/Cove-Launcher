@@ -75,7 +75,7 @@ jobs:
           projectPath: apps/desktop
           args: --bundles ${{ matrix.bundles }}
           uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: "cove-[platform]-[arch]"
+          workflowArtifactNamePattern: "cove-[platform]-[arch]-[bundle]"
 
       - name: Build and publish a draft release
         if: startsWith(github.ref, 'refs/tags/v')

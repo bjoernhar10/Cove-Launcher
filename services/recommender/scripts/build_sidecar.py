@@ -35,7 +35,7 @@ def target_triple() -> str:
 def source_hash() -> str:
     digest = hashlib.sha256()
     sources = sorted((ROOT / "src").rglob("*.py"))
-    files = [*sources, ROOT / "pyproject.toml", ROOT / "uv.lock", Path(__file__)]
+    files = [*sources, ROOT / "pyproject.toml", ROOT / "uv.lock", Path(__file__).resolve()]
     for path in files:
         digest.update(path.relative_to(ROOT).as_posix().encode())
         digest.update(path.read_bytes())
