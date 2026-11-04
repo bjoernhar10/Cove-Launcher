@@ -1,10 +1,9 @@
-//! Cove's own achievements. Definitions are JSON: the bundled file plus an
-//! `achievements.json` in any enabled plugin folder (ids are prefixed with
-//! the plugin id). Rules are evaluated locally against the database; only
-//! unlock times are stored (`cove_achievements`).
+//! Cove's own achievements. Definitions are JSON: the bundled file plus what
+//! active plugins define through the plugin API (`achievements.define`, ids
+//! prefixed with the plugin id). Rules are evaluated locally against the
+//! database; only unlock times are stored (`cove_achievements`).
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Local, NaiveTime, TimeZone, Timelike};
@@ -47,32 +46,9 @@ pub fn parse(json: &str) -> AppResult<Vec<Definition>> {
     Ok(serde_json::from_str::<DefinitionFile>(json)?.achievements)
 }
 
-/// Bundled definitions plus those of enabled plugins (broken plugin files are skipped).
-pub fn load(plugin_dirs: &[PathBuf], enabled: &HashMap<String, bool>) -> Vec<Definition> {
-    let mut all = parse(BUNDLED).unwrap_or_default();
-    for plugin in crate::plugins::discover(plugin_dirs, enabled) {
-        if !plugin.enabled {
-            continue;
-        }
-        let file = plugin_dirs
-            .iter()
-            .map(|d| d.join(&plugin.id).join("achievements.json"))
-            .find(|f| f.is_file());
-        let Some(file) = file else { continue };
-        match std::fs::read_to_string(&file)
-            .map_err(Into::into)
-            .and_then(|raw| parse(&raw))
-        {
-            Ok(defs) => all.extend(defs.into_iter().map(|mut d| {
-                d.id = format!("{}:{}", plugin.id, d.id);
-                d
-            })),
-            Err(error) => eprintln!("[cove] {}: {error}", file.display()),
-        }
-    }
-    let mut seen = std::collections::HashSet::new();
-    all.retain(|d| seen.insert(d.id.clone()));
-    all
+/// The definitions that ship with Cove.
+pub fn bundled() -> Vec<Definition> {
+    parse(BUNDLED).unwrap_or_default()
 }
 
 /// Facts the rules look at, read once per evaluation.
@@ -260,7 +236,7 @@ pub async fn log_recommended(pool: &SqlitePool, game_ids: &[String]) -> AppResul
 /// Evaluates in the background and reports unlocks (toast in the UI).
 pub struct CoveAchievements {
     pool: SqlitePool,
-    plugin_dirs: Vec<PathBuf>,
+    plugins: Arc<crate::plugins::Plugins>,
     notify: Arc<dyn Fn(CoveAchievement) + Send + Sync>,
     lock: tokio::sync::Mutex<()>,
 }
@@ -268,22 +244,23 @@ pub struct CoveAchievements {
 impl CoveAchievements {
     pub fn new(
         pool: SqlitePool,
-        plugin_dirs: Vec<PathBuf>,
+        plugins: Arc<crate::plugins::Plugins>,
         notify: Arc<dyn Fn(CoveAchievement) + Send + Sync>,
     ) -> Self {
         Self {
             pool,
-            plugin_dirs,
+            plugins,
             notify,
             lock: tokio::sync::Mutex::new(()),
         }
     }
 
     pub async fn definitions(&self) -> AppResult<Vec<Definition>> {
-        let enabled: HashMap<String, bool> = crate::db::settings::get_json(&self.pool, "plugins")
-            .await?
-            .unwrap_or_default();
-        Ok(load(&self.plugin_dirs, &enabled))
+        let mut all = bundled();
+        all.extend(self.plugins.achievement_definitions().await?);
+        let mut seen = std::collections::HashSet::new();
+        all.retain(|d| seen.insert(d.id.clone()));
+        Ok(all)
     }
 
     pub async fn list(&self) -> AppResult<Vec<CoveAchievement>> {
@@ -458,38 +435,5 @@ mod tests {
         assert_eq!(evaluate(&pool, &defs).await.unwrap(), []);
         session(&pool, "a", "2099-01-02T10:00:00Z", 60).await;
         assert_eq!(evaluate(&pool, &defs).await.unwrap().len(), 1);
-    }
-
-    #[test]
-    fn plugin_definitions_are_prefixed_and_broken_files_skipped() {
-        let dir = tempfile::tempdir().unwrap();
-        let plugin = dir.path().join("speedrun");
-        std::fs::create_dir_all(&plugin).unwrap();
-        std::fs::write(
-            plugin.join("manifest.json"),
-            r#"{"id":"speedrun","name":"Speedrun","version":"1.0.0"}"#,
-        )
-        .unwrap();
-        std::fs::write(
-            plugin.join("achievements.json"),
-            r#"{"achievements":[{"id":"marathon","title":"Marathon","description":"100 Spiele","rule":{"type":"libraryGames","count":100}}]}"#,
-        )
-        .unwrap();
-        let broken = dir.path().join("broken");
-        std::fs::create_dir_all(&broken).unwrap();
-        std::fs::write(
-            broken.join("manifest.json"),
-            r#"{"id":"broken","name":"Broken","version":"1.0.0"}"#,
-        )
-        .unwrap();
-        std::fs::write(broken.join("achievements.json"), "{ nope").unwrap();
-
-        let dirs = vec![dir.path().to_path_buf()];
-        let defs = load(&dirs, &HashMap::new());
-        assert_eq!(defs.len(), 7);
-        assert_eq!(defs[6].id, "speedrun:marathon");
-        // Disabled plugins add nothing.
-        let disabled = HashMap::from([("speedrun".to_owned(), false)]);
-        assert_eq!(load(&dirs, &disabled).len(), 6);
     }
 }

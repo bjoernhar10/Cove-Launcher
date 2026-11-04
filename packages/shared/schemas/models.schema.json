@@ -168,7 +168,8 @@
         "storeUnavailable",
         "connectorsUnavailable",
         "download",
-        "itch"
+        "itch",
+        "plugin"
       ],
       "type": "string"
     },
@@ -1630,6 +1631,27 @@
       ],
       "type": "object"
     },
+    "PluginGameInput": {
+      "additionalProperties": false,
+      "description": "`library.add` from a plugin.",
+      "properties": {
+        "executablePath": {
+          "description": "Null adds the game without install (Cove looks up catalogue data).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "executablePath"
+      ],
+      "type": "object"
+    },
     "PluginInfo": {
       "additionalProperties": false,
       "properties": {
@@ -1642,11 +1664,45 @@
         "enabled": {
           "type": "boolean"
         },
+        "entryUrl": {
+          "description": "Module URL for the worker; only for active plugins.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "granted": {
+          "description": "Confirmed by the user.",
+          "items": {
+            "$ref": "#/definitions/PluginPermission"
+          },
+          "type": "array"
+        },
         "id": {
           "type": "string"
         },
         "name": {
           "type": "string"
+        },
+        "permissions": {
+          "description": "Requested in `plugin.json`.",
+          "items": {
+            "$ref": "#/definitions/PluginPermission"
+          },
+          "type": "array"
+        },
+        "removable": {
+          "description": "Installed into Cove's plugin folder (development plugins cannot be removed here).",
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/definitions/PluginStatus"
         },
         "version": {
           "type": "string"
@@ -1658,9 +1714,79 @@
         "version",
         "author",
         "description",
-        "enabled"
+        "permissions",
+        "granted",
+        "enabled",
+        "status",
+        "error",
+        "removable",
+        "entryUrl"
       ],
       "type": "object"
+    },
+    "PluginManifestPreview": {
+      "additionalProperties": false,
+      "description": "`plugin.json` of a folder the user wants to install (shown in the permission dialog).",
+      "properties": {
+        "alreadyInstalled": {
+          "description": "An older version is installed already (it will be replaced).",
+          "type": "boolean"
+        },
+        "author": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "permissions": {
+          "items": {
+            "$ref": "#/definitions/PluginPermission"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "author",
+        "description",
+        "permissions",
+        "alreadyInstalled"
+      ],
+      "type": "object"
+    },
+    "PluginPermission": {
+      "description": "What a plugin may do. The user confirms them when installing.",
+      "enum": [
+        "library.read",
+        "library.add",
+        "catalog.search",
+        "achievements.define",
+        "ui.addSidebarItem",
+        "ui.notify",
+        "storage"
+      ],
+      "type": "string"
+    },
+    "PluginStatus": {
+      "description": "- `active`: approved and enabled, runs in its own worker\n- `disabled`: approved, switched off by the user\n- `needsApproval`: new, or an update asks for more permissions\n- `invalid`: `plugin.json` is broken (see `error`)",
+      "enum": [
+        "active",
+        "disabled",
+        "needsApproval",
+        "invalid"
+      ],
+      "type": "string"
     },
     "ProvidersConfigured": {
       "additionalProperties": false,

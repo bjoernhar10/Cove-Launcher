@@ -201,7 +201,24 @@ Launch arguments are split shell-style (shlex); user environment variables overr
 - Events: `downloads-changed` (full list on status changes) and `download-progress` (bytes and smoothed speed,
   every 250 ms per download). The sidebar shows the running download.
 
+### Plugins
+
+- A plugin is a folder with `plugin.json` (id, name, version, author, permissions, entry, apiVersion) and ES
+  modules. The core (`plugins.rs`) discovers plugins in Cove's plugin folder (and, in development, the
+  repository's `plugins/`), validates manifests and keeps the approval state in SQLite.
+- Status: `needsApproval` (new, or an update wants more permissions), `active`, `disabled`, `invalid`. Only
+  active plugins get an `entryUrl`.
+- The UI starts one Web Worker per active plugin. The worker comes from a `blob:` URL so it inherits the CSP
+  (`script-src 'self' cove-plugin:`; no network), removes network and storage globals and imports the entry
+  module from `cove-plugin://localhost/<token>/<entry>`. The core serves files only for active plugins and
+  only inside their folder; the token is random per plugin and start.
+- Plugin calls go to the host as messages (`{ type: "call", method, params }`). The host checks the permission,
+  validates parameters and calls the core through `src/api`; the core re-checks storage, achievements and
+  `library.add`. Sidebar items with `pickFile` open the file dialog directly in the click handler.
+- Plugin achievements are stored per plugin and evaluated by the same engine as Cove's own ones; they only
+  count while the plugin is active.
+
 ## Open points
 
 - Playtime tracking on Windows via Job Objects instead of polling
-- Plugin API and sandboxing
+- Plugins: zip/URL install and update checks

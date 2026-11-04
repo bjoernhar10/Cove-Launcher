@@ -1,0 +1,10 @@
+{
+  "id": "playtime-goals",
+  "name": "Spielzeit-Ziele",
+  "version": "1.0.0",
+  "author": "Cove",
+  "description": "Eigene Achievements für Spielzeitziele: 5, 25, 100, 250 und 500 Stunden in Cove.",
+  "apiVersion": 1,
+  "permissions": ["achievements.define"],
+  "entry": "index.js"
+}

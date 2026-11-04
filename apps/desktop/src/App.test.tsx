@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App.tsx";
 import { usePreferences } from "./stores/preferences.ts";
-import { emitCoreEvent, fakeDownload, fakeItem, installFakeCore, type FakeCore } from "./test/fakeCore.ts";
+import { emitCoreEvent, fakeDownload, fakeItem, fakePlugin, installFakeCore, type FakeCore } from "./test/fakeCore.ts";
 
 let core: FakeCore;
 
@@ -327,5 +327,47 @@ describe("itch.io account", () => {
     fireEvent.change(screen.getByLabelText("itch.io-API-Schlüssel"), { target: { value: "goodkey" } });
     fireEvent.click(screen.getByRole("button", { name: "Verbinden" }));
     expect(await screen.findByText("Verbunden als Kiefer")).toBeDefined();
+  });
+});
+
+describe("Plugins settings", () => {
+  it("shows requested permissions before a plugin may run", async () => {
+    core.plugins = [fakePlugin("random-pick", { name: "Zufallsauswahl", permissions: ["library.read", "ui.notify"] })];
+    renderAt("/settings/plugins");
+    expect(await screen.findByText(/Wartet auf deine Freigabe/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Prüfen" }));
+    const dialog = await screen.findByRole("dialog", { name: "„Zufallsauswahl“ hinzufügen?" });
+    expect(within(dialog).getByText("Bibliothek lesen")).toBeDefined();
+    expect(within(dialog).getByText("Hinweise anzeigen")).toBeDefined();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Erlauben und aktivieren" }));
+    await waitFor(() => {
+      expect(core.plugins[0]?.status).toBe("active");
+    });
+    expect(core.plugins[0]?.granted).toEqual(["library.read", "ui.notify"]);
+    expect(await screen.findByRole("switch", { name: "Zufallsauswahl aktivieren" })).toBeDefined();
+  });
+
+  it("installs from a folder after confirming permissions", async () => {
+    renderAt("/settings/plugins");
+    fireEvent.click(await screen.findByRole("button", { name: "Plugin installieren" }));
+    const dialog = await screen.findByRole("dialog", { name: "Plugin installieren" });
+    fireEvent.change(within(dialog).getByLabelText("Ordner"), { target: { value: "/tmp/nope" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Weiter" }));
+    expect(await within(dialog).findByText(/mit plugin.json/)).toBeDefined();
+    fireEvent.change(within(dialog).getByLabelText("Ordner"), { target: { value: "/tmp/csv-plugin" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Weiter" }));
+    const review = await screen.findByRole("dialog", { name: "„CSV-Import“ hinzufügen?" });
+    expect(within(review).getByText("Spiele hinzufügen")).toBeDefined();
+    fireEvent.click(within(review).getByRole("button", { name: "Installieren" }));
+    await waitFor(() => {
+      expect(core.plugins.map((p) => p.id)).toEqual(["csv-import"]);
+    });
+  });
+
+  it("shows broken plugins with the reason", async () => {
+    core.plugins = [fakePlugin("broken", { status: "invalid", error: "plugin.json ist ungültig (expected value)." })];
+    renderAt("/settings/plugins");
+    expect(await screen.findByText("plugin.json ist ungültig (expected value).")).toBeDefined();
+    expect(screen.queryByRole("switch")).toBeNull();
   });
 });

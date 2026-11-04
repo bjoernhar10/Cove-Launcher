@@ -7,11 +7,14 @@ export interface Toast {
   /** Small heading above the message (e.g. "Achievement freigeschaltet"). */
   title?: string;
   kind?: "achievement";
+  /** Link shown next to the message (e.g. "Öffnen" → a game page). */
+  action?: { label: string; to: string };
 }
 
 export interface ToastOptions {
   title?: string;
   kind?: "achievement";
+  action?: { label: string; to: string };
   durationMs?: number;
 }
 

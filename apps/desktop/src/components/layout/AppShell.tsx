@@ -7,6 +7,7 @@ import { invalidateQueries } from "../../stores/query.ts";
 import { toast } from "../../stores/toasts.ts";
 import { syncAppearanceWithCore } from "../../stores/preferences.ts";
 import { useRunningGames } from "../../stores/running.ts";
+import { usePlugins } from "../../stores/plugins.ts";
 import { Toaster } from "../ui/Toaster.tsx";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { Sidebar } from "./Sidebar.tsx";
@@ -45,6 +46,13 @@ export function AppShell() {
       }),
     [],
   );
+
+  useEffect(() => {
+    void usePlugins.getState().start();
+    return () => {
+      usePlugins.getState().stop();
+    };
+  }, []);
 
   // Reset scroll position on navigation.
   useEffect(() => {

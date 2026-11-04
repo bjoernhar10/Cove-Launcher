@@ -19,11 +19,14 @@ use crate::models::{
     Platform, PlaytimeStats, PluginInfo, Recommendation, RunningGame, ScanCandidate, StoreAccount,
     StoreSource, SyncPhase, SyncProgress, UserProfile,
 };
-use crate::models::{DirectDownloadInput, ItchGame, ItchStatus, ItchUpload};
+use crate::models::{
+    DirectDownloadInput, ItchGame, ItchStatus, ItchUpload, PluginGameInput, PluginManifestPreview,
+    PluginPermission,
+};
+use crate::scanner;
 use crate::state::AppState;
 use crate::stores::login::{self, LOGIN_FINISHED};
 use crate::stores::ProgressFn;
-use crate::{plugins, scanner};
 
 pub const DOWNLOADS_CHANGED: &str = "downloads-changed";
 pub const LIBRARY_MATCH_CHANGED: &str = "library-match-changed";
@@ -179,7 +182,7 @@ pub async fn settings_update(
 
 #[tauri::command]
 pub async fn plugins_list(state: State<'_, AppState>) -> AppResult<Vec<PluginInfo>> {
-    plugins::list(&state.pool, &state.plugin_dirs).await
+    state.plugins.list().await
 }
 
 #[tauri::command]
@@ -188,7 +191,140 @@ pub async fn plugins_set_enabled(
     id: String,
     enabled: bool,
 ) -> AppResult<PluginInfo> {
-    plugins::set_enabled(&state.pool, &state.plugin_dirs, &id, enabled).await
+    let info = state.plugins.set_enabled(&id, enabled).await?;
+    // Plugin achievements count only while the plugin is active.
+    state.cove_achievements.check_in_background();
+    Ok(info)
+}
+
+/// The user confirmed the permissions in the dialog.
+#[tauri::command]
+pub async fn plugins_approve(state: State<'_, AppState>, id: String) -> AppResult<PluginInfo> {
+    state.plugins.approve(&id).await
+}
+
+#[tauri::command]
+pub fn plugins_inspect(
+    state: State<'_, AppState>,
+    path: String,
+) -> AppResult<PluginManifestPreview> {
+    state.plugins.inspect(Path::new(path.trim()))
+}
+
+#[tauri::command]
+pub async fn plugins_install(state: State<'_, AppState>, path: String) -> AppResult<PluginInfo> {
+    state.plugins.install(Path::new(path.trim())).await
+}
+
+#[tauri::command]
+pub async fn plugins_uninstall(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.plugins.uninstall(&id).await
+}
+
+#[tauri::command]
+pub fn plugins_open_folder<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = state.plugins.user_dir();
+    std::fs::create_dir_all(dir)?;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| {
+            AppError::Launch(format!(
+                "Der Plugin-Ordner konnte nicht geöffnet werden: {e}"
+            ))
+        })
+}
+
+// ───────────── plugin API (called by the plugin host) ─────────────
+
+#[tauri::command]
+pub async fn plugin_storage_get(
+    state: State<'_, AppState>,
+    plugin_id: String,
+    key: String,
+) -> AppResult<serde_json::Value> {
+    state.plugins.storage_get(&plugin_id, &key).await
+}
+
+#[tauri::command]
+pub async fn plugin_storage_set(
+    state: State<'_, AppState>,
+    plugin_id: String,
+    key: String,
+    value: serde_json::Value,
+) -> AppResult<()> {
+    state.plugins.storage_set(&plugin_id, &key, &value).await
+}
+
+#[tauri::command]
+pub async fn plugin_storage_remove(
+    state: State<'_, AppState>,
+    plugin_id: String,
+    key: String,
+) -> AppResult<()> {
+    state.plugins.storage_remove(&plugin_id, &key).await
+}
+
+#[tauri::command]
+pub async fn plugin_storage_keys(
+    state: State<'_, AppState>,
+    plugin_id: String,
+) -> AppResult<Vec<String>> {
+    state.plugins.storage_keys(&plugin_id).await
+}
+
+#[tauri::command]
+pub async fn plugin_define_achievements(
+    state: State<'_, AppState>,
+    plugin_id: String,
+    achievements: Vec<serde_json::Value>,
+) -> AppResult<usize> {
+    let count = state
+        .plugins
+        .define_achievements(&plugin_id, &achievements)
+        .await?;
+    state.cove_achievements.check_in_background();
+    Ok(count)
+}
+
+/// `library.add`: with a path like "Spiel hinzufügen", without one as a not installed game.
+#[tauri::command]
+pub async fn plugin_library_add<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    plugin_id: String,
+    game: PluginGameInput,
+) -> AppResult<LibraryItem> {
+    state
+        .plugins
+        .require(&plugin_id, PluginPermission::LibraryAdd)
+        .await?;
+    let item = match game
+        .executable_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        Some(path) => {
+            if !Path::new(path).is_file() {
+                return Err(AppError::InvalidInput(format!(
+                    "Datei nicht gefunden: {path}"
+                )));
+            }
+            let input = ManualGameInput {
+                title: game.title.clone(),
+                executable_path: path.to_owned(),
+                size_bytes: None,
+            };
+            db::library::add_manual(&state.pool, &input).await?
+        }
+        None => db::library::add_not_installed(&state.pool, &game.title).await?,
+    };
+    after_install(&app, &state, item.game.id.clone());
+    Ok(item)
 }
 
 // ───────────── downloads ─────────────

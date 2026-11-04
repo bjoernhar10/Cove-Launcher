@@ -1,4 +1,5 @@
 import type {
+  PluginPermission,
   AccentColor,
   CatalogSort,
   CompatibilityTool,
@@ -62,4 +63,15 @@ export const COMPAT_LABELS: Record<CompatibilityTool, string> = {
   proton: "Proton (stabil)",
   "proton-experimental": "Proton Experimental",
   wine: "Wine",
+};
+
+/** What each plugin permission allows, as shown in the approval dialog. */
+export const PERMISSION_LABELS: Record<PluginPermission, { title: string; description: string }> = {
+  "library.read": { title: "Bibliothek lesen", description: "Sieht deine Spiele mit Titel, Genres und Spielzeit, aber keine Dateipfade." },
+  "library.add": { title: "Spiele hinzufügen", description: "Kann neue Spiele in deine Bibliothek eintragen." },
+  "catalog.search": { title: "Katalog durchsuchen", description: "Kann im Spielekatalog nach Titeln suchen." },
+  "achievements.define": { title: "Achievements festlegen", description: "Kann eigene Cove-Achievements mit festen Regeln anlegen." },
+  "ui.addSidebarItem": { title: "Eintrag in der Seitenleiste", description: "Kann bis zu drei Einträge unter „Plugins“ anlegen." },
+  "ui.notify": { title: "Hinweise anzeigen", description: "Kann kurze Hinweise unten rechts einblenden." },
+  storage: { title: "Daten speichern", description: "Kann bis zu 1 MB eigene Daten speichern, nur für sich selbst." },
 };

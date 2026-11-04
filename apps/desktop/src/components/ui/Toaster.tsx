@@ -1,4 +1,5 @@
 import { Trophy, X } from "lucide-react";
+import { Link } from "react-router";
 import { cx } from "../../lib/cx.ts";
 import { useToasts } from "../../stores/toasts.ts";
 
@@ -21,6 +22,17 @@ export function Toaster() {
           <div className="min-w-0 flex-1 pt-0.5">
             {t.title && <p className="text-xs text-fg-muted">{t.title}</p>}
             <p className={t.title ? "font-medium" : undefined}>{t.message}</p>
+            {t.action && (
+              <Link
+                to={t.action.to}
+                className="mt-1 inline-block text-sm font-medium text-accent-text hover:underline"
+                onClick={() => {
+                  dismiss(t.id);
+                }}
+              >
+                {t.action.label}
+              </Link>
+            )}
           </div>
           <button
             type="button"

@@ -38,6 +38,8 @@ import type {
   DirectDownloadInput,
   DownloadProgress,
   ItchGame,
+  PluginGameInput,
+  PluginManifestPreview,
   ItchStatus,
   ItchUpload,
   ConnectorLoginFinished,
@@ -82,6 +84,21 @@ export interface CoveCommands {
   cove_achievements_list: { args: NoArgs; result: CoveAchievement[] };
   plugins_list: { args: NoArgs; result: PluginInfo[] };
   plugins_set_enabled: { args: { id: string; enabled: boolean }; result: PluginInfo };
+  /** Grants the requested permissions (after the user confirmed them) and enables the plugin. */
+  plugins_approve: { args: { id: string }; result: PluginInfo };
+  /** Reads `plugin.json` of a folder for the install dialog. */
+  plugins_inspect: { args: { path: string }; result: PluginManifestPreview };
+  /** Copies the folder into Cove's plugin folder and grants the confirmed permissions. */
+  plugins_install: { args: { path: string }; result: PluginInfo };
+  plugins_uninstall: { args: { id: string }; result: null };
+  plugins_open_folder: { args: NoArgs; result: null };
+  /** Plugin API (called by the plugin host for a running plugin). */
+  plugin_storage_get: { args: { pluginId: string; key: string }; result: unknown };
+  plugin_storage_set: { args: { pluginId: string; key: string; value: unknown }; result: null };
+  plugin_storage_remove: { args: { pluginId: string; key: string }; result: null };
+  plugin_storage_keys: { args: { pluginId: string }; result: string[] };
+  plugin_define_achievements: { args: { pluginId: string; achievements: unknown[] }; result: number };
+  plugin_library_add: { args: { pluginId: string; game: PluginGameInput }; result: LibraryItem };
   downloads_list: { args: NoArgs; result: DownloadItem[] };
   /** Store games: hands the installation over to Steam/GOG/Epic. */
   downloads_enqueue: { args: { gameId: GameId }; result: null };

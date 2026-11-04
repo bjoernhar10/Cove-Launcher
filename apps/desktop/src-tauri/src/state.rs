@@ -25,8 +25,8 @@ pub struct AppState {
     pub defaults: AppSettings,
     pub catalog: Arc<CatalogService>,
     pub recommender: Arc<Recommender>,
-    /// Folders searched for plugins (each plugin is a sub folder with `manifest.json`).
-    pub plugin_dirs: Vec<PathBuf>,
+    /// Installed plugins, their permissions and data.
+    pub plugins: Arc<crate::plugins::Plugins>,
     pub stores: Arc<StoreService>,
     pub login_flows: Arc<LoginFlows>,
     pub cove_achievements: Arc<CoveAchievements>,

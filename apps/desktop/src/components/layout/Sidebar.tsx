@@ -8,6 +8,7 @@ import { selectActive, selectQueued, selectRunning, useDownloads } from "../../s
 import { usePreferences } from "../../stores/preferences.ts";
 import { Avatar, ProgressBar, Skeleton } from "../ui/Feedback.tsx";
 import { MAIN_NAV, SETTINGS_NAV, type NavItem } from "./nav.ts";
+import { PluginSidebarItems } from "./PluginSidebarItems.tsx";
 
 function SidebarLink({ item, collapsed, badge }: { item: NavItem; collapsed: boolean; badge?: number }) {
   const Icon = item.icon;
@@ -99,6 +100,8 @@ export function Sidebar() {
           <SidebarLink key={item.to} item={item} collapsed={collapsed} {...(item.to === "/downloads" ? { badge: pending } : {})} />
         ))}
       </nav>
+
+      <PluginSidebarItems collapsed={collapsed} />
 
       <div className="flex-1" data-tauri-drag-region />
 

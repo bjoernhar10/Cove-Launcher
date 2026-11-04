@@ -62,6 +62,17 @@ macro_rules! cove_handlers {
             $crate::commands::cove_achievements_list,
             $crate::commands::plugins_list,
             $crate::commands::plugins_set_enabled,
+            $crate::commands::plugins_approve,
+            $crate::commands::plugins_inspect,
+            $crate::commands::plugins_install,
+            $crate::commands::plugins_uninstall,
+            $crate::commands::plugins_open_folder,
+            $crate::commands::plugin_storage_get,
+            $crate::commands::plugin_storage_set,
+            $crate::commands::plugin_storage_remove,
+            $crate::commands::plugin_storage_keys,
+            $crate::commands::plugin_define_achievements,
+            $crate::commands::plugin_library_add,
             $crate::commands::downloads_list,
             $crate::commands::downloads_enqueue,
             $crate::commands::downloads_add_url,
@@ -110,17 +121,22 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
 
     let host = HostEnv::detect(data_dir.join("compat"));
 
-    let mut plugin_dirs = vec![data_dir.join("plugins")];
-    if cfg!(debug_assertions) {
-        // Development: also show the example plugins from the repository.
-        plugin_dirs
-            .push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../plugins"));
-    }
+    // Development builds also show the example plugins from the repository.
+    let dev_plugins = if cfg!(debug_assertions) {
+        vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../plugins")]
+    } else {
+        Vec::new()
+    };
+    let plugins = Arc::new(plugins::Plugins::new(
+        pool.clone(),
+        data_dir.join("plugins"),
+        dev_plugins,
+    ));
 
     let unlock_handle = app.handle().clone();
     let cove_achievements = Arc::new(cove_achievements::CoveAchievements::new(
         pool.clone(),
-        plugin_dirs.clone(),
+        plugins.clone(),
         Arc::new(move |achievement| {
             let _ = unlock_handle.emit(commands::ACHIEVEMENT_UNLOCKED, achievement);
         }),
@@ -196,7 +212,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         catalog,
         host,
         pool,
-        plugin_dirs,
+        plugins,
     })
 }
 
@@ -243,6 +259,38 @@ fn build_downloads(
     ))
 }
 
+/// Serves a file of an active plugin to its worker (`cove-plugin://localhost/<id>/<path>`).
+async fn serve_plugin_file<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    path: &str,
+) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::header;
+    let respond = |status: u16, mime: &str, body: Vec<u8>| {
+        tauri::http::Response::builder()
+            .status(status)
+            .header(header::CONTENT_TYPE, mime)
+            // Module workers load cross-origin: allow it, but never cache plugin code.
+            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+            .header(header::CACHE_CONTROL, "no-store")
+            .header("X-Content-Type-Options", "nosniff")
+            .body(body)
+            .unwrap_or_default()
+    };
+    let Some(state) = app.try_state::<AppState>() else {
+        return respond(503, "text/plain", Vec::new());
+    };
+    match state.plugins.resolve_file(path).await {
+        Ok(file) => match tokio::fs::read(&file).await {
+            Ok(bytes) => respond(200, plugins::mime(&file), bytes),
+            Err(_) => respond(404, "text/plain", Vec::new()),
+        },
+        Err(error) => {
+            eprintln!("[plugins] {path}: {error}");
+            respond(404, "text/plain", Vec::new())
+        }
+    }
+}
+
 /// Answers a `cove-img://` request from the local image cache (downloading on first use).
 async fn serve_image<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -277,6 +325,13 @@ async fn serve_image<R: tauri::Runtime>(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .register_asynchronous_uri_scheme_protocol(plugins::SCHEME, |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            let path = request.uri().path().to_owned();
+            tauri::async_runtime::spawn(async move {
+                responder.respond(serve_plugin_file(&app, &path).await);
+            });
+        })
         .register_asynchronous_uri_scheme_protocol(
             catalog::images::SCHEME,
             |ctx, request, responder| {

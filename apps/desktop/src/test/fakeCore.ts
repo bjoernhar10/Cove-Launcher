@@ -11,6 +11,7 @@ import type {
   LocalStoreGame,
   DownloadItem,
   ItchGame,
+  PluginInfo,
   StoreAccount,
   CoveEvents,
   MatchCandidate,
@@ -129,6 +130,27 @@ export interface FakeCore {
   coveAchievements: CoveAchievement[];
   downloads: DownloadItem[];
   itchKey: string | null;
+  plugins: PluginInfo[];
+  pluginStorage: Record<string, Record<string, unknown>>;
+  pluginAchievements: Record<string, unknown[]>;
+}
+
+export function fakePlugin(id: string, overrides: Partial<PluginInfo> = {}): PluginInfo {
+  return {
+    id,
+    name: id,
+    version: "1.0.0",
+    author: "Test",
+    description: "",
+    permissions: ["ui.notify"],
+    granted: [],
+    enabled: false,
+    status: "needsApproval",
+    error: null,
+    removable: false,
+    entryUrl: null,
+    ...overrides,
+  };
 }
 
 export const FAKE_ITCH_GAME: ItchGame = { gameId: 7, title: "Zeta", coverUrl: null, downloadKeyId: 11, url: "https://a.itch.io/zeta" };
@@ -172,6 +194,19 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     coveAchievements: structuredClone(FAKE_COVE_ACHIEVEMENTS),
     downloads: [],
     itchKey: null,
+    plugins: [],
+    pluginStorage: {},
+    pluginAchievements: {},
+  };
+  const plugin = (id: string) => core.plugins.find((p) => p.id === id) ?? reject("invalidInput", `Plugin nicht gefunden: ${id}`);
+  const activate = (p: PluginInfo, enabled: boolean) => {
+    p.status = enabled ? "active" : "disabled";
+    p.enabled = enabled;
+    p.entryUrl = enabled ? `cove-plugin://localhost/${p.id}/index.js` : null;
+  };
+  const requirePermission = (id: string, permission: PluginInfo["permissions"][number]) => {
+    const p = plugin(id);
+    if (p.status !== "active" || !p.granted.includes(permission)) reject("plugin", `Das Plugin „${p.name}“ hat keine Berechtigung für „${permission}“.`);
   };
   const requireCatalog = () => {
     const cove = core.catalog.cove && core.settings.catalog.useCoveService;
@@ -281,9 +316,71 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     },
     achievements_sync: () => ({ games: 1, achievements: 2, newlyUnlocked: 1 }),
     cove_achievements_list: () => core.coveAchievements,
-    plugins_list: () => [],
-    plugins_set_enabled: () => {
-      reject("invalidInput", "Plugin nicht gefunden");
+    plugins_list: () => core.plugins,
+    plugins_set_enabled: ({ id, enabled }) => {
+      const p = plugin(id);
+      if (p.status === "needsApproval" && enabled) reject("plugin", "Bitte bestätige zuerst die Berechtigungen des Plugins.");
+      activate(p, enabled);
+      return p;
+    },
+    plugins_approve: ({ id }) => {
+      const p = plugin(id);
+      p.granted = [...p.permissions];
+      activate(p, true);
+      return p;
+    },
+    plugins_inspect: ({ path }) => {
+      if (!path.includes("plugin")) reject("invalidInput", "Bitte gib den Ordner des Plugins an (mit plugin.json).");
+      return { id: "csv-import", name: "CSV-Import", version: "1.0.0", author: "Cove", description: "", permissions: ["library.add", "ui.addSidebarItem", "ui.notify"], alreadyInstalled: false };
+    },
+    plugins_install: () => {
+      const p = fakePlugin("csv-import", { name: "CSV-Import", permissions: ["library.add", "ui.addSidebarItem", "ui.notify"], removable: true });
+      p.granted = [...p.permissions];
+      activate(p, true);
+      core.plugins.push(p);
+      return p;
+    },
+    plugins_uninstall: ({ id }) => {
+      core.plugins = core.plugins.filter((p) => p.id !== id);
+      return null;
+    },
+    plugins_open_folder: () => null,
+    plugin_storage_get: ({ pluginId, key }) => {
+      requirePermission(pluginId, "storage");
+      return core.pluginStorage[pluginId]?.[key] ?? null;
+    },
+    plugin_storage_set: ({ pluginId, key, value }) => {
+      requirePermission(pluginId, "storage");
+      core.pluginStorage[pluginId] = { ...core.pluginStorage[pluginId], [key]: value };
+      return null;
+    },
+    plugin_storage_remove: ({ pluginId, key }) => {
+      requirePermission(pluginId, "storage");
+      core.pluginStorage[pluginId] = Object.fromEntries(Object.entries(core.pluginStorage[pluginId] ?? {}).filter(([k]) => k !== key));
+      return null;
+    },
+    plugin_storage_keys: ({ pluginId }) => {
+      requirePermission(pluginId, "storage");
+      return Object.keys(core.pluginStorage[pluginId] ?? {}).sort();
+    },
+    plugin_define_achievements: ({ pluginId, achievements }) => {
+      requirePermission(pluginId, "achievements.define");
+      core.pluginAchievements[pluginId] = achievements;
+      return achievements.length;
+    },
+    plugin_library_add: ({ pluginId, game }) => {
+      requirePermission(pluginId, "library.add");
+      if (core.library.some((i) => i.game.title.toLowerCase() === game.title.toLowerCase())) {
+        reject("alreadyInLibrary", `„${game.title}“ ist bereits in deiner Bibliothek.`);
+      }
+      const item = fakeItem(`manual-${game.title.toLowerCase().replace(/\W+/g, "-")}`, game.title, {
+        installed: game.executablePath !== null,
+        executablePath: game.executablePath,
+        playtimeMinutes: 0,
+        lastPlayedAt: null,
+      });
+      core.library.push(item);
+      return item;
     },
     downloads_list: () => core.downloads,
     downloads_enqueue: ({ gameId }) => {

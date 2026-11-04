@@ -261,6 +261,42 @@ pub async fn add_manual(pool: &SqlitePool, input: &ManualGameInput) -> AppResult
     require(pool, &id).await
 }
 
+/// A game without install (plugins, imports): Cove looks up catalogue data later.
+pub async fn add_not_installed(pool: &SqlitePool, title: &str) -> AppResult<LibraryItem> {
+    let title = title.trim();
+    if title.is_empty() || title.chars().count() > 200 {
+        return Err(AppError::InvalidInput(
+            "Der Name fehlt oder ist zu lang.".into(),
+        ));
+    }
+    let exists: Option<i64> = sqlx::query_scalar(
+        "SELECT 1 FROM library_entries e JOIN games g ON g.id = e.game_id WHERE LOWER(g.title) = LOWER(?)",
+    )
+    .bind(title)
+    .fetch_optional(pool)
+    .await?;
+    if exists.is_some() {
+        return Err(AppError::AlreadyInLibrary(title.to_owned()));
+    }
+    let id = unique_game_id(pool, &slugify(title)).await?;
+    let now = now_iso();
+    let mut tx = pool.begin().await?;
+    sqlx::query("INSERT INTO games (id, title, platforms, release_date, created_at) VALUES (?, ?, ?, '', ?)")
+        .bind(&id)
+        .bind(title)
+        .bind(serde_json::to_string(&[Platform::current()])?)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("INSERT INTO library_entries (game_id, source_id, installed, added_at) VALUES (?, 'manual', 0, ?)")
+        .bind(&id)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    require(pool, &id).await
+}
+
 /// Stores catalogue metadata and adds the game as a (not yet set up) library entry.
 pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<LibraryItem> {
     if game.id.trim().is_empty() || game.title.trim().is_empty() {
@@ -464,6 +500,25 @@ pub(crate) mod tests {
                 }],
             },
         }
+    }
+
+    #[tokio::test]
+    async fn adds_games_without_install_once() {
+        let pool = open_in_memory().await.unwrap();
+        let item = add_not_installed(&pool, "  Hollow Lantern ").await.unwrap();
+        assert_eq!(
+            (item.game.title.as_str(), item.entry.installed),
+            ("Hollow Lantern", false)
+        );
+        assert_eq!(item.entry.source, StoreSource::Manual);
+        assert!(matches!(
+            add_not_installed(&pool, "hollow lantern").await,
+            Err(AppError::AlreadyInLibrary(_))
+        ));
+        assert!(matches!(
+            add_not_installed(&pool, " ").await,
+            Err(AppError::InvalidInput(_))
+        ));
     }
 
     fn manual(title: &str, path: &str) -> ManualGameInput {

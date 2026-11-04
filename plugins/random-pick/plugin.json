@@ -1,0 +1,10 @@
+{
+  "id": "random-pick",
+  "name": "Zufallsauswahl",
+  "version": "1.0.0",
+  "author": "Cove",
+  "description": "„Was soll ich spielen?“ in der Seitenleiste wählt zufällig ein installiertes Spiel aus deiner Bibliothek.",
+  "apiVersion": 1,
+  "permissions": ["library.read", "ui.addSidebarItem", "ui.notify", "storage"],
+  "entry": "index.js"
+}

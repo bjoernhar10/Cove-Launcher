@@ -504,14 +504,67 @@ pub struct CoveAchievement {
     pub target: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum PluginPermission {
+    #[serde(rename = "library.read")]
+    LibraryRead,
+    #[serde(rename = "library.add")]
+    LibraryAdd,
+    #[serde(rename = "catalog.search")]
+    CatalogSearch,
+    #[serde(rename = "achievements.define")]
+    AchievementsDefine,
+    #[serde(rename = "ui.addSidebarItem")]
+    UiAddSidebarItem,
+    #[serde(rename = "ui.notify")]
+    UiNotify,
+    #[serde(rename = "storage")]
+    Storage,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PluginStatus {
+    Active,
+    Disabled,
+    NeedsApproval,
+    Invalid,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginInfo {
     pub id: String,
     pub name: String,
     pub version: String,
     pub author: String,
     pub description: String,
+    pub permissions: Vec<PluginPermission>,
+    pub granted: Vec<PluginPermission>,
     pub enabled: bool,
+    pub status: PluginStatus,
+    pub error: Option<String>,
+    pub removable: bool,
+    pub entry_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginManifestPreview {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub author: String,
+    pub description: String,
+    pub permissions: Vec<PluginPermission>,
+    pub already_installed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginGameInput {
+    pub title: String,
+    pub executable_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

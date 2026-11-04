@@ -1,12 +1,12 @@
-# Cove Plugins
+# Cove plugins
 
-Plugins are plain JavaScript ES modules without a build step. Each plugin lives in
-its own folder with a `manifest.json` and an entry module.
+Example plugins. Each folder has a `plugin.json`, an entry module and `node:test` tests.
 
-```
-plugins/<id>/
-  manifest.json   # id, name, version, entry, apiVersion
-  index.js        # export function activate(ctx) { ... }
-```
+| Plugin | Permissions | What it shows |
+|---|---|---|
+| `playtime-goals` | `achievements.define` | Achievements with playtime rules |
+| `random-pick` | `library.read`, `ui.addSidebarItem`, `ui.notify`, `storage` | Sidebar item, library, storage, notifications |
+| `csv-import` | `library.add`, `ui.addSidebarItem`, `ui.notify` | File picking from a sidebar item, adding games |
 
-The plugin API (`ctx`) is not defined yet; `hello-world` shows the intended shape.
+Development builds of Cove list this folder in Settings → Plugins (as "Wartet auf deine Freigabe").
+How to write a plugin: [docs/plugins.md](../docs/plugins.md).

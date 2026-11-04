@@ -1,0 +1,10 @@
+{
+  "id": "csv-import",
+  "name": "CSV-Import",
+  "version": "1.0.0",
+  "author": "Cove",
+  "description": "Importiert Spiele aus einer CSV-Datei (Spalten „Titel“ und optional „Pfad“).",
+  "apiVersion": 1,
+  "permissions": ["library.add", "ui.addSidebarItem", "ui.notify"],
+  "entry": "index.js"
+}

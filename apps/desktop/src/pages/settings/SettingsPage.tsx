@@ -6,7 +6,7 @@ import type {
   CatalogSource,
   ThemePreference,
 } from "@cove/shared";
-import { Check, ChevronRight, ExternalLink, FolderOpen, FolderSearch, Monitor, Moon, Plus, Puzzle, RefreshCw, Sun, Trash2 } from "lucide-react";
+import { Check, ChevronRight, ExternalLink, FolderOpen, FolderSearch, Monitor, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { Navigate, NavLink, useParams } from "react-router";
 import { api } from "../../api/index.ts";
@@ -16,6 +16,7 @@ import { Field, Input, Select, SettingRow, Switch } from "../../components/ui/Fi
 import { Page } from "../../components/ui/Page.tsx";
 import { useCatalogStatus } from "../../hooks/useCatalog.ts";
 import { AccountsTab } from "./AccountsTab.tsx";
+import { PluginsTab } from "./PluginsTab.tsx";
 import { Group, Panel, SettingsSkeleton } from "./parts.tsx";
 import { useQuery } from "../../hooks/useQuery.ts";
 import { queryClient } from "../../lib/queryClient.ts";
@@ -624,55 +625,6 @@ function DownloadsTab() {
           </SettingRow>
         </Group>
       </div>
-    </Panel>
-  );
-}
-
-function PluginsTab() {
-  const query = useQuery("plugins", api.settings.listPlugins);
-
-  async function setEnabled(id: string, enabled: boolean): Promise<void> {
-    query.update((plugins) => plugins.map((p) => (p.id === id ? { ...p, enabled } : p)));
-    try {
-      await api.settings.setPluginEnabled(id, enabled);
-    } catch (error: unknown) {
-      toast(errorMessage(error), "danger");
-      query.retry();
-    }
-  }
-
-  return (
-    <Panel title="Plugins" description="Plugins erweitern Cove. Sie liegen als JavaScript-Module im Plugin-Ordner.">
-      {query.status === "loading" && <SettingsSkeleton />}
-      {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
-      {query.status === "success" && query.data.length === 0 && (
-        <div className="rounded-lg border border-border">
-          <EmptyState icon={Puzzle} title="Keine Plugins installiert" description="Lege ein Plugin in den Plugin-Ordner, damit es hier erscheint." compact />
-        </div>
-      )}
-      {query.status === "success" && query.data.length > 0 && (
-        <ul className="rounded-lg border border-border">
-          {query.data.map((plugin) => (
-            <li key={plugin.id} className="flex items-start gap-4 border-b border-border px-4 py-4 last:border-b-0">
-              <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-sidebar text-fg-subtle">
-                <Puzzle />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-fg">
-                  {plugin.name} <span className="num ml-1 text-xs font-normal text-fg-subtle">v{plugin.version}</span>
-                </p>
-                <p className="mt-0.5 text-sm text-fg-muted">{plugin.description}</p>
-                <p className="mt-1 text-xs text-fg-subtle">von {plugin.author}</p>
-              </div>
-              <Switch
-                label={`${plugin.name} aktivieren`}
-                checked={plugin.enabled}
-                onChange={(on) => void setEnabled(plugin.id, on)}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
     </Panel>
   );
 }

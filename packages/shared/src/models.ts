@@ -456,13 +456,60 @@ export interface CoveAchievement {
   target: number;
 }
 
+/** What a plugin may do. The user confirms them when installing. */
+export type PluginPermission =
+  | "library.read"
+  | "library.add"
+  | "catalog.search"
+  | "achievements.define"
+  | "ui.addSidebarItem"
+  | "ui.notify"
+  | "storage";
+
+/**
+ * - `active`: approved and enabled, runs in its own worker
+ * - `disabled`: approved, switched off by the user
+ * - `needsApproval`: new, or an update asks for more permissions
+ * - `invalid`: `plugin.json` is broken (see `error`)
+ */
+export type PluginStatus = "active" | "disabled" | "needsApproval" | "invalid";
+
 export interface PluginInfo {
   id: string;
   name: string;
   version: string;
   author: string;
   description: string;
+  /** Requested in `plugin.json`. */
+  permissions: PluginPermission[];
+  /** Confirmed by the user. */
+  granted: PluginPermission[];
   enabled: boolean;
+  status: PluginStatus;
+  error: string | null;
+  /** Installed into Cove's plugin folder (development plugins cannot be removed here). */
+  removable: boolean;
+  /** Module URL for the worker; only for active plugins. */
+  entryUrl: string | null;
+}
+
+/** `plugin.json` of a folder the user wants to install (shown in the permission dialog). */
+export interface PluginManifestPreview {
+  id: string;
+  name: string;
+  version: string;
+  author: string;
+  description: string;
+  permissions: PluginPermission[];
+  /** An older version is installed already (it will be replaced). */
+  alreadyInstalled: boolean;
+}
+
+/** `library.add` from a plugin. */
+export interface PluginGameInput {
+  title: string;
+  /** Null adds the game without install (Cove looks up catalogue data). */
+  executablePath: string | null;
 }
 
 export type ThemePreference = "system" | "light" | "dark";
@@ -588,7 +635,8 @@ export type AppErrorKind =
   | "storeUnavailable"
   | "connectorsUnavailable"
   | "download"
-  | "itch";
+  | "itch"
+  | "plugin";
 
 /** Error shape of every rejected Tauri command. */
 export interface AppErrorPayload {

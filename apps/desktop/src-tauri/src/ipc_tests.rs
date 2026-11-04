@@ -60,6 +60,11 @@ async fn app() -> TestApp {
             ..crate::catalog::Endpoints::default()
         },
     ));
+    let plugins = Arc::new(crate::plugins::Plugins::new(
+        pool.clone(),
+        tmp.path().join("plugins"),
+        vec![tmp.path().join("dev-plugins")],
+    ));
     let state = AppState {
         launcher: Launcher::new(
             pool.clone(),
@@ -70,7 +75,7 @@ async fn app() -> TestApp {
         host: HostEnv::detect(tmp.path().join("compat")),
         defaults: default_settings(None),
         catalog: catalog.clone(),
-        plugin_dirs: vec![tmp.path().join("plugins")],
+        plugins: plugins.clone(),
         recommender: Arc::new(crate::recommend::Recommender::new(
             crate::sidecar::Sidecar::new(None),
             pool.clone(),
@@ -86,7 +91,7 @@ async fn app() -> TestApp {
         login_flows: Arc::new(crate::stores::login::LoginFlows::default()),
         cove_achievements: Arc::new(crate::cove_achievements::CoveAchievements::new(
             pool.clone(),
-            vec![tmp.path().join("plugins")],
+            plugins.clone(),
             Arc::new(|_| {}),
         )),
         open_url: Arc::new(|_| Ok(())),
@@ -416,4 +421,102 @@ async fn download_commands_accept_frontend_payloads() {
     )
     .unwrap_err();
     assert_eq!(handoff["kind"], "notInLibrary");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn plugin_commands_accept_frontend_payloads() {
+    let app = app().await;
+    let dev = app.tmp.path().join("dev-plugins/pick");
+    std::fs::create_dir_all(&dev).unwrap();
+    std::fs::write(
+        dev.join("plugin.json"),
+        r#"{"id":"pick","name":"Pick","version":"1.0.0","author":"T","entry":"index.js","permissions":["storage","library.add","achievements.define"]}"#,
+    )
+    .unwrap();
+    std::fs::write(dev.join("index.js"), "export function activate() {}").unwrap();
+
+    let list: Vec<Value> = invoke(&app, "plugins_list", json!({}));
+    assert_eq!(list[0]["status"], "needsApproval");
+    assert_eq!(
+        list[0]["permissions"],
+        json!(["library.add", "achievements.define", "storage"])
+    );
+    let denied = invoke_raw(
+        &app,
+        "plugin_storage_set",
+        json!({ "pluginId": "pick", "key": "k", "value": 1 }),
+    )
+    .unwrap_err();
+    assert_eq!(denied["kind"], "plugin");
+
+    let approved: Value = invoke(&app, "plugins_approve", json!({ "id": "pick" }));
+    assert_eq!(approved["status"], "active");
+    assert!(approved["entryUrl"]
+        .as_str()
+        .unwrap()
+        .ends_with("/index.js"));
+
+    invoke_raw(
+        &app,
+        "plugin_storage_set",
+        json!({ "pluginId": "pick", "key": "last", "value": { "id": "x" } }),
+    )
+    .unwrap();
+    let value: Value = invoke(
+        &app,
+        "plugin_storage_get",
+        json!({ "pluginId": "pick", "key": "last" }),
+    );
+    assert_eq!(value, json!({ "id": "x" }));
+    let keys: Vec<String> = invoke(&app, "plugin_storage_keys", json!({ "pluginId": "pick" }));
+    assert_eq!(keys, ["last"]);
+    invoke_raw(
+        &app,
+        "plugin_storage_remove",
+        json!({ "pluginId": "pick", "key": "last" }),
+    )
+    .unwrap();
+
+    let count: usize = invoke(
+        &app,
+        "plugin_define_achievements",
+        json!({ "pluginId": "pick", "achievements": [{ "id": "ten", "title": "Zehn", "description": "", "rule": { "type": "libraryGames", "count": 10 } }] }),
+    );
+    assert_eq!(count, 1);
+    let achievements: Vec<Value> = invoke(&app, "cove_achievements_list", json!({}));
+    assert!(achievements.iter().any(|a| a["id"] == "pick:ten"));
+
+    let added: LibraryItem = invoke(
+        &app,
+        "plugin_library_add",
+        json!({ "pluginId": "pick", "game": { "title": "From CSV", "executablePath": null } }),
+    );
+    assert!(!added.entry.installed);
+
+    let disabled: Value = invoke(
+        &app,
+        "plugins_set_enabled",
+        json!({ "id": "pick", "enabled": false }),
+    );
+    assert_eq!(disabled["status"], "disabled");
+    let preview = invoke_raw(
+        &app,
+        "plugins_inspect",
+        json!({ "path": dev.to_string_lossy() }),
+    )
+    .unwrap();
+    assert_eq!(preview["id"], "pick");
+    let installed: Value = invoke(
+        &app,
+        "plugins_install",
+        json!({ "path": dev.to_string_lossy() }),
+    );
+    assert_eq!(
+        (
+            installed["status"].as_str(),
+            installed["removable"].as_bool()
+        ),
+        (Some("active"), Some(true))
+    );
+    invoke_raw(&app, "plugins_uninstall", json!({ "id": "pick" })).unwrap();
 }

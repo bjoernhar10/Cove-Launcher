@@ -56,6 +56,8 @@ pub enum AppError {
     Download(String),
     #[error("itch.io: {0}")]
     Itch(String),
+    #[error("{0}")]
+    Plugin(String),
 }
 
 impl AppError {
@@ -87,6 +89,7 @@ impl AppError {
             Self::ConnectorsUnavailable(_) => "connectorsUnavailable",
             Self::Download(_) => "download",
             Self::Itch(_) => "itch",
+            Self::Plugin(_) => "plugin",
         }
     }
 }
