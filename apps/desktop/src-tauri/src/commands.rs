@@ -2,24 +2,35 @@
 //! (`invoke("library_update", { gameId, patch })`).
 
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
-use tauri::{AppHandle, Emitter, Runtime, State};
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use crate::catalog::CatalogService;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    AboutInfo, Achievement, AchievementUnlock, AppSettings, CatalogCredentials, CatalogFilter,
-    CatalogGameDetails, CatalogPage, CatalogProviderId, CatalogSort, CatalogStatus,
-    ComponentVersion, DownloadItem, DownloadStatus, Game, LaunchResult, LibraryItem,
-    LibraryMatchEvent, LibraryUpdate, ManualGameInput, MatchCandidate, Platform, PlaytimeStats,
-    PluginInfo, RunningGame, ScanCandidate, StoreAccount, StoreSource, UserProfile,
+    AboutInfo, Achievement, AchievementUnlock, AchievementsSyncSummary, AppSettings,
+    CatalogCredentials, CatalogFilter, CatalogGameDetails, CatalogPage, CatalogProviderId,
+    CatalogSort, CatalogStatus, ComponentVersion, ConnectorLoginFinished, ConnectorLoginStart,
+    CoveAchievement, DownloadItem, DownloadStatus, Game, GameId, ImportSummary, LaunchResult,
+    LibraryItem, LibraryMatchEvent, LibraryUpdate, LocalStoreGame, ManualGameInput, MatchCandidate,
+    Platform, PlaytimeStats, PluginInfo, Recommendation, RunningGame, ScanCandidate, StoreAccount,
+    StoreSource, SyncPhase, SyncProgress, UserProfile,
 };
 use crate::state::AppState;
+use crate::stores::login::{self, LOGIN_FINISHED};
+use crate::stores::ProgressFn;
 use crate::{plugins, scanner};
 
 pub const DOWNLOADS_CHANGED: &str = "downloads-changed";
 pub const LIBRARY_MATCH_CHANGED: &str = "library-match-changed";
+pub const STORE_SYNC_PROGRESS: &str = "store-sync-progress";
+pub const ACHIEVEMENT_UNLOCKED: &str = "achievement-unlocked";
+
+/// Pause between catalogue matches of imported games (proxy: 60 requests/min per IP).
+const MATCH_PACING: Duration = Duration::from_millis(1100);
 
 // ───────────── library ─────────────
 
@@ -47,16 +58,20 @@ pub async fn library_add_manual(
             "Datei nicht gefunden: {path}"
         )));
     }
-    db::library::add_manual(&state.pool, &input).await
+    let item = db::library::add_manual(&state.pool, &input).await?;
+    state.cove_achievements.check_in_background();
+    Ok(item)
 }
 
-/// Adds a catalogue game (metadata comes from the catalogue, which is still mocked).
+/// Adds a catalogue game with its metadata.
 #[tauri::command]
 pub async fn library_add_from_catalog(
     state: State<'_, AppState>,
     game: Game,
 ) -> AppResult<LibraryItem> {
-    db::library::add_from_catalog(&state.pool, &game).await
+    let item = db::library::add_from_catalog(&state.pool, &game).await?;
+    state.cove_achievements.check_in_background();
+    Ok(item)
 }
 
 #[tauri::command]
@@ -156,25 +171,6 @@ pub async fn settings_update(
 ) -> AppResult<AppSettings> {
     db::settings::save(&state.pool, &settings).await?;
     db::settings::load(&state.pool, &state.defaults).await
-}
-
-#[tauri::command]
-pub async fn sources_list(state: State<'_, AppState>) -> AppResult<Vec<StoreAccount>> {
-    db::sources::list(&state.pool).await
-}
-
-/// Store accounts are connected by the C# connector service (next step).
-#[tauri::command]
-pub fn sources_connect(store: StoreSource) -> AppResult<StoreAccount> {
-    Err(AppError::NotSupported(format!(
-        "Die Verbindung zu {} kommt mit dem Connector-Service.",
-        match store {
-            StoreSource::Steam => "Steam",
-            StoreSource::Gog => "GOG",
-            StoreSource::Epic => "Epic",
-            StoreSource::Manual => "Manuell",
-        }
-    )))
 }
 
 #[tauri::command]
@@ -344,6 +340,18 @@ pub async fn catalog_browse(
     sort: CatalogSort,
     page: u32,
 ) -> AppResult<CatalogPage> {
+    // "Empfohlen": the first pages are re-ranked for this user by the recommender.
+    if sort == CatalogSort::Recommended && state.recommender.is_available() {
+        match state.recommender.recommended_page(&filter, page).await {
+            Ok(Some(personal)) => return Ok(personal),
+            Ok(None) => {}
+            // Catalogue errors (offline, not configured) surface below; recommender errors fall back.
+            Err(error @ (AppError::RecommenderUnavailable(_) | AppError::Recommender(_))) => {
+                eprintln!("[cove] Empfohlen ohne Personalisierung: {error}");
+            }
+            Err(other) => return Err(other),
+        }
+    }
     state.catalog.browse(filter, sort, page).await
 }
 
@@ -403,4 +411,280 @@ pub async fn library_rematch<R: Runtime>(
     db::library::set_match_status(&state.pool, &game_id, crate::models::MatchStatus::None).await?;
     spawn_match(&app, &state, game_id);
     Ok(())
+}
+
+// ───────────── recommendations ─────────────
+
+#[tauri::command]
+pub async fn recommendations_for_user(
+    state: State<'_, AppState>,
+    limit: u32,
+) -> AppResult<Vec<Recommendation>> {
+    let items = state.recommender.for_user(limit.clamp(1, 50)).await?;
+    log_recommended(&state, &items).await;
+    Ok(items)
+}
+
+/// Remembers shown recommendations for the "Entdecker" achievement (best effort).
+async fn log_recommended(state: &AppState, items: &[Recommendation]) {
+    let ids: Vec<String> = items.iter().map(|r| r.game.id.clone()).collect();
+    if let Err(error) = crate::cove_achievements::log_recommended(&state.pool, &ids).await {
+        eprintln!("[cove] Empfehlungen merken: {error}");
+    }
+}
+
+#[tauri::command]
+pub async fn recommendations_discover(
+    state: State<'_, AppState>,
+    limit: u32,
+) -> AppResult<Vec<Recommendation>> {
+    let items = state.recommender.discover(limit.clamp(1, 50)).await?;
+    log_recommended(&state, &items).await;
+    Ok(items)
+}
+
+#[tauri::command]
+pub async fn recommendations_similar(
+    state: State<'_, AppState>,
+    game_id: String,
+    limit: u32,
+) -> AppResult<Vec<Recommendation>> {
+    state
+        .recommender
+        .similar(&game_id, limit.clamp(1, 50))
+        .await
+}
+
+#[tauri::command]
+pub async fn recommendation_explain(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<String> {
+    state.recommender.explain(&game_id).await
+}
+
+// ───────────── store accounts ─────────────
+
+#[tauri::command]
+pub async fn connectors_list(state: State<'_, AppState>) -> AppResult<Vec<StoreAccount>> {
+    state.stores.list().await
+}
+
+#[tauri::command]
+pub async fn connector_login_start<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    store: StoreSource,
+) -> AppResult<ConnectorLoginStart> {
+    let sync_app = app.clone();
+    let on_login: login::OnLogin = Arc::new(move |store| spawn_store_sync(&sync_app, store));
+    login::start(
+        &app,
+        state.stores.clone(),
+        state.login_flows.clone(),
+        store,
+        state.open_url.clone(),
+        on_login,
+    )
+    .await
+}
+
+/// Finishes a login with a code the user pasted (Epic "Alternativer Login").
+#[tauri::command]
+pub async fn connector_login_complete<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    store: StoreSource,
+    code: String,
+) -> AppResult<StoreAccount> {
+    if code.trim().is_empty() {
+        return Err(AppError::InvalidInput(
+            "Bitte füge den Anmeldecode ein.".into(),
+        ));
+    }
+    state.login_flows.cancel(store);
+    close_login_window(&app, store);
+    let account = state
+        .stores
+        .login_complete(store, None, Some(&code), None)
+        .await?;
+    spawn_store_sync(&app, store);
+    Ok(account)
+}
+
+fn close_login_window<R: Runtime>(app: &AppHandle<R>, store: StoreSource) {
+    if let Some(window) = app.get_webview_window(&login::window_label(store)) {
+        let _ = window.destroy();
+    }
+}
+
+#[tauri::command]
+pub fn connector_login_cancel<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    store: StoreSource,
+) {
+    if state.login_flows.cancel(store) {
+        close_login_window(&app, store);
+        let _ = app.emit(
+            LOGIN_FINISHED,
+            ConnectorLoginFinished {
+                store,
+                account: None,
+                error: None,
+            },
+        );
+    }
+}
+
+#[tauri::command]
+pub async fn connector_refresh(
+    state: State<'_, AppState>,
+    store: StoreSource,
+) -> AppResult<StoreAccount> {
+    state.stores.refresh(store).await
+}
+
+#[tauri::command]
+pub async fn connector_logout(
+    state: State<'_, AppState>,
+    store: StoreSource,
+    keep_games: bool,
+) -> AppResult<StoreAccount> {
+    state.login_flows.cancel(store);
+    state.stores.logout(store, keep_games).await
+}
+
+#[tauri::command]
+pub async fn connector_detect_local(
+    state: State<'_, AppState>,
+    store: Option<StoreSource>,
+) -> AppResult<Vec<LocalStoreGame>> {
+    state.stores.detect_local(store).await
+}
+
+fn progress_emitter<R: Runtime>(app: &AppHandle<R>) -> ProgressFn {
+    let app = app.clone();
+    Arc::new(move |progress: SyncProgress| {
+        let _ = app.emit(STORE_SYNC_PROGRESS, progress);
+    })
+}
+
+#[tauri::command]
+pub async fn connector_import_library<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    store: StoreSource,
+) -> AppResult<ImportSummary> {
+    let (summary, added) = state
+        .stores
+        .import_library(store, &progress_emitter(&app))
+        .await?;
+    spawn_matching(&app, &state, store, added);
+    state.cove_achievements.check_in_background();
+    Ok(summary)
+}
+
+/// Matches imported games against the catalogue, one at a time.
+fn spawn_matching<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    store: StoreSource,
+    game_ids: Vec<GameId>,
+) {
+    if game_ids.is_empty() {
+        return;
+    }
+    let catalog = state.catalog.clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let total = i64::try_from(game_ids.len()).unwrap_or(i64::MAX);
+        for (i, game_id) in game_ids.into_iter().enumerate() {
+            if i > 0 {
+                tokio::time::sleep(MATCH_PACING).await;
+            }
+            match catalog.match_library_game(&game_id).await {
+                Ok(status) => {
+                    let _ = app.emit(LIBRARY_MATCH_CHANGED, LibraryMatchEvent { game_id, status });
+                }
+                Err(error) => {
+                    eprintln!("[cove] Katalog-Zuordnung für {game_id} fehlgeschlagen: {error}");
+                }
+            }
+            let done = i64::try_from(i + 1).unwrap_or(total);
+            let _ = app.emit(
+                STORE_SYNC_PROGRESS,
+                SyncProgress {
+                    store,
+                    phase: SyncPhase::Matching,
+                    done,
+                    total,
+                    finished: done == total,
+                },
+            );
+        }
+    });
+}
+
+/// After a login: import the library, then read achievements, in the background.
+fn spawn_store_sync<R: Runtime>(app: &AppHandle<R>, store: StoreSource) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        let progress = progress_emitter(&app);
+        match state.stores.import_library(store, &progress).await {
+            Ok((_, added)) => {
+                spawn_matching(&app, &state, store, added);
+                state.cove_achievements.check_in_background();
+            }
+            Err(error) => {
+                eprintln!("[cove] {}-Import: {error}", store.display_name());
+                return;
+            }
+        }
+        if store == StoreSource::Steam {
+            if let Err(error) = state.stores.sync_achievements(store, &progress).await {
+                eprintln!("[cove] {}-Achievements: {error}", store.display_name());
+            }
+        }
+    });
+}
+
+/// Reads store achievements (Steam today; GOG/Epic offer none through their APIs).
+#[tauri::command]
+pub async fn achievements_sync<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    store: Option<StoreSource>,
+) -> AppResult<AchievementsSyncSummary> {
+    let progress = progress_emitter(&app);
+    let targets: Vec<StoreSource> = match store {
+        Some(store) => vec![store],
+        None => state
+            .stores
+            .list()
+            .await?
+            .into_iter()
+            .filter(|a| a.connected && a.store == StoreSource::Steam)
+            .map(|a| a.store)
+            .collect(),
+    };
+    let mut total = AchievementsSyncSummary::default();
+    for store in targets {
+        if store != StoreSource::Steam {
+            continue;
+        }
+        let summary = state.stores.sync_achievements(store, &progress).await?;
+        total.games += summary.games;
+        total.achievements += summary.achievements;
+        total.newly_unlocked += summary.newly_unlocked;
+    }
+    Ok(total)
+}
+
+#[tauri::command]
+pub async fn cove_achievements_list(state: State<'_, AppState>) -> AppResult<Vec<CoveAchievement>> {
+    state.cove_achievements.list().await
 }

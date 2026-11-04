@@ -1,11 +1,11 @@
-//! Achievements (definitions per game + user unlocks). Filled by the C#
-//! connectors later; Cove itself only reads them.
+//! Store achievements (definitions per game + user unlocks), filled by
+//! `achievements_sync` from the C# connectors.
 
 use sqlx::{FromRow, SqlitePool};
 
 use crate::db::library::{GameRow, GAME_COLUMNS};
 use crate::error::AppResult;
-use crate::models::{Achievement, AchievementUnlock};
+use crate::models::{Achievement, AchievementUnlock, ImageRef};
 
 #[derive(Debug, FromRow)]
 struct AchievementRow {
@@ -15,12 +15,23 @@ struct AchievementRow {
     achievement_description: String,
     hidden: bool,
     rarity_percent: Option<f64>,
+    icon_url: Option<String>,
+    icon_locked_url: Option<String>,
     unlocked_at: Option<String>,
 }
 
 impl From<AchievementRow> for Achievement {
     fn from(row: AchievementRow) -> Self {
+        let icon = if row.unlocked_at.is_some() {
+            row.icon_url.or(row.icon_locked_url)
+        } else {
+            row.icon_locked_url.or(row.icon_url)
+        };
         Self {
+            icon: ImageRef {
+                url: icon,
+                alt: row.achievement_title.clone(),
+            },
             id: row.achievement_id,
             game_id: row.achievement_game_id,
             title: row.achievement_title,
@@ -33,7 +44,7 @@ impl From<AchievementRow> for Achievement {
 }
 
 const ACHIEVEMENT_COLUMNS: &str = "a.id AS achievement_id, a.game_id AS achievement_game_id, \
-     a.title AS achievement_title, a.description AS achievement_description, a.hidden, a.rarity_percent, u.unlocked_at";
+     a.title AS achievement_title, a.description AS achievement_description, a.hidden, a.rarity_percent, a.icon_url, a.icon_locked_url, u.unlocked_at";
 
 /// All achievements of a game: unlocked first (newest first), then locked in their defined order.
 pub async fn list(pool: &SqlitePool, game_id: &str) -> AppResult<Vec<Achievement>> {
@@ -78,6 +89,61 @@ pub async fn recent(pool: &SqlitePool, limit: i64) -> AppResult<Vec<AchievementU
         .collect()
 }
 
+/// One achievement as the store reports it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncedAchievement {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub icon_url: Option<String>,
+    pub icon_locked_url: Option<String>,
+    pub hidden: bool,
+    pub unlocked_at: Option<String>,
+    pub rarity_percent: Option<f64>,
+}
+
+/// Stores definitions and unlocks of one game; returns how many unlocks are new.
+/// Unlocks are never removed (stores do not take achievements back).
+pub async fn store_synced(
+    pool: &SqlitePool,
+    game_id: &str,
+    items: &[SyncedAchievement],
+) -> AppResult<i64> {
+    let mut tx = pool.begin().await?;
+    let mut new_unlocks = 0;
+    for (order, item) in items.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO achievements (game_id, id, title, description, hidden, rarity_percent, sort_order, icon_url, icon_locked_url) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+             ON CONFLICT (game_id, id) DO UPDATE SET title = excluded.title, description = excluded.description, \
+               hidden = excluded.hidden, rarity_percent = excluded.rarity_percent, sort_order = excluded.sort_order, \
+               icon_url = excluded.icon_url, icon_locked_url = excluded.icon_locked_url",
+        )
+        .bind(game_id)
+        .bind(&item.id)
+        .bind(&item.title)
+        .bind(&item.description)
+        .bind(item.hidden)
+        .bind(item.rarity_percent)
+        .bind(i64::try_from(order).unwrap_or(i64::MAX))
+        .bind(&item.icon_url)
+        .bind(&item.icon_locked_url)
+        .execute(&mut *tx)
+        .await?;
+        if let Some(unlocked_at) = &item.unlocked_at {
+            let inserted = sqlx::query("INSERT OR IGNORE INTO user_achievements VALUES (?, ?, ?)")
+                .bind(game_id)
+                .bind(&item.id)
+                .bind(unlocked_at)
+                .execute(&mut *tx)
+                .await?;
+            new_unlocks += i64::try_from(inserted.rows_affected()).unwrap_or(0);
+        }
+    }
+    tx.commit().await?;
+    Ok(new_unlocks)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,5 +183,52 @@ mod tests {
         let recent = recent(&pool, 5).await.unwrap();
         assert_eq!(recent.len(), 1);
         assert_eq!(recent[0].game.title, "Game");
+    }
+
+    #[tokio::test]
+    async fn stores_synced_achievements_idempotently() {
+        let pool = open_in_memory().await.unwrap();
+        add_from_catalog(&pool, &sample_game("g", "Game"))
+            .await
+            .unwrap();
+        let mut items = vec![
+            SyncedAchievement {
+                id: "ACH_A".into(),
+                title: "Erster Schritt".into(),
+                description: "Fang an".into(),
+                icon_url: Some("https://cdn.akamai.steamstatic.com/a.jpg".into()),
+                icon_locked_url: Some("https://cdn.akamai.steamstatic.com/a_g.jpg".into()),
+                hidden: false,
+                unlocked_at: Some("2026-09-01T10:00:00Z".into()),
+                rarity_percent: Some(81.5),
+            },
+            SyncedAchievement {
+                id: "ACH_B".into(),
+                title: "Geheim".into(),
+                description: String::new(),
+                icon_url: Some("https://cdn.akamai.steamstatic.com/b.jpg".into()),
+                icon_locked_url: Some("https://cdn.akamai.steamstatic.com/b_g.jpg".into()),
+                hidden: true,
+                unlocked_at: None,
+                rarity_percent: Some(3.2),
+            },
+        ];
+        assert_eq!(store_synced(&pool, "g", &items).await.unwrap(), 1);
+        assert_eq!(
+            store_synced(&pool, "g", &items).await.unwrap(),
+            0,
+            "no double counting"
+        );
+        items[1].unlocked_at = Some("2026-11-01T22:00:00Z".into());
+        assert_eq!(store_synced(&pool, "g", &items).await.unwrap(), 1);
+
+        let list = list(&pool, "g").await.unwrap();
+        assert_eq!(list[0].id, "ACH_B");
+        assert_eq!(list[1].rarity_percent, Some(81.5));
+        // Unlocked → colour icon (raw URL kept in Rust; proxied only on the wire).
+        assert_eq!(
+            list[1].icon.url.as_deref(),
+            Some("https://cdn.akamai.steamstatic.com/a.jpg")
+        );
     }
 }

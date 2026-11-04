@@ -13,6 +13,9 @@ caches answers.
 | `GET /v1/game/:id` | Details of one IGDB game | 7 days |
 | `GET /v1/similar/:id` | Similar games | 7 days |
 | `POST /v1/match` `{ "title": "…" }` | Best catalogue candidates for a title, scored | 24 h |
+| `GET /v1/steam/profile/:steamid` | Steam name and whether the profile is public | 1 h |
+| `GET /v1/steam/owned/:steamid` | Owned games with playtime (`private: true` when hidden) | 1 h |
+| `GET /v1/steam/achievements/:steamid/:appid` | Player progress merged with names, icons and global rarity | 1 h (schema and rarity 7 days) |
 | `GET /v1/health` | Liveness check | none |
 
 - **No pass-through.** Clients only send parameters; the Worker builds every IGDB (Apicalypse) query itself.
@@ -55,12 +58,13 @@ Requirements: a Cloudflare account (the free plan is enough) and a Twitch applic
    npx wrangler kv namespace create TOKENS
    ```
 
-4. **Store the IGDB credentials as Worker secrets.** They never go into the repository or the app:
+4. **Store the credentials as Worker secrets.** They never go into the repository or the app:
 
    ```sh
    npx wrangler secret put IGDB_CLIENT_ID
    npx wrangler secret put IGDB_CLIENT_SECRET
-   ```
+   npx wrangler secret put STEAM_API_KEY      # https://steamcommunity.com/dev/apikey (for the Steam endpoints)
+```
 
 5. **Check and deploy:**
 
@@ -78,15 +82,17 @@ Requirements: a Cloudflare account (the free plan is enough) and a Twitch applic
    curl "https://cove-catalog-proxy.<account>.workers.dev/v1/search?q=witcher"
    ```
 
-7. **Build Cove with the proxy URL.** The URL is compiled into the app (`build.rs`):
+7. **Point Cove at the proxy.** The URL is compiled into the app (`build.rs`). Put it into
+   `apps/desktop/src-tauri/.cargo/config.toml` (`[env] COVE_CATALOG_PROXY_URL`), then every
+   `npm run dev` and `npm run tauri:build` uses it. The URL is not a secret: every Cove build contains it.
+
+   To try another Worker without editing the file, set the variable for one run; it wins over the file:
 
    ```sh
-   COVE_CATALOG_PROXY_URL=https://cove-catalog-proxy.<account>.workers.dev npm run tauri:build -w @cove/desktop
-   # or for development
-   COVE_CATALOG_PROXY_URL=https://cove-catalog-proxy.<account>.workers.dev npm run dev
+   COVE_CATALOG_PROXY_URL=http://127.0.0.1:8787 npm run dev
    ```
 
-   Without the variable the app has no Cove service and only uses own keys (Settings, Katalog, Erweitert).
+   With an empty URL the app has no Cove service and only uses own keys (Settings, Katalog, Erweitert).
 
 ## Local development
 

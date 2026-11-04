@@ -18,13 +18,17 @@ use super::provider::{
     ProviderPage,
 };
 use super::rate_limit::RateLimiter;
-use crate::models::{CatalogProviderId, CatalogSort, Game, GameArtwork, ImageRef, Platform};
+use crate::models::{
+    CatalogProviderId, CatalogSort, Game, GameArtwork, GameFeatures, ImageRef, Platform,
+};
 
 pub const API_BASE: &str = "https://api.igdb.com/v4";
 pub const AUTH_URL: &str = "https://id.twitch.tv/oauth2/token";
 const IMAGE_BASE: &str = "https://images.igdb.com/igdb/image/upload";
 
-const FIELDS: &str = "name,summary,storyline,genres,themes,platforms,first_release_date,\
+const FIELDS: &str =
+    "name,summary,storyline,genres,themes.name,game_modes.name,player_perspectives.name,\
+keywords.name,platforms,first_release_date,\
 involved_companies.company.name,involved_companies.developer,involved_companies.publisher,\
 total_rating,total_rating_count,cover.image_id,screenshots.image_id,artworks.image_id";
 
@@ -71,6 +75,14 @@ struct Company {
     name: String,
 }
 
+/// Expanded reference (`themes.name` → `{ id, name }`).
+#[derive(Debug, Deserialize)]
+struct Named {
+    id: u32,
+    #[serde(default)]
+    name: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct InvolvedCompany {
     company: Option<Company>,
@@ -91,7 +103,13 @@ struct IgdbGame {
     #[serde(default)]
     genres: Vec<u32>,
     #[serde(default)]
-    themes: Vec<u32>,
+    themes: Vec<Named>,
+    #[serde(default)]
+    game_modes: Vec<Named>,
+    #[serde(default)]
+    player_perspectives: Vec<Named>,
+    #[serde(default)]
+    keywords: Vec<Named>,
     #[serde(default)]
     platforms: Vec<u32>,
     #[serde(default)]
@@ -130,7 +148,7 @@ fn map_genres(game: &IgdbGame) -> Vec<String> {
         .chain(
             game.themes
                 .iter()
-                .filter_map(|t| THEME_MAP.iter().find(|(id, _)| id == t)),
+                .filter_map(|t| THEME_MAP.iter().find(|(id, _)| *id == t.id)),
         );
     for (_, slug) in mapped {
         if !out.iter().any(|s| s == slug) {
@@ -176,10 +194,23 @@ fn map_game(raw: IgdbGame) -> Game {
         .first()
         .or_else(|| raw.screenshots.first())
         .map(|i| image("t_1080p", &i.image_id));
+    let names = |list: &[Named], max: usize| -> Vec<String> {
+        list.iter()
+            .filter_map(|n| n.name.clone())
+            .take(max)
+            .collect()
+    };
+    let features = GameFeatures {
+        themes: names(&raw.themes, 10),
+        game_modes: names(&raw.game_modes, 10),
+        perspectives: names(&raw.player_perspectives, 10),
+        keywords: names(&raw.keywords, 30),
+    };
     let title = raw.name;
     #[allow(clippy::cast_possible_truncation)]
     let rating = raw.total_rating.map(|r| r.round() as i64);
     Game {
+        features: Some(features),
         id: format!("igdb-{}", raw.id),
         summary: teaser(&summary_text),
         description,
@@ -529,7 +560,9 @@ mod tests {
             "summary": "An open-world RPG set in a dark fantasy world of monsters. More text follows here.",
             "storyline": "Geralt searches for Ciri.",
             "genres": [12, 31],
-            "themes": [1, 17],
+            "themes": [{ "id": 1, "name": "Action" }, { "id": 17, "name": "Fantasy" }],
+            "game_modes": [{ "id": 1, "name": "Single player" }],
+            "keywords": [{ "id": 5, "name": "open world" }],
             "platforms": [6, 48, 3],
             "first_release_date": 1_431_993_600,
             "involved_companies": [
@@ -571,6 +604,10 @@ mod tests {
             .unwrap()
             .ends_with("t_1080p/ar1.jpg"));
         assert_eq!(game.artwork.screenshots.len(), 2);
+        let features = game.features.clone().unwrap();
+        assert_eq!(features.themes, ["Action", "Fantasy"]);
+        assert_eq!(features.game_modes, ["Single player"]);
+        assert_eq!(features.keywords, ["open world"]);
 
         let minimal = map_game(serde_json::from_value(json!({ "id": 1, "name": "Bare" })).unwrap());
         assert_eq!(minimal.release_date, None);

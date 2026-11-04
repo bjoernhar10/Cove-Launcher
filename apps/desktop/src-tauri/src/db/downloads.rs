@@ -173,7 +173,7 @@ mod tests {
                 &pool,
                 &sample_game(id, id),
                 StoreSource::Steam,
-                Some("1"),
+                Some(id),
                 None,
             )
             .await

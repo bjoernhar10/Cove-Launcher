@@ -23,9 +23,43 @@ struct TestApp {
     tmp: tempfile::TempDir,
 }
 
+/// Answers like the C# connectors (only what the IPC tests need).
+fn fake_connectors(
+    method: &str,
+    params: &serde_json::Value,
+) -> crate::error::AppResult<serde_json::Value> {
+    use serde_json::json;
+    match method {
+        "store.loginComplete" if params["code"] == "bad" => Err(
+            crate::error::AppError::LoginFailed("Das ist kein gültiger Epic-Anmeldecode.".into()),
+        ),
+        "store.loginComplete" => Ok(
+            json!({ "store": params["store"], "accountId": "acc1", "displayName": "Tiny",
+            "accessToken": "a", "refreshToken": "r", "expiresAt": "2099-01-01T00:00:00Z" }),
+        ),
+        "store.library" => Ok(json!({ "games": [
+            { "storeGameId": "Sugar", "title": "Rocket League", "playtimeMinutes": 120, "lastPlayedAt": null, "imageUrl": null } ] })),
+        "store.detectLocal" => Ok(json!({ "games": [
+            { "store": "steam", "storeGameId": "105600", "title": "Terraria", "installPath": "/games/Terraria",
+              "executablePath": null, "sizeBytes": 470_000_000, "source": "steam-manifest" } ] })),
+        _ => Ok(serde_json::Value::Null),
+    }
+}
+
 async fn app() -> TestApp {
     let tmp = tempfile::tempdir().unwrap();
     let pool = crate::db::open_in_memory().await.unwrap();
+    let catalog = Arc::new(crate::catalog::CatalogService::new(
+        pool.clone(),
+        Arc::new(crate::catalog::secrets::MemoryStore::default()),
+        tmp.path().join("images"),
+        default_settings(None),
+        // Tests never talk to real services, not even the default proxy.
+        crate::catalog::Endpoints {
+            cove_proxy: None,
+            ..crate::catalog::Endpoints::default()
+        },
+    ));
     let state = AppState {
         launcher: Launcher::new(
             pool.clone(),
@@ -35,14 +69,27 @@ async fn app() -> TestApp {
         ),
         host: HostEnv::detect(tmp.path().join("compat")),
         defaults: default_settings(None),
-        catalog: Arc::new(crate::catalog::CatalogService::new(
+        catalog: catalog.clone(),
+        plugin_dirs: vec![tmp.path().join("plugins")],
+        recommender: Arc::new(crate::recommend::Recommender::new(
+            crate::sidecar::Sidecar::new(None),
+            pool.clone(),
+            catalog.clone(),
+        )),
+        stores: Arc::new(crate::stores::StoreService::new(
+            crate::stores::tests::FakeRpc::new(fake_connectors),
             pool.clone(),
             Arc::new(crate::catalog::secrets::MemoryStore::default()),
-            tmp.path().join("images"),
-            default_settings(None),
-            crate::catalog::Endpoints::default(),
+            None,
+            std::time::Duration::ZERO,
         )),
-        plugin_dirs: vec![tmp.path().join("plugins")],
+        login_flows: Arc::new(crate::stores::login::LoginFlows::default()),
+        cove_achievements: Arc::new(crate::cove_achievements::CoveAchievements::new(
+            pool.clone(),
+            vec![tmp.path().join("plugins")],
+            Arc::new(|_| {}),
+        )),
+        open_url: Arc::new(|_| Ok(())),
         pool,
     };
     let app = mock_builder()
@@ -137,8 +184,17 @@ async fn errors_reach_the_frontend_as_kind_and_message() {
         "Datei nicht gefunden: /definitely/missing"
     );
 
-    let connect = invoke_raw(&app, "sources_connect", json!({ "store": "steam" })).unwrap_err();
-    assert_eq!(connect["kind"], "notSupported");
+    let login = invoke_raw(
+        &app,
+        "connector_login_complete",
+        json!({ "store": "epic", "code": "bad" }),
+    )
+    .unwrap_err();
+    assert_eq!(login["kind"], "loginFailed");
+    assert_eq!(login["message"], "Das ist kein gültiger Epic-Anmeldecode.");
+    let not_signed_in =
+        invoke_raw(&app, "connector_refresh", json!({ "store": "gog" })).unwrap_err();
+    assert_eq!(not_signed_in["kind"], "invalidInput");
     let stop = invoke_raw(&app, "game_stop", json!({ "gameId": "nope" })).unwrap_err();
     assert_eq!(stop["kind"], "notRunning");
 }
@@ -155,7 +211,8 @@ async fn settings_and_misc_commands() {
     assert_eq!(reloaded.library.scan_folders, ["/games"]);
 
     for (cmd, args) in [
-        ("sources_list", json!({})),
+        ("connectors_list", json!({})),
+        ("cove_achievements_list", json!({})),
         ("plugins_list", json!({})),
         ("downloads_list", json!({})),
         ("downloads_reorder", json!({ "orderedIds": [] })),
@@ -207,4 +264,68 @@ async fn catalog_commands_accept_frontend_payloads() {
     assert_eq!(candidates, Vec::<Value>::new());
     let reject = invoke_raw(&app, "library_reject_match", json!({ "gameId": "x" })).unwrap_err();
     assert_eq!(reject["kind"], "notInLibrary");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn connector_commands_accept_frontend_payloads() {
+    let app = app().await;
+    let accounts: Vec<crate::models::StoreAccount> = invoke(&app, "connectors_list", json!({}));
+    assert_eq!(accounts.len(), 3);
+
+    // Local detection works without login; `store: null` = all stores.
+    let local: Vec<crate::models::LocalStoreGame> =
+        invoke(&app, "connector_detect_local", json!({ "store": null }));
+    assert_eq!(
+        (local[0].title.as_str(), local[0].in_library),
+        ("Terraria", false)
+    );
+
+    // Pasted Epic code → signed in.
+    let account: Value = invoke(
+        &app,
+        "connector_login_complete",
+        json!({ "store": "epic", "code": "abc123" }),
+    );
+    assert_eq!(account["status"], "connected");
+    assert_eq!(account["accountName"], "Tiny");
+    assert_eq!(account["loginMode"], "webview");
+
+    // The login already started a background import; either run may add the game.
+    let summary: crate::models::ImportSummary =
+        invoke(&app, "connector_import_library", json!({ "store": "epic" }));
+    assert_eq!((summary.total, summary.added + summary.updated), (1, 1));
+    let steam: Value = invoke(
+        &app,
+        "connector_import_library",
+        json!({ "store": "steam" }),
+    );
+    assert_eq!(
+        steam["added"], 1,
+        "installed Steam games come in without login"
+    );
+
+    let synced: Value = invoke(&app, "achievements_sync", json!({ "store": null }));
+    assert_eq!(
+        synced,
+        json!({ "games": 0, "achievements": 0, "newlyUnlocked": 0 })
+    );
+
+    invoke_raw(&app, "connector_login_cancel", json!({ "store": "gog" })).unwrap();
+    let out: Value = invoke(
+        &app,
+        "connector_logout",
+        json!({ "store": "epic", "keepGames": true }),
+    );
+    assert_eq!(out["status"], "disconnected");
+    assert_eq!(out["gameCount"], 1, "games were kept");
+    let out: Value = invoke(
+        &app,
+        "connector_logout",
+        json!({ "store": "epic", "keepGames": false }),
+    );
+    assert_eq!(out["gameCount"], 0);
+
+    let achievements: Vec<crate::models::CoveAchievement> =
+        invoke(&app, "cove_achievements_list", json!({}));
+    assert_eq!(achievements.len(), 6);
 }

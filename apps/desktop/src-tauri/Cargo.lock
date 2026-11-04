@@ -772,7 +772,9 @@ name = "cove"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "chrono",
+ "getrandom 0.4.3",
  "jsonschema",
  "keyring",
  "percent-encoding",

@@ -67,4 +67,8 @@ export const browseQuery = z
 
 export const gameId = z.coerce.number().int().positive().max(10_000_000);
 
+export const steamId = z.string().regex(/^\d{17}$/, "steamid must be a SteamID64");
+
+export const steamAppId = z.string().regex(/^\d{1,10}$/, "appid must be numeric");
+
 export const matchBody = z.object({ title: text(200).min(1, "title is required") });

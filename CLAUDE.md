@@ -12,7 +12,7 @@ Architecture details: `docs/architecture.md`.
 | UI | **TypeScript** + React + Vite | `apps/desktop/src` | Interface; talks to the core only through Tauri commands |
 | Plugins | **JavaScript** (ES modules, no build) | `plugins/` | Third-party extensions |
 | Store connectors & achievements | **C#** .NET 9, Native AOT | `services/connectors` | Steam/GOG/Epic/… integration, achievements |
-| Recommendations | **Python** 3.12 (uv) | `services/recommender` | Recommendation engine |
+| Recommendations | **Python** 3.12 (uv, numpy, scikit-learn) | `services/recommender` | Local hybrid recommender, Tauri sidecar (PyInstaller binary) |
 | Catalogue proxy | **TypeScript** (Cloudflare Worker, Hono, zod) | `services/catalog-proxy` | Fixed API in front of IGDB so users need no keys; holds the IGDB secrets |
 | Shared contracts | TypeScript + JSON Schema | `packages/shared` | Types and schemas for **all** RPC messages |
 
@@ -50,8 +50,18 @@ the TS types (`packages/shared/src/methods.ts`), the JSON schema (`packages/shar
 - **Frontend data access:** The UI gets data **only** through `apps/desktop/src/api/*` (`import { api } from "…/api"`). All core calls go through the typed `call()` / `subscribe()` in `api/transport.ts`. Outside `src/api` (and `src/test`), ESLint forbids imports from `src/mocks`, `@tauri-apps/api/core` and `@tauri-apps/api/event`.
 - **No mocks** in the app anymore: everything comes from the Rust core. UI tests use the fake core in `src/test/fakeCore.ts` (Tauri `mockIPC`).
 - **Server state:** catalogue data uses TanStack Query (`hooks/useCatalog.ts`, client in `lib/queryClient.ts`). Older views use the small `useQuery` hook; `invalidateQueries()` refreshes both.
-- **Catalogue:** sources in fallback order: Cove proxy (`CoveProxyProvider`, URL from `COVE_CATALOG_PROXY_URL` at build time), own IGDB keys, own RAWG key, then the local cache. All behind the Rust trait `CatalogProvider` (`src-tauri/src/catalog/`).
+- **Catalogue:** sources in fallback order: Cove proxy (`CoveProxyProvider`, URL from `COVE_CATALOG_PROXY_URL` at build time, default in `src-tauri/.cargo/config.toml`), own IGDB keys, own RAWG key, then the local cache. All behind the Rust trait `CatalogProvider` (`src-tauri/src/catalog/`).
 - **Catalogue proxy (Worker):** never add generic pass-through routes; every IGDB query is built in the Worker from validated parameters. Secrets only via `wrangler secret put`. Never call `fetch` as a method of another object (workerd throws "Illegal invocation"). Responses must match the `Proxy*` types in `packages/shared`. Deploy guide: `docs/proxy.md`. Credentials only in the OS keyring (`catalog/secrets.rs`), never in SQLite or the UI. Provider responses are cached in `catalog_cache` (TTL 7 days, stale entries served when offline). Images go through the `cove-img://` scheme and are cached on disk; `ImageRef` rewrites URLs on serialization, so Rust code and the database always hold the original URLs.
+- **Recommender sidecar:** started by `src-tauri/src/sidecar.rs` (health check via `system.ping`, request timeout, restart after crash, at most 3 starts per minute) and fed by `src-tauri/src/recommend.rs`. It is stateless: the core sends library signals (`RecommenderLibraryGame`) and catalogue features (`RecommenderGame`) with every request. When it is unavailable, the UI falls back to a simple ranking; never make it a hard dependency. After changing the Python code run `npm run build:recommender -w @cove/desktop`, then `cargo test sidecar_contract` checks the real binary.
+- **Store accounts (step 5):** the C# connectors run as a second sidecar (`resolve_connectors()`, errors via `stores::CONNECTOR_ERRORS`). The core keeps the session and passes it per call; the connectors do the token exchange, refresh and store API calls.
+  - **Never** see or store passwords. Store sessions (access + refresh token) live **only** in the OS keyring under `store-session:<store>` (`src-tauri/src/stores/`), never in SQLite, logs or files. `StoreSession`'s `Debug` redacts tokens; keep it that way.
+  - Steam: system browser + loopback redirect on `127.0.0.1:<random port>/callback` with a `state` check (`src-tauri/src/auth/`), OpenID verified with `check_authentication`. GOG/Epic: own webview window, navigation intercepted (`auth/webview.rs`); Epic also has the "Alternativer Login" with a pasted code.
+  - The Steam Web API key lives **only** in the catalogue proxy (Worker secret `STEAM_API_KEY`); the connectors call `/v1/steam/*`.
+  - Store endpoints and client ids live in one file: `services/connectors/src/Cove.Connectors/Config/connectors.json`.
+  - Connector failures carry `error.data.kind` (`authFailed`, `privateProfile`, `unavailable`, `network`, `invalidRequest`); the core maps them to `AppError` and marks accounts `needsReauth` when a refresh fails.
+  - Cove's own achievements are JSON (`src-tauri/resources/cove-achievements.json`, plus `achievements.json` in plugin folders) and evaluated in `src-tauri/src/cove_achievements.rs`.
+  - After changing the C# code run `npm run build:connectors -w @cove/desktop` (`build:sidecar` builds both sidecars), then `cargo test sidecar_contract`.
+- **Cached `Game` data:** when its shape changes, bump `CACHE_VERSION` in `src-tauri/src/catalog/mod.rs` and in `services/catalog-proxy/src/cache.ts`.
 - **External APIs in tests:** never call real services. Use `wiremock` with the providers' `with_endpoints`/`with_base` constructors and `Endpoints` for the service.
 - **New Tauri command:** always change all five places together:
   1. function in `src-tauri/src/commands.rs`
@@ -104,10 +114,12 @@ dotnet test
 dotnet format --verify-no-changes
 dotnet run --project src/Cove.Connectors
 dotnet publish src/Cove.Connectors -c Release -r linux-x64   # Native AOT (win-x64 on Windows)
+npm run build:connectors -w @cove/desktop   # sidecar binary for Tauri (Native AOT with clang, else self-contained; skipped when unchanged)
 ```
 
 ### Recommender: Python (`services/recommender`)
 ```sh
+npm run build:recommender -w @cove/desktop   # PyInstaller binary for Tauri (skipped when unchanged)
 uv sync
 uv run cove-recommender
 uv run ruff check . && uv run ruff format --check .

@@ -4,11 +4,20 @@ export interface Toast {
   id: number;
   message: string;
   tone: "neutral" | "danger";
+  /** Small heading above the message (e.g. "Achievement freigeschaltet"). */
+  title?: string;
+  kind?: "achievement";
+}
+
+export interface ToastOptions {
+  title?: string;
+  kind?: "achievement";
+  durationMs?: number;
 }
 
 interface ToastState {
   toasts: Toast[];
-  push: (message: string, tone?: Toast["tone"]) => void;
+  push: (message: string, tone?: Toast["tone"], options?: ToastOptions) => void;
   dismiss: (id: number) => void;
 }
 
@@ -16,12 +25,13 @@ let nextId = 1;
 
 export const useToasts = create<ToastState>()((set, get) => ({
   toasts: [],
-  push: (message, tone = "neutral") => {
+  push: (message, tone = "neutral", options = {}) => {
     const id = nextId++;
-    set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, tone }] }));
+    const { durationMs = 3200, ...rest } = options;
+    set((s) => ({ toasts: [...s.toasts.slice(-2), { id, message, tone, ...rest }] }));
     setTimeout(() => {
       get().dismiss(id);
-    }, 3200);
+    }, durationMs);
   },
   dismiss: (id) => {
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
@@ -29,8 +39,8 @@ export const useToasts = create<ToastState>()((set, get) => ({
 }));
 
 /** Convenience for non-React code paths. */
-export function toast(message: string, tone?: Toast["tone"]): void {
-  useToasts.getState().push(message, tone);
+export function toast(message: string, tone?: Toast["tone"], options?: ToastOptions): void {
+  useToasts.getState().push(message, tone, options);
 }
 
 export function errorMessage(error: unknown): string {

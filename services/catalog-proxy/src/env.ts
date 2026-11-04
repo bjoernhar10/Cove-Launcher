@@ -8,4 +8,6 @@ export interface Env {
   IP_LIMIT: RateLimit;
   IGDB_CLIENT_ID: string;
   IGDB_CLIENT_SECRET: string;
+  /** Steam Web API key (https://steamcommunity.com/dev/apikey). */
+  STEAM_API_KEY: string;
 }

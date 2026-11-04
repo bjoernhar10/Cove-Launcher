@@ -44,3 +44,6 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Sidecar binaries (built by `npm run build:sidecar -w @cove/desktop`)
+apps/desktop/src-tauri/binaries/

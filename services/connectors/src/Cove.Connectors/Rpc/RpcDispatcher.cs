@@ -1,10 +1,14 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
+using Cove.Connectors.Config;
+using Cove.Connectors.Connectors;
+using Cove.Connectors.Model;
 
 namespace Cove.Connectors.Rpc;
 
-/// <summary>Minimal JSON-RPC 2.0 dispatcher. One JSON message per line (NDJSON over stdio).</summary>
-public static class RpcDispatcher
+/// <summary>JSON-RPC 2.0 dispatcher. One JSON message per line (NDJSON over stdio).</summary>
+public sealed class RpcDispatcher
 {
     public const string Version = "0.1.0";
 
@@ -13,8 +17,29 @@ public static class RpcDispatcher
     public const int MethodNotFound = -32601;
     public const int InvalidParams = -32602;
 
+    /// <summary>Store failure; <c>error.data.kind</c> says which (authFailed, privateProfile, …).</summary>
+    public const int StoreError = 2000;
+
+    private readonly Dictionary<string, IStoreConnector> _connectors;
+
+    public RpcDispatcher(IEnumerable<IStoreConnector> connectors)
+    {
+        _connectors = connectors.ToDictionary(c => c.Id, StringComparer.Ordinal);
+    }
+
+    /// <summary>Production wiring: shared HttpClient and the embedded config.</summary>
+    public static RpcDispatcher CreateDefault(HttpClient http)
+    {
+        var config = ConnectorConfig.Load();
+        return new RpcDispatcher([
+            new SteamConnector(http, config.Steam),
+            new GogConnector(http, config.Gog),
+            new EpicConnector(http, config.Epic),
+        ]);
+    }
+
     /// <summary>Handles one raw input line. Returns the serialized response, or null for notifications.</summary>
-    public static string? HandleLine(string line)
+    public async Task<string?> HandleLineAsync(string line, CancellationToken ct = default)
     {
         JsonNode? node;
         try
@@ -35,19 +60,25 @@ public static class RpcDispatcher
 
         var isNotification = !msg.ContainsKey("id");
         var id = msg["id"]?.DeepClone();
+        var paramsNode = msg["params"];
 
         JsonNode? result;
         try
         {
-            result = method switch
-            {
-                "system.ping" => Ping(msg["params"]),
-                _ => null,
-            };
+            result = await DispatchAsync(method, paramsNode, ct).ConfigureAwait(false);
         }
-        catch (JsonException ex)
+        catch (ConnectorException e)
         {
-            return isNotification ? null : Error(id, InvalidParams, ex.Message);
+            return isNotification ? null : Error(id, StoreError, e.Message, KindName(e.Kind), e.HelpUrl);
+        }
+        catch (JsonException e)
+        {
+            return isNotification ? null : Error(id, InvalidParams, $"Invalid params: {e.Message}");
+        }
+        catch (Exception e) when (e is InvalidOperationException or FormatException or KeyNotFoundException)
+        {
+            // A store answered in an unexpected shape (undocumented APIs change): report, never crash.
+            return isNotification ? null : Error(id, StoreError, "Der Store hat unerwartet geantwortet. Bitte später erneut versuchen.", "unavailable");
         }
 
         if (isNotification)
@@ -60,24 +91,102 @@ public static class RpcDispatcher
             : new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id, ["result"] = result }.ToJsonString();
     }
 
-    private static JsonNode? Ping(JsonNode? paramsNode)
-    {
-        var p = paramsNode is null
-            ? new PingParams(null)
-            : JsonSerializer.Deserialize(paramsNode, RpcJsonContext.Default.PingParams) ?? new PingParams(null);
+    private static T Params<T>(JsonNode? node, JsonTypeInfo<T> type) =>
+        (node is null ? default : JsonSerializer.Deserialize(node, type)) ?? throw new JsonException("params missing");
 
-        var result = new PingResult("connectors", Version, $"pong: {p.Message}");
-        return JsonSerializer.SerializeToNode(result, RpcJsonContext.Default.PingResult);
+    private IStoreConnector Connector(string store) =>
+        _connectors.GetValueOrDefault(store)
+            ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, $"Unbekannter Store: {store}");
+
+    private static JsonNode? Node<T>(T value, JsonTypeInfo<T> type) => JsonSerializer.SerializeToNode(value, type);
+
+    private async Task<JsonNode?> DispatchAsync(string method, JsonNode? p, CancellationToken ct)
+    {
+        var ctx = RpcJsonContext.Default;
+        switch (method)
+        {
+            case "system.ping":
+                {
+                    var ping = p is null ? new PingParams(null) : Params(p, ctx.PingParams);
+                    return Node(new PingResult("connectors", Version, $"pong: {ping.Message}"), ctx.PingResult);
+                }
+
+            case "store.list":
+                return Node(_connectors.Values.Select(c => new StoreInfo(c.Id, c.Name)).ToList(), ctx.ListStoreInfo);
+
+            case "store.loginStart":
+                {
+                    var args = Params(p, ctx.LoginStartParams);
+                    return Node(Connector(args.Store).LoginStart(args.RedirectUri, args.State), ctx.LoginStart);
+                }
+
+            case "store.loginComplete":
+                {
+                    var args = Params(p, ctx.LoginCompleteParams);
+                    var session = await Connector(args.Store)
+                        .LoginCompleteAsync(new LoginCompleteRequest(args.CallbackUrl, args.Code, args.ExpectedReturnTo), new StoreContext(args.ProxyUrl), ct)
+                        .ConfigureAwait(false);
+                    return Node(session, ctx.StoreSession);
+                }
+
+            case "store.refresh":
+                {
+                    var args = Params(p, ctx.SessionParams);
+                    var session = await Connector(args.Session.Store).RefreshAsync(args.Session, ct).ConfigureAwait(false);
+                    return Node(session, ctx.StoreSession);
+                }
+
+            case "store.library":
+                {
+                    var args = Params(p, ctx.SessionParams);
+                    var games = await Connector(args.Session.Store)
+                        .GetLibraryAsync(args.Session, new StoreContext(args.ProxyUrl), ct).ConfigureAwait(false);
+                    return Node(new LibraryResult(games), ctx.LibraryResult);
+                }
+
+            case "store.achievements":
+                {
+                    var args = Params(p, ctx.AchievementsParams);
+                    var list = await Connector(args.Session.Store)
+                        .GetAchievementsAsync(args.Session, args.StoreGameId, new StoreContext(args.ProxyUrl), ct).ConfigureAwait(false);
+                    return Node(new AchievementsResult(list), ctx.AchievementsResult);
+                }
+
+            case "store.detectLocal":
+                {
+                    var args = Params(p, ctx.DetectLocalParams);
+                    var env = new LocalEnvironment(args.Home, args.ProgramData, OperatingSystem.IsWindows());
+                    var games = args.Store is null
+                        ? Local.LocalDetection.DetectAll(env)
+                        : Connector(args.Store).DetectLocal(env);
+                    return Node(new LocalResult(games), ctx.LocalResult);
+                }
+
+            default:
+                return null;
+        }
     }
+
+    private static string KindName(ConnectorErrorKind kind) => kind switch
+    {
+        ConnectorErrorKind.AuthFailed => "authFailed",
+        ConnectorErrorKind.PrivateProfile => "privateProfile",
+        ConnectorErrorKind.Unavailable => "unavailable",
+        ConnectorErrorKind.Network => "network",
+        _ => "invalidRequest",
+    };
 
     private static string? AsString(JsonNode? node) =>
         node is JsonValue value && value.TryGetValue(out string? s) ? s : null;
 
-    private static string Error(JsonNode? id, int code, string message) =>
-        new JsonObject
+    private static string Error(JsonNode? id, int code, string message, string? kind = null, string? helpUrl = null)
+    {
+        var error = new JsonObject { ["code"] = code, ["message"] = message };
+        if (kind is not null)
         {
-            ["jsonrpc"] = "2.0",
-            ["id"] = id,
-            ["error"] = new JsonObject { ["code"] = code, ["message"] = message },
-        }.ToJsonString();
+            error["data"] = new JsonObject { ["kind"] = kind, ["helpUrl"] = helpUrl };
+        }
+
+        return new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id, ["error"] = error }.ToJsonString();
+    }
 }

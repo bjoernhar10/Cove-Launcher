@@ -166,6 +166,7 @@ export function CataloguePage() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const pages = query.data?.pages ?? [];
+  const reasons: Record<string, string> = Object.assign({}, ...pages.map((p) => p.reasons)) as Record<string, string>;
   // Providers can repeat a game across pages when the ranking shifts; show each once.
   const seen = new Set<string>();
   const items = pages.flatMap((p) => p.items).filter((g) => !seen.has(g.id) && seen.add(g.id));
@@ -222,7 +223,7 @@ export function CataloguePage() {
               <ul className={COVER_GRID} aria-label="Spiele">
                 {items.map((game) => (
                   <li key={game.id}>
-                    <GameCard game={game} to={`/catalogue/${game.id}`} />
+                    <GameCard game={game} to={`/catalogue/${game.id}`} meta={reasons[game.id]} />
                   </li>
                 ))}
                 {isFetchingNextPage &&

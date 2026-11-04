@@ -122,6 +122,7 @@ mod tests {
             publisher: String::new(),
             rating: None,
             popularity: 0,
+            features: None,
             artwork: GameArtwork {
                 cover: ImageRef {
                     url: None,

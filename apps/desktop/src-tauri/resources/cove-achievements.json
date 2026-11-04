@@ -1,0 +1,40 @@
+{
+  "achievements": [
+    {
+      "id": "first-hour",
+      "title": "Erste Stunde",
+      "description": "Spiele insgesamt eine Stunde über Cove.",
+      "rule": { "type": "playtimeHours", "hours": 1 }
+    },
+    {
+      "id": "ten-hours",
+      "title": "10 Stunden",
+      "description": "Spiele insgesamt 10 Stunden über Cove.",
+      "rule": { "type": "playtimeHours", "hours": 10 }
+    },
+    {
+      "id": "fifty-hours",
+      "title": "50 Stunden",
+      "description": "Spiele insgesamt 50 Stunden über Cove.",
+      "rule": { "type": "playtimeHours", "hours": 50 }
+    },
+    {
+      "id": "night-owl",
+      "title": "Nachteule",
+      "description": "Spiele nach 2 Uhr nachts.",
+      "rule": { "type": "playedBetween", "fromHour": 2, "toHour": 5 }
+    },
+    {
+      "id": "collector",
+      "title": "Sammler",
+      "description": "Habe 50 Spiele in deiner Bibliothek.",
+      "rule": { "type": "libraryGames", "count": 50 }
+    },
+    {
+      "id": "explorer",
+      "title": "Entdecker",
+      "description": "Probiere 5 Spiele aus, die Cove dir empfohlen hat.",
+      "rule": { "type": "recommendedPlayed", "count": 5 }
+    }
+  ]
+}

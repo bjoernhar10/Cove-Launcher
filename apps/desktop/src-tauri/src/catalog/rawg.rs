@@ -12,7 +12,9 @@ use super::provider::{
     ProviderPage,
 };
 use super::rate_limit::RateLimiter;
-use crate::models::{CatalogProviderId, CatalogSort, Game, GameArtwork, ImageRef, Platform};
+use crate::models::{
+    CatalogProviderId, CatalogSort, Game, GameArtwork, GameFeatures, ImageRef, Platform,
+};
 
 pub const API_BASE: &str = "https://api.rawg.io/api";
 
@@ -130,8 +132,18 @@ fn map_game(raw: RawgGame, screenshots: Option<Vec<String>>) -> Game {
     let description = raw.description_raw.unwrap_or_default().trim().to_owned();
     let shots: Vec<String> =
         screenshots.unwrap_or_else(|| raw.short_screenshots.into_iter().map(|s| s.image).collect());
+    let keywords: Vec<String> = raw
+        .tags
+        .iter()
+        .map(|t| t.slug.replace('-', " "))
+        .take(30)
+        .collect();
     let title = raw.name;
     Game {
+        features: Some(GameFeatures {
+            keywords,
+            ..GameFeatures::default()
+        }),
         id: format!("rawg-{}", raw.id),
         summary: teaser(&description),
         description,

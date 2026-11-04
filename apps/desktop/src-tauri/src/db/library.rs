@@ -29,17 +29,24 @@ pub(crate) struct GameRow {
     pub cover_url: Option<String>,
     pub header_url: Option<String>,
     pub screenshots: String,
+    pub features: Option<String>,
 }
 
 pub(crate) const GAME_COLUMNS: &str =
     "g.id, g.title, g.summary, g.description, g.genres, g.platforms, g.release_date, \
-     g.developer, g.publisher, g.rating, g.popularity, g.cover_url, g.header_url, g.screenshots";
+     g.developer, g.publisher, g.rating, g.popularity, g.cover_url, g.header_url, g.screenshots, g.features";
 
 impl GameRow {
     pub(crate) fn into_game(self) -> AppResult<Game> {
         let screenshots: Vec<Option<String>> = serde_json::from_str(&self.screenshots)?;
         let title = self.title;
+        // Unreadable feature JSON (older format) simply means "unknown".
+        let features = self
+            .features
+            .as_deref()
+            .and_then(|f| serde_json::from_str(f).ok());
         Ok(Game {
+            features,
             artwork: GameArtwork {
                 cover: ImageRef {
                     url: self.cover_url,
@@ -138,7 +145,9 @@ fn select_entries(filter: &str) -> String {
            e.install_size_bytes, e.favorite, e.playtime_offset_minutes, e.launch_arguments, e.compatibility_tool, \
            e.env, e.added_at, e.catalog_id, e.match_status, \
            (SELECT COALESCE(SUM(s.duration_seconds), 0) FROM play_sessions s WHERE s.game_id = g.id) AS played_seconds, \
-           (SELECT MAX(COALESCE(s.ended_at, s.started_at)) FROM play_sessions s WHERE s.game_id = g.id) AS last_played_at, \
+           (SELECT COALESCE(MAX(MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at), \
+              MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at) \
+              FROM play_sessions s WHERE s.game_id = g.id) AS last_played_at, \
            (SELECT COUNT(*) FROM achievements a WHERE a.game_id = g.id) AS achievements_total, \
            (SELECT COUNT(*) FROM user_achievements u WHERE u.game_id = g.id) AS achievements_unlocked \
          FROM library_entries e JOIN games g ON g.id = e.game_id {filter}"
@@ -270,13 +279,14 @@ pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<Libra
     let mut tx = pool.begin().await?;
     sqlx::query(
         "INSERT INTO games (id, title, summary, description, genres, platforms, release_date, developer, publisher, \
-           rating, popularity, cover_url, header_url, screenshots, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
+           rating, popularity, cover_url, header_url, screenshots, created_at, features) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
          ON CONFLICT (id) DO UPDATE SET title = excluded.title, summary = excluded.summary, \
            description = excluded.description, genres = excluded.genres, platforms = excluded.platforms, \
            release_date = excluded.release_date, developer = excluded.developer, publisher = excluded.publisher, \
            rating = excluded.rating, popularity = excluded.popularity, cover_url = excluded.cover_url, \
-           header_url = excluded.header_url, screenshots = excluded.screenshots",
+           header_url = excluded.header_url, screenshots = excluded.screenshots, \
+           features = excluded.features",
     )
     .bind(&game.id)
     .bind(&game.title)
@@ -293,6 +303,7 @@ pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<Libra
     .bind(&game.artwork.header.url)
     .bind(serde_json::to_string(&screenshots)?)
     .bind(&now)
+    .bind(game.features.as_ref().map(serde_json::to_string).transpose()?)
     .execute(&mut *tx)
     .await?;
     sqlx::query(
@@ -437,6 +448,7 @@ pub(crate) mod tests {
             publisher: "Verlag".into(),
             rating: Some(81),
             popularity: 40,
+            features: None,
             artwork: GameArtwork {
                 cover: ImageRef {
                     url: None,
@@ -699,7 +711,8 @@ pub async fn apply_catalog(
     let mut tx = pool.begin().await?;
     sqlx::query(
         "UPDATE games SET title = ?, summary = ?, description = ?, genres = ?, platforms = ?, release_date = ?, \
-           developer = ?, publisher = ?, rating = ?, popularity = ?, cover_url = ?, header_url = ?, screenshots = ? \
+           developer = ?, publisher = ?, rating = ?, popularity = ?, cover_url = ?, header_url = ?, screenshots = ?, \
+           features = ? \
          WHERE id = ?",
     )
     .bind(&catalog.title)
@@ -715,6 +728,7 @@ pub async fn apply_catalog(
     .bind(&catalog.artwork.cover.url)
     .bind(&catalog.artwork.header.url)
     .bind(serde_json::to_string(&screenshots)?)
+    .bind(catalog.features.as_ref().map(serde_json::to_string).transpose()?)
     .bind(game_id)
     .execute(&mut *tx)
     .await?;

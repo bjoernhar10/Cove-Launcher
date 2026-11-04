@@ -18,7 +18,7 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono"] }
-tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "process", "time", "sync", "fs"] }
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "process", "time", "sync", "fs", "net", "io-util"] }
 thiserror = "2.0.21"
 chrono = { version = "0.4.45", features = ["serde"] }
 sysinfo = "0.36.1"
@@ -30,6 +30,8 @@ async-trait = "0.1.92"
 strsim = "0.11.1"
 sha2 = "0.11.0"
 percent-encoding = "2.3.2"
+getrandom = "0.4.3"
+base64 = "0.23.1"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -44,5 +46,5 @@ missing_panics_doc = "allow"
 tauri = { version = "2", features = ["test"] }
 jsonschema = "0.33.0"
 tempfile = "3.27.0"
-tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "process", "time", "sync", "fs", "test-util"] }
+tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "process", "time", "sync", "fs", "net", "io-util", "test-util"] }
 wiremock = "0.6.5"

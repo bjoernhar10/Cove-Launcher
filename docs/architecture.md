@@ -136,9 +136,48 @@ Launch arguments are split shell-style (shlex); user environment variables overr
    picks one, searches manually or rejects all (`rejected`).
 5. The result is sent as the `library-match-changed` event.
 
+### Recommendations
+
+- `services/recommender` runs as a Tauri sidecar (`bundle.externalBin`, PyInstaller onefile). The core's
+  `Sidecar` starts it at app start, checks it with `system.ping`, applies a timeout per request, restarts it
+  after a crash and stops restarting after 3 starts within a minute.
+- `Recommender` (`src-tauri/src/recommend.rs`) builds the input: library signals (playtime, last played,
+  favourite, achievements, session count; linked games by catalogue id) and a candidate pool from cached
+  catalogue pages (recommended, popular, newest).
+- Home: "Für dich empfohlen" = `recommend_for_user`, "Neu entdecken" = `discover_new`; the reason is shown under
+  each card. Catalogue sort "Empfohlen": the first 3 provider pages are re-ranked personally, later pages come
+  in provider order.
+- Without the sidecar (not built, crashed repeatedly) the UI falls back to a simple genre/rating ranking.
+- Catalogue games carry `features` (themes, game modes, perspectives, keywords) for the recommender; they are
+  stored with linked library games (`games.features`).
+
+### Store accounts and achievements
+
+- `services/connectors` (C#) runs as a second sidecar (`binaries/cove-connectors`). It is stateless: the core
+  stores the session in the OS keyring and passes it with every call (`store.loginStart`, `store.loginComplete`,
+  `store.refresh`, `store.library`, `store.achievements`, `store.detectLocal`).
+- Login (`src-tauri/src/stores/login.rs`):
+  - Steam opens the system browser with a loopback redirect to `127.0.0.1:<random port>/callback`
+    (RFC 8252). The core checks `state`; the connectors verify the OpenID assertion with Steam.
+  - GOG and Epic open the official page in an own window and intercept the redirect with the code.
+    Epic's redirect page shows the code as JSON; a small script turns it into a `cove-auth://code` navigation.
+    "Alternativer Login" lets the user paste that code.
+  - The result arrives as the `connector-login-finished` event; afterwards the library is imported in the
+    background (`store-sync-progress` events), new games are matched against the catalogue (paced for the
+    proxy limit) and Steam achievements are read.
+- Tokens are refreshed 5 minutes before they expire. A failed refresh marks the account `needsReauth`
+  ("Erneut anmelden"). Logout deletes the keyring entry and optionally the imported games.
+- Steam data comes through the catalogue proxy, which holds the Steam Web API key. Private profiles are
+  reported with a link to the Steam privacy settings.
+- Store games are keyed by `(source_id, store_game_id)`; imports refresh playtime and install data but keep
+  user settings.
+- Cove achievements: rules in JSON (playtime in Cove, library size, played at night, recommended games tried),
+  evaluated after sessions, imports and additions. New unlocks raise `achievement-unlocked` (a small toast).
+- GOG and Epic use the same public launcher clients as Heroic and Legendary. This is unofficial and may
+  break when the stores change something; endpoints live in `Config/connectors.json`.
+
 ## Open points
 
-- Sidecar packaging (Tauri `externalBin`) and lifecycle in the core
 - Real downloader (connectors). The queue in `downloads` exists but transfers nothing yet.
 - Playtime tracking on Windows via Job Objects instead of polling
 - Plugin API and sandboxing

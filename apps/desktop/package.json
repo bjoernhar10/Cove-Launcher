@@ -11,7 +11,10 @@
     "test": "vitest run",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "build:sidecar": "npm run build:recommender && npm run build:connectors",
+    "build:recommender": "uv run --project ../../services/recommender python ../../services/recommender/scripts/build_sidecar.py",
+    "build:connectors": "node ../../services/connectors/scripts/build_sidecar.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.4",

@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Cove.Connectors.Tests" />
+    <EmbeddedResource Include="Config/connectors.json" LogicalName="Cove.Connectors.Config.connectors.json" />
   </ItemGroup>
 
 </Project>

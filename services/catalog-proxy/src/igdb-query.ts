@@ -5,7 +5,8 @@
 import type { CatalogSort, Genre, Platform } from "@cove/shared";
 
 export const FIELDS =
-  "name,summary,storyline,genres,themes,platforms,first_release_date," +
+  "name,summary,storyline,genres,themes.name,game_modes.name,player_perspectives.name,keywords.name," +
+  "platforms,first_release_date," +
   "involved_companies.company.name,involved_companies.developer,involved_companies.publisher," +
   "total_rating,total_rating_count,cover.image_id,screenshots.image_id,artworks.image_id";
 

@@ -74,6 +74,7 @@ export function fakeEnv(options: FakeEnvOptions = {}) {
     IP_LIMIT: limiter,
     IGDB_CLIENT_ID: options.secrets === false ? "" : "cid",
     IGDB_CLIENT_SECRET: options.secrets === false ? "" : "secret",
+    STEAM_API_KEY: options.secrets === false ? "" : "steamkey",
   } as unknown as Env;
   return { env, kv, gate, limiter };
 }
@@ -88,11 +89,16 @@ export interface IgdbCall {
  * Fake network: Twitch token endpoint + IGDB endpoints answered by `igdb`.
  * Records every call. `igdb` may return a Response to simulate errors.
  */
-export function fakeNetwork(igdb: (call: IgdbCall) => unknown) {
+export function fakeNetwork(igdb: (call: IgdbCall) => unknown, steam?: (url: URL) => Response) {
   const calls: IgdbCall[] = [];
+  const steamCalls: URL[] = [];
   let tokenRequests = 0;
   const fetchFn = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+    if (url.hostname === "api.steampowered.com") {
+      steamCalls.push(url);
+      return Promise.resolve(steam ? steam(url) : new Response("no steam fake", { status: 500 }));
+    }
     if (url.hostname === "id.twitch.tv") {
       tokenRequests += 1;
       return Promise.resolve(Response.json({ access_token: `tok${String(tokenRequests)}`, expires_in: 5_000_000 }));
@@ -109,6 +115,7 @@ export function fakeNetwork(igdb: (call: IgdbCall) => unknown) {
   return {
     fetchFn,
     calls,
+    steamCalls,
     get tokenRequests() {
       return tokenRequests;
     },
@@ -120,7 +127,10 @@ export const WITCHER = {
   name: "The Witcher 3: Wild Hunt",
   summary: "An open-world RPG set in a dark fantasy world of monsters. More text follows here.",
   genres: [12, 31],
-  themes: [1],
+  themes: [{ id: 1, name: "Action" }],
+  game_modes: [{ id: 1, name: "Single player" }],
+  player_perspectives: [{ id: 4, name: "Third person" }],
+  keywords: [{ id: 9, name: "open world" }],
   platforms: [6, 3, 48],
   first_release_date: 1_431_993_600,
   involved_companies: [

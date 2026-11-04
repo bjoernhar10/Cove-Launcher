@@ -1,0 +1,7 @@
+# Default build settings for the Cove core.
+
+[env]
+# Cove catalogue proxy (services/catalog-proxy, see docs/proxy.md). Not a secret: every Cove build
+# contains it. An environment variable of the same name overrides it (e.g. a local `wrangler dev`):
+#   COVE_CATALOG_PROXY_URL=http://127.0.0.1:8787 npm run dev
+COVE_CATALOG_PROXY_URL = "https://cove-catalog-proxy.bjoernharter-github.workers.dev"

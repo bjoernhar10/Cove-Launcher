@@ -4,13 +4,21 @@ version = "0.1.0"
 description = "Cove recommendation service (JSON-RPC over stdio)"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "numpy>=2.5.4",
+    "scikit-learn>=1.9.1",
+]
 
 [project.scripts]
 cove-recommender = "cove_recommender.__main__:main"
 
 [dependency-groups]
-dev = ["mypy>=1.13", "pytest>=8", "ruff>=0.8"]
+dev = [
+    "mypy>=1.13",
+    "pyinstaller>=6.22.3",
+    "pytest>=8",
+    "ruff>=0.8",
+]
 
 [build-system]
 requires = ["hatchling"]

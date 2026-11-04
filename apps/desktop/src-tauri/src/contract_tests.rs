@@ -158,6 +158,7 @@ async fn core_responses_match_shared_schema() {
     assert_valid(
         "CatalogPage",
         &crate::models::CatalogPage {
+            reasons: [("igdb-1".to_owned(), "Ähnlich wie Tide".to_owned())].into(),
             items: vec![game.clone()],
             page: 0,
             has_more: true,
@@ -210,6 +211,39 @@ async fn core_responses_match_shared_schema() {
         },
     );
     assert_valid("AppErrorPayload", &AppError::CatalogNotConfigured);
+    let mut with_features = sample_game("igdb-9", "Featured");
+    with_features.features = Some(crate::models::GameFeatures {
+        themes: vec!["Fantasy".into()],
+        game_modes: vec!["Single player".into()],
+        perspectives: vec!["Side view".into()],
+        keywords: vec!["metroidvania".into()],
+    });
+    assert_valid("Game", &with_features);
+    assert_valid(
+        "Recommendation",
+        &crate::models::Recommendation {
+            game: with_features.clone(),
+            score: 0.9,
+            reason: "Ähnlich wie X".into(),
+        },
+    );
+    let items = crate::db::library::list(&pool).await.unwrap();
+    let (library_inputs, game_inputs) =
+        crate::recommend::to_library_inputs(&items, &std::collections::HashMap::new());
+    for g in &library_inputs {
+        assert_valid("RecommenderLibraryGame", g);
+    }
+    for g in &game_inputs {
+        assert_valid("RecommenderGame", g);
+    }
+    assert_valid(
+        "RecommenderGame",
+        &crate::recommend::to_recommender_game(&with_features, "igdb-9"),
+    );
+    assert_valid(
+        "AppErrorPayload",
+        &AppError::RecommenderUnavailable("startet nicht".into()),
+    );
     assert_valid("AppErrorPayload", &AppError::NotRunning("g".into()));
     assert_valid(
         "AppErrorPayload",

@@ -37,6 +37,15 @@ export function AppShell() {
     [],
   );
 
+  useEffect(
+    () =>
+      api.accounts.subscribeAchievementUnlocked((achievement) => {
+        invalidateQueries();
+        toast(achievement.title, "neutral", { title: "Achievement freigeschaltet", kind: "achievement", durationMs: 5000 });
+      }),
+    [],
+  );
+
   // Reset scroll position on navigation.
   useEffect(() => {
     document.getElementById("main")?.scrollTo({ top: 0 });

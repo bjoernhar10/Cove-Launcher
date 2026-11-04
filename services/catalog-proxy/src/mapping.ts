@@ -8,13 +8,22 @@ export interface IgdbImage {
   image_id: string;
 }
 
+/** Expanded reference (`themes.name` → `{ id, name }`). */
+export interface IgdbNamed {
+  id: number;
+  name?: string;
+}
+
 export interface IgdbGame {
   id: number;
   name: string;
   summary?: string;
   storyline?: string;
   genres?: number[];
-  themes?: number[];
+  themes?: IgdbNamed[];
+  game_modes?: IgdbNamed[];
+  player_perspectives?: IgdbNamed[];
+  keywords?: IgdbNamed[];
   platforms?: number[];
   first_release_date?: number;
   involved_companies?: { company?: { name: string }; developer?: boolean; publisher?: boolean }[];
@@ -49,7 +58,7 @@ export function mapGame(raw: IgdbGame): Game {
   const genres: Genre[] = [];
   const mapped = [
     ...(raw.genres ?? []).map((id) => GENRE_MAP.find(([g]) => g === id)?.[1]),
-    ...(raw.themes ?? []).map((id) => THEME_MAP.find(([t]) => t === id)?.[1]),
+    ...(raw.themes ?? []).map((theme) => THEME_MAP.find(([t]) => t === theme.id)?.[1]),
   ];
   for (const g of mapped) if (g && !genres.includes(g)) genres.push(g);
   const platforms: Platform[] = [];
@@ -59,6 +68,8 @@ export function mapGame(raw: IgdbGame): Game {
   }
   const company = (role: "developer" | "publisher") =>
     raw.involved_companies?.find((c) => c[role] === true && c.company)?.company?.name ?? "";
+  const names = (list: IgdbNamed[] | undefined, max: number) =>
+    (list ?? []).flatMap((n) => (n.name ? [n.name] : [])).slice(0, max);
   const title = raw.name;
   const headerImage = raw.artworks?.[0] ?? raw.screenshots?.[0];
   return {
@@ -84,6 +95,12 @@ export function mapGame(raw: IgdbGame): Game {
         url: imageUrl("t_screenshot_big", s.image_id),
         alt: `Screenshot ${String(i + 1)} von ${title}`,
       })),
+    },
+    features: {
+      themes: names(raw.themes, 10),
+      gameModes: names(raw.game_modes, 10),
+      perspectives: names(raw.player_perspectives, 10),
+      keywords: names(raw.keywords, 30),
     },
   };
 }

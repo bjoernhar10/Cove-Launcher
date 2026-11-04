@@ -1,5 +1,6 @@
 # Cove catalogue proxy — deploy guide: docs/proxy.md
 name = "cove-catalog-proxy"
+preview_urls = false
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 workers_dev = true
@@ -9,7 +10,7 @@ workers_dev = true
 # Twitch app access token cache. Create with: wrangler kv namespace create TOKENS
 [[kv_namespaces]]
 binding = "TOKENS"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "c625204f295e41ba9385c84d506ab5fc"
 
 # Global 4 req/s towards IGDB.
 [[durable_objects.bindings]]

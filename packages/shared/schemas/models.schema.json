@@ -48,6 +48,10 @@
           "description": "Hidden achievements show no description until unlocked.",
           "type": "boolean"
         },
+        "icon": {
+          "$ref": "#/definitions/ImageRef",
+          "description": "Store icon (the coloured one when unlocked, the grey one when locked)."
+        },
         "id": {
           "type": "string"
         },
@@ -80,7 +84,8 @@
         "description",
         "unlockedAt",
         "rarityPercent",
-        "hidden"
+        "hidden",
+        "icon"
       ],
       "type": "object"
     },
@@ -116,6 +121,27 @@
       ],
       "type": "object"
     },
+    "AchievementsSyncSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "achievements": {
+          "type": "number"
+        },
+        "games": {
+          "description": "Games whose achievements were read.",
+          "type": "number"
+        },
+        "newlyUnlocked": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "games",
+        "achievements",
+        "newlyUnlocked"
+      ],
+      "type": "object"
+    },
     "AppErrorKind": {
       "enum": [
         "database",
@@ -129,12 +155,18 @@
         "notRunning",
         "launch",
         "compatToolNotFound",
-        "notSupported",
         "offline",
         "catalogNotConfigured",
         "catalogAuth",
         "catalogProvider",
-        "keyring"
+        "keyring",
+        "recommenderUnavailable",
+        "recommender",
+        "loginFailed",
+        "reauthRequired",
+        "privateProfile",
+        "storeUnavailable",
+        "connectorsUnavailable"
       ],
       "type": "string"
     },
@@ -336,6 +368,13 @@
           "description": "0-based page index.",
           "type": "number"
         },
+        "reasons": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Recommendation reasons by game id (sort \"recommended\" with the recommender running; else empty).",
+          "type": "object"
+        },
         "total": {
           "description": "Total number of matches, null if the provider does not report it.",
           "type": [
@@ -349,7 +388,8 @@
         "page",
         "hasMore",
         "total",
-        "offline"
+        "offline",
+        "reasons"
       ],
       "type": "object"
     },
@@ -459,6 +499,115 @@
         "epic"
       ],
       "type": "string"
+    },
+    "ConnectorLoginFinished": {
+      "additionalProperties": false,
+      "description": "Event `connector-login-finished`",
+      "properties": {
+        "account": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/StoreAccount"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AppErrorPayload"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Null on success and when the user cancelled."
+        },
+        "store": {
+          "$ref": "#/definitions/ConnectableStore"
+        }
+      },
+      "required": [
+        "store",
+        "account",
+        "error"
+      ],
+      "type": "object"
+    },
+    "ConnectorLoginMode": {
+      "description": "How the login page is shown: system browser (loopback redirect) or an own window.",
+      "enum": [
+        "browser",
+        "webview"
+      ],
+      "type": "string"
+    },
+    "ConnectorLoginStart": {
+      "additionalProperties": false,
+      "description": "Answer of `connector_login_start`; the result arrives as `connector-login-finished`.",
+      "properties": {
+        "fallbackUrl": {
+          "description": "Alternative login (Epic): open this page in any browser and paste the shown code into Cove (`connector_login_complete`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mode": {
+          "$ref": "#/definitions/ConnectorLoginMode"
+        },
+        "store": {
+          "$ref": "#/definitions/ConnectableStore"
+        }
+      },
+      "required": [
+        "store",
+        "mode",
+        "fallbackUrl"
+      ],
+      "type": "object"
+    },
+    "CoveAchievement": {
+      "additionalProperties": false,
+      "description": "Cove's own achievements, evaluated locally (definitions: JSON, plugins can add more).",
+      "properties": {
+        "current": {
+          "type": "number"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "target": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        },
+        "unlockedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "description",
+        "unlockedAt",
+        "current",
+        "target"
+      ],
+      "type": "object"
     },
     "CoveServiceStatus": {
       "additionalProperties": false,
@@ -638,6 +787,17 @@
         "developer": {
           "type": "string"
         },
+        "features": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GameFeatures"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Extra descriptors for the recommender; null when the source does not provide them."
+        },
         "genres": {
           "items": {
             "$ref": "#/definitions/Genre"
@@ -698,7 +858,8 @@
         "publisher",
         "rating",
         "popularity",
-        "artwork"
+        "artwork",
+        "features"
       ],
       "type": "object"
     },
@@ -724,6 +885,42 @@
         "cover",
         "header",
         "screenshots"
+      ],
+      "type": "object"
+    },
+    "GameFeatures": {
+      "additionalProperties": false,
+      "properties": {
+        "gameModes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "keywords": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "perspectives": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "themes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "themes",
+        "gameModes",
+        "perspectives",
+        "keywords"
       ],
       "type": "object"
     },
@@ -826,6 +1023,30 @@
       "required": [
         "url",
         "alt"
+      ],
+      "type": "object"
+    },
+    "ImportSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "added": {
+          "type": "number"
+        },
+        "store": {
+          "$ref": "#/definitions/ConnectableStore"
+        },
+        "total": {
+          "type": "number"
+        },
+        "updated": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "store",
+        "added",
+        "updated",
+        "total"
       ],
       "type": "object"
     },
@@ -1063,6 +1284,49 @@
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "LocalStoreGame": {
+      "additionalProperties": false,
+      "description": "A game installed on this computer, found without login.",
+      "properties": {
+        "executablePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inLibrary": {
+          "type": "boolean"
+        },
+        "installPath": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "store": {
+          "$ref": "#/definitions/ConnectableStore"
+        },
+        "storeGameId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "store",
+        "storeGameId",
+        "title",
+        "installPath",
+        "executablePath",
+        "sizeBytes",
+        "inLibrary"
+      ],
       "type": "object"
     },
     "ManualGameInput": {
@@ -1332,6 +1596,170 @@
       ],
       "type": "object"
     },
+    "ProxySteamAchievement": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "iconLockedUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "iconUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "rarityPercent": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "unlockedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "description",
+        "iconUrl",
+        "iconLockedUrl",
+        "hidden",
+        "unlockedAt",
+        "rarityPercent"
+      ],
+      "type": "object"
+    },
+    "ProxySteamAchievements": {
+      "additionalProperties": false,
+      "description": "`GET /v1/steam/achievements/:steamid/:appid`",
+      "properties": {
+        "achievements": {
+          "items": {
+            "$ref": "#/definitions/ProxySteamAchievement"
+          },
+          "type": "array"
+        },
+        "private": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "private",
+        "achievements"
+      ],
+      "type": "object"
+    },
+    "ProxySteamGame": {
+      "additionalProperties": false,
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "iconUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastPlayedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "playtimeMinutes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "appId",
+        "name",
+        "playtimeMinutes",
+        "lastPlayedAt",
+        "iconUrl"
+      ],
+      "type": "object"
+    },
+    "ProxySteamOwned": {
+      "additionalProperties": false,
+      "description": "`GET /v1/steam/owned/:steamid`",
+      "properties": {
+        "games": {
+          "items": {
+            "$ref": "#/definitions/ProxySteamGame"
+          },
+          "type": "array"
+        },
+        "private": {
+          "description": "True when Steam hides the games (profile or \"game details\" private).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "private",
+        "games"
+      ],
+      "type": "object"
+    },
+    "ProxySteamProfile": {
+      "additionalProperties": false,
+      "description": "`GET /v1/steam/profile/:steamid`",
+      "properties": {
+        "avatarUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "personaName": {
+          "type": "string"
+        },
+        "public": {
+          "description": "False when the profile is private (library and achievements are hidden).",
+          "type": "boolean"
+        },
+        "steamId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "steamId",
+        "personaName",
+        "avatarUrl",
+        "public"
+      ],
+      "type": "object"
+    },
     "Recommendation": {
       "additionalProperties": false,
       "properties": {
@@ -1351,6 +1779,125 @@
         "game",
         "score",
         "reason"
+      ],
+      "type": "object"
+    },
+    "RecommenderGame": {
+      "additionalProperties": false,
+      "description": "A catalogue game as the recommender sees it (content features + prior).",
+      "properties": {
+        "developer": {
+          "type": "string"
+        },
+        "gameModes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "genres": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "keywords": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "perspectives": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "popularity": {
+          "type": "number"
+        },
+        "rating": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "releaseYear": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "themes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "genres",
+        "themes",
+        "gameModes",
+        "perspectives",
+        "keywords",
+        "developer",
+        "releaseYear",
+        "rating",
+        "popularity"
+      ],
+      "type": "object"
+    },
+    "RecommenderLibraryGame": {
+      "additionalProperties": false,
+      "description": "A library game as the recommender sees it (interaction signals).",
+      "properties": {
+        "achievements": {
+          "$ref": "#/definitions/AchievementProgress"
+        },
+        "favorite": {
+          "type": "boolean"
+        },
+        "gameId": {
+          "description": "Catalogue id when linked, otherwise the library game id.",
+          "type": "string"
+        },
+        "lastPlayedAt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "playtimeMinutes": {
+          "type": "number"
+        },
+        "sessionCount": {
+          "type": "number"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "gameId",
+        "title",
+        "playtimeMinutes",
+        "lastPlayedAt",
+        "favorite",
+        "achievements",
+        "sessionCount"
       ],
       "type": "object"
     },
@@ -1418,6 +1965,7 @@
           ]
         },
         "connected": {
+          "description": "True while a login is stored (also when it needs to be renewed).",
           "type": "boolean"
         },
         "gameCount": {
@@ -1434,16 +1982,71 @@
             }
           ]
         },
+        "loginMode": {
+          "$ref": "#/definitions/ConnectorLoginMode"
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/StoreProblem"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/StoreAccountStatus"
+        },
         "store": {
           "$ref": "#/definitions/ConnectableStore"
         }
       },
       "required": [
         "store",
+        "status",
         "connected",
         "accountName",
         "gameCount",
-        "lastSyncedAt"
+        "lastSyncedAt",
+        "loginMode",
+        "problem"
+      ],
+      "type": "object"
+    },
+    "StoreAccountStatus": {
+      "enum": [
+        "disconnected",
+        "connected",
+        "needsReauth"
+      ],
+      "type": "string"
+    },
+    "StoreProblem": {
+      "additionalProperties": false,
+      "properties": {
+        "helpUrl": {
+          "description": "Where the user can fix it (e.g. Steam privacy settings).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "privateProfile",
+            "unavailable"
+          ],
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message",
+        "helpUrl"
       ],
       "type": "object"
     },
@@ -1455,6 +2058,43 @@
         "manual"
       ],
       "type": "string"
+    },
+    "SyncPhase": {
+      "enum": [
+        "library",
+        "matching",
+        "achievements"
+      ],
+      "type": "string"
+    },
+    "SyncProgress": {
+      "additionalProperties": false,
+      "description": "Event `store-sync-progress` while a background sync runs.",
+      "properties": {
+        "done": {
+          "type": "number"
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "phase": {
+          "$ref": "#/definitions/SyncPhase"
+        },
+        "store": {
+          "$ref": "#/definitions/ConnectableStore"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "store",
+        "phase",
+        "done",
+        "total",
+        "finished"
+      ],
+      "type": "object"
     },
     "ThemePreference": {
       "enum": [

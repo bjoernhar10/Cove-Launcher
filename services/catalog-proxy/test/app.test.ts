@@ -93,6 +93,12 @@ describe("endpoints", () => {
       summary: "An open-world RPG set in a dark fantasy world of monsters.",
     });
     expect(JSON.stringify(game)).toContain("https://images.igdb.com/igdb/image/upload/t_cover_big/co1wyy.jpg");
+    expect(game.features).toEqual({
+      themes: ["Action"],
+      gameModes: ["Single player"],
+      perspectives: ["Third person"],
+      keywords: ["open world"],
+    });
   });
 
   it("search uses `search` without sort, similar resolves ids", async () => {

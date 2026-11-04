@@ -115,12 +115,25 @@ describe("Settings", () => {
     });
   });
 
-  it("explains that store connections are not available yet", async () => {
+  it("shows Cove achievements with progress on Home", async () => {
+    renderAt("/");
+    expect(await screen.findByText("Erste Stunde")).toBeDefined();
+    expect(screen.getByRole("progressbar", { name: "Fortschritt 10 Stunden" })).toBeDefined();
+  });
+
+  it("signs in to Epic with the alternative code login", async () => {
     renderAt("/settings/accounts");
-    const [connect] = await screen.findAllByRole("button", { name: "Verbinden" });
-    if (!connect) throw new Error("connect button missing");
-    fireEvent.click(connect);
-    expect(await screen.findByText(/Connector-Service\./)).toBeDefined();
+    const buttons = await screen.findAllByRole("button", { name: "Anmelden" });
+    const epic = buttons[2];
+    if (!epic) throw new Error("login button missing");
+    fireEvent.click(epic);
+    fireEvent.click(await screen.findByText("Alternativer Login"));
+    fireEvent.change(screen.getByLabelText("Anmeldecode"), { target: { value: "abc123" } });
+    const submit = screen.getAllByRole("button", { name: "Anmelden" }).find((b) => b.closest("details"));
+    if (!submit) throw new Error("submit missing");
+    fireEvent.click(submit);
+    expect(await screen.findByText(/Verbunden als Tiny/)).toBeDefined();
+    expect(core.calls.some((c) => c.command === "connector_login_complete")).toBe(true);
   });
 });
 
@@ -219,5 +232,30 @@ describe("Catalogue settings", () => {
     const link = await screen.findByRole("link", { name: /IGDB\.com/ });
     expect(link.getAttribute("href")).toBe("https://www.igdb.com");
     expect(screen.getByText(/Game data provided by/)).toBeDefined();
+  });
+});
+
+describe("Recommendations", () => {
+  it("shows recommender reasons on Home", async () => {
+    renderAt("/");
+    const recommended = await screen.findByRole("region", { name: "Für dich empfohlen" });
+    expect((await within(recommended).findAllByText("Weil du 40 Std. Tidewater gespielt hast")).length).toBeGreaterThan(0);
+    const discover = screen.getByRole("region", { name: "Neu entdecken" });
+    expect((await within(discover).findAllByText("Neu für dich: Horror")).length).toBeGreaterThan(0);
+  });
+
+  it("falls back to a simple ranking when the recommender is unavailable", async () => {
+    core.recommender = false;
+    renderAt("/");
+    const recommended = await screen.findByRole("region", { name: "Für dich empfohlen" });
+    expect((await within(recommended).findAllByText(/Passt zu deinen Genres|Hoch bewertet/)).length).toBeGreaterThan(0);
+    const discover = screen.getByRole("region", { name: "Neu entdecken" });
+    expect((await within(discover).findAllByText("Neu im Katalog")).length).toBeGreaterThan(0);
+  });
+
+  it("shows the reason under catalogue cards when sorted by recommendation", async () => {
+    renderAt("/catalogue");
+    const list = await screen.findByRole("list", { name: "Spiele" });
+    expect(within(list).getByText("Ähnlich wie Hollow Lantern")).toBeDefined();
   });
 });

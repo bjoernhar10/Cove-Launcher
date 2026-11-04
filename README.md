@@ -15,6 +15,8 @@ launches them (on Linux optionally through Proton or Wine) and tracks your playt
 - **Game launching:** native, via Proton or Wine (Linux), or through store URL schemes (`steam://rungameid/…`),
   with custom launch arguments and environment variables
 - **Playtime tracking:** follows the whole process tree, stores sessions and shows a 14-day chart
+- **Recommendations** computed locally (hybrid content-based recommender in Python, no cloud): "for you",
+  "discover something new" and a personal catalogue order, each with a short reason
 - **Command palette** (`Ctrl+K`), light and dark mode, five calm accent colours, fully keyboard accessible
 - **Plugins** in plain JavaScript (ES modules)
 

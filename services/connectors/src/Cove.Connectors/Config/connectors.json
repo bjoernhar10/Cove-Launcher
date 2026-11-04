@@ -1,0 +1,26 @@
+{
+  "_comment": "Store endpoints and client ids. GOG and Epic use the same public launcher clients as Heroic/gogdl/Legendary; update here when the stores change something. Override at runtime with COVE_CONNECTORS_CONFIG=/path/to/connectors.json.",
+  "steam": {
+    "openIdEndpoint": "https://steamcommunity.com/openid/login",
+    "privacySettingsUrl": "https://steamcommunity.com/my/edit/settings"
+  },
+  "gog": {
+    "clientId": "46899977096215655",
+    "clientSecret": "9d85c43b1482497dbbce61f6e4aa173a433796eeae2ca8c5f6129f2dc4de46d9",
+    "authUrl": "https://auth.gog.com/auth",
+    "tokenUrl": "https://auth.gog.com/token",
+    "redirectUri": "https://embed.gog.com/on_login_success?origin=client",
+    "userDataUrl": "https://embed.gog.com/userData.json",
+    "ownedProductsUrl": "https://embed.gog.com/account/getFilteredProducts?mediaType=1&sortBy=title&page={page}"
+  },
+  "epic": {
+    "clientId": "34a02cf8f4414e29b15921876da36f9a",
+    "clientSecret": "daafbccc737745039dffe53d94fc76cf",
+    "loginUrl": "https://www.epicgames.com/id/login?redirectUrl={redirect}",
+    "redirectUrl": "https://www.epicgames.com/id/api/redirect?clientId={clientId}&responseType=code",
+    "tokenUrl": "https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/token",
+    "libraryUrl": "https://library-service.live.use1a.on.epicgames.com/library/api/public/items?includeMetadata=true",
+    "playtimeUrl": "https://library-service.live.use1a.on.epicgames.com/library/api/public/playtime/account/{accountId}/all",
+    "catalogUrl": "https://catalog-public-service-prod06.ol.epicgames.com/catalog/api/shared/namespace/{namespace}/bulk/items?id={ids}&includeDLCDetails=true&includeMainGameDetails=true&country=US&locale=en-US"
+  }
+}

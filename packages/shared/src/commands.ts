@@ -33,6 +33,14 @@ import type {
   CatalogStatus,
   LibraryMatchEvent,
   MatchCandidate,
+  Recommendation,
+  ConnectorLoginStart,
+  ConnectorLoginFinished,
+  LocalStoreGame,
+  ImportSummary,
+  SyncProgress,
+  AchievementsSyncSummary,
+  CoveAchievement,
 } from "./models.ts";
 
 type NoArgs = Record<string, never>;
@@ -53,8 +61,20 @@ export interface CoveCommands {
   game_running_list: { args: NoArgs; result: RunningGame[] };
   settings_get: { args: NoArgs; result: AppSettings };
   settings_update: { args: { settings: AppSettings }; result: AppSettings };
-  sources_list: { args: NoArgs; result: StoreAccount[] };
-  sources_connect: { args: { store: ConnectableStore }; result: StoreAccount };
+  connectors_list: { args: NoArgs; result: StoreAccount[] };
+  /** Opens the login (browser or own window); the result arrives as `connector-login-finished`. */
+  connector_login_start: { args: { store: ConnectableStore }; result: ConnectorLoginStart };
+  /** Finishes a login with a pasted code (Epic "Alternativer Login"). */
+  connector_login_complete: { args: { store: ConnectableStore; code: string }; result: StoreAccount };
+  connector_login_cancel: { args: { store: ConnectableStore }; result: null };
+  connector_refresh: { args: { store: ConnectableStore }; result: StoreAccount };
+  connector_logout: { args: { store: ConnectableStore; keepGames: boolean }; result: StoreAccount };
+  /** Installed games found on this computer (no login needed); null = all stores. */
+  connector_detect_local: { args: { store: ConnectableStore | null }; result: LocalStoreGame[] };
+  /** Imports owned games (when signed in) and installed games of one store. */
+  connector_import_library: { args: { store: ConnectableStore }; result: ImportSummary };
+  achievements_sync: { args: { store: ConnectableStore | null }; result: AchievementsSyncSummary };
+  cove_achievements_list: { args: NoArgs; result: CoveAchievement[] };
   plugins_list: { args: NoArgs; result: PluginInfo[] };
   plugins_set_enabled: { args: { id: string; enabled: boolean }; result: PluginInfo };
   downloads_list: { args: NoArgs; result: DownloadItem[] };
@@ -75,6 +95,10 @@ export interface CoveCommands {
   library_link_catalog: { args: { gameId: GameId; catalogId: string }; result: LibraryItem };
   library_reject_match: { args: { gameId: GameId }; result: LibraryItem };
   library_rematch: { args: { gameId: GameId }; result: null };
+  recommendations_for_user: { args: { limit: number }; result: Recommendation[] };
+  recommendations_discover: { args: { limit: number }; result: Recommendation[] };
+  recommendations_similar: { args: { gameId: string; limit: number }; result: Recommendation[] };
+  recommendation_explain: { args: { gameId: string }; result: string };
 }
 
 export type CoveCommand = keyof CoveCommands;
@@ -84,6 +108,9 @@ export interface CoveEvents {
   "game-state-changed": GameStateEvent;
   "downloads-changed": DownloadItem[];
   "library-match-changed": LibraryMatchEvent;
+  "connector-login-finished": ConnectorLoginFinished;
+  "store-sync-progress": SyncProgress;
+  "achievement-unlocked": CoveAchievement;
 }
 
 export type CoveEvent = keyof CoveEvents;

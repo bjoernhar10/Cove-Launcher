@@ -33,6 +33,16 @@ pub async fn update(
     Ok(())
 }
 
+/// Number of real (non-empty) sessions per game.
+pub async fn counts(pool: &SqlitePool) -> AppResult<std::collections::HashMap<String, i64>> {
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT game_id, COUNT(*) FROM play_sessions WHERE duration_seconds > 0 GROUP BY game_id",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
+
 /// After a crash, sessions without end keep their last heartbeat duration.
 pub async fn close_dangling(pool: &SqlitePool) -> AppResult<u64> {
     let result =

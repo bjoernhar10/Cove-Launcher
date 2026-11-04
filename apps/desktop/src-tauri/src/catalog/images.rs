@@ -12,7 +12,23 @@ use percent_encoding::{percent_decode_str, utf8_percent_encode, NON_ALPHANUMERIC
 use sha2::{Digest, Sha256};
 
 pub const SCHEME: &str = "cove-img";
-pub const ALLOWED_HOSTS: &[&str] = &["images.igdb.com", "media.rawg.io"];
+pub const ALLOWED_HOSTS: &[&str] = &[
+    "images.igdb.com",
+    "media.rawg.io",
+    // Steam game icons and achievement icons
+    "media.steampowered.com",
+    "steamcdn-a.akamaihd.net",
+    "cdn.akamai.steamstatic.com",
+    "cdn.cloudflare.steamstatic.com",
+    "shared.akamai.steamstatic.com",
+    // GOG product images
+    "images.gog.com",
+    "images.gog-statics.com",
+    "images-1.gog-statics.com",
+    "images-2.gog-statics.com",
+    "images-3.gog-statics.com",
+    "images-4.gog-statics.com",
+];
 const MAX_BYTES: usize = 15 * 1024 * 1024;
 
 /// URL the webview loads for a remote image.

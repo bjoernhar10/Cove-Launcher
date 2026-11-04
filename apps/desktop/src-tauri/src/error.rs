@@ -28,8 +28,6 @@ pub enum AppError {
     Launch(String),
     #[error("{0} wurde nicht gefunden. Ist es installiert?")]
     CompatToolNotFound(String),
-    #[error("Noch nicht verfügbar: {0}")]
-    NotSupported(String),
     #[error("Offline – {0}")]
     Offline(String),
     #[error("Der Katalog ist noch nicht eingerichtet. Trage unter Einstellungen → Katalog Zugangsdaten für IGDB oder RAWG ein.")]
@@ -38,8 +36,22 @@ pub enum AppError {
     CatalogAuth(String),
     #[error("Katalog-Anfrage fehlgeschlagen: {0}")]
     CatalogProvider(String),
+    #[error("Empfehlungen sind gerade nicht verfügbar: Der Recommender {0}.")]
+    RecommenderUnavailable(String),
+    #[error("Empfehlung fehlgeschlagen: {0}")]
+    Recommender(String),
     #[error("Schlüsselbund nicht erreichbar: {0}")]
     Keyring(String),
+    #[error("{0}")]
+    LoginFailed(String),
+    #[error("Bitte melde dich erneut bei {0} an.")]
+    ReauthRequired(String),
+    #[error("{0}")]
+    PrivateProfile(String),
+    #[error("{0}")]
+    StoreUnavailable(String),
+    #[error("Store-Verbindungen sind gerade nicht verfügbar: Der Dienst {0}.")]
+    ConnectorsUnavailable(String),
 }
 
 impl AppError {
@@ -57,12 +69,18 @@ impl AppError {
             Self::NotRunning(_) => "notRunning",
             Self::Launch(_) => "launch",
             Self::CompatToolNotFound(_) => "compatToolNotFound",
-            Self::NotSupported(_) => "notSupported",
             Self::Offline(_) => "offline",
             Self::CatalogNotConfigured => "catalogNotConfigured",
             Self::CatalogAuth(_) => "catalogAuth",
             Self::CatalogProvider(_) => "catalogProvider",
             Self::Keyring(_) => "keyring",
+            Self::RecommenderUnavailable(_) => "recommenderUnavailable",
+            Self::Recommender(_) => "recommender",
+            Self::LoginFailed(_) => "loginFailed",
+            Self::ReauthRequired(_) => "reauthRequired",
+            Self::PrivateProfile(_) => "privateProfile",
+            Self::StoreUnavailable(_) => "storeUnavailable",
+            Self::ConnectorsUnavailable(_) => "connectorsUnavailable",
         }
     }
 }
@@ -77,6 +95,22 @@ impl Serialize for AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+/// Owned copy of an error's wire form, for event payloads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct AppErrorPayload {
+    pub kind: String,
+    pub message: String,
+}
+
+impl From<&AppError> for AppErrorPayload {
+    fn from(error: &AppError) -> Self {
+        Self {
+            kind: error.kind().to_owned(),
+            message: error.to_string(),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

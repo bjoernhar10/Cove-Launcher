@@ -74,6 +74,15 @@ export interface Game {
   /** Relative popularity 0–100, used for "Beliebt" sorting. */
   popularity: number;
   artwork: GameArtwork;
+  /** Extra descriptors for the recommender; null when the source does not provide them. */
+  features: GameFeatures | null;
+}
+
+export interface GameFeatures {
+  themes: string[];
+  gameModes: string[];
+  perspectives: string[];
+  keywords: string[];
 }
 
 export type CompatibilityTool = "native" | "proton" | "proton-experimental" | "wine";
@@ -144,6 +153,8 @@ export interface Achievement {
   rarityPercent: number | null;
   /** Hidden achievements show no description until unlocked. */
   hidden: boolean;
+  /** Store icon (the coloured one when unlocked, the grey one when locked). */
+  icon: ImageRef;
 }
 
 export interface AchievementUnlock {
@@ -218,6 +229,8 @@ export interface CatalogPage {
   total: number | null;
   /** True when the provider was unreachable and cached data is shown. */
   offline: boolean;
+  /** Recommendation reasons by game id (sort "recommended" with the recommender running; else empty). */
+  reasons: Record<string, string>;
 }
 
 export interface CatalogGameDetails {
@@ -290,14 +303,95 @@ export interface UserProfile {
   avatarUrl: string | null;
 }
 
+export type StoreAccountStatus = "disconnected" | "connected" | "needsReauth";
+
+/** How the login page is shown: system browser (loopback redirect) or an own window. */
+export type ConnectorLoginMode = "browser" | "webview";
+
+export interface StoreProblem {
+  kind: "privateProfile" | "unavailable";
+  message: string;
+  /** Where the user can fix it (e.g. Steam privacy settings). */
+  helpUrl: string | null;
+}
+
 export interface StoreAccount {
   store: ConnectableStore;
+  status: StoreAccountStatus;
+  /** True while a login is stored (also when it needs to be renewed). */
   connected: boolean;
   /** Account display name when connected. */
   accountName: string | null;
   /** Number of games imported from this store. */
   gameCount: number;
   lastSyncedAt: IsoDateTime | null;
+  loginMode: ConnectorLoginMode;
+  problem: StoreProblem | null;
+}
+
+/** Answer of `connector_login_start`; the result arrives as `connector-login-finished`. */
+export interface ConnectorLoginStart {
+  store: ConnectableStore;
+  mode: ConnectorLoginMode;
+  /**
+   * Alternative login (Epic): open this page in any browser and paste the
+   * shown code into Cove (`connector_login_complete`).
+   */
+  fallbackUrl: string | null;
+}
+
+/** Event `connector-login-finished` */
+export interface ConnectorLoginFinished {
+  store: ConnectableStore;
+  account: StoreAccount | null;
+  /** Null on success and when the user cancelled. */
+  error: AppErrorPayload | null;
+}
+
+/** A game installed on this computer, found without login. */
+export interface LocalStoreGame {
+  store: ConnectableStore;
+  storeGameId: string;
+  title: string;
+  installPath: string;
+  executablePath: string | null;
+  sizeBytes: number | null;
+  inLibrary: boolean;
+}
+
+export interface ImportSummary {
+  store: ConnectableStore;
+  added: number;
+  updated: number;
+  total: number;
+}
+
+export type SyncPhase = "library" | "matching" | "achievements";
+
+/** Event `store-sync-progress` while a background sync runs. */
+export interface SyncProgress {
+  store: ConnectableStore;
+  phase: SyncPhase;
+  done: number;
+  total: number;
+  finished: boolean;
+}
+
+export interface AchievementsSyncSummary {
+  /** Games whose achievements were read. */
+  games: number;
+  achievements: number;
+  newlyUnlocked: number;
+}
+
+/** Cove's own achievements, evaluated locally (definitions: JSON, plugins can add more). */
+export interface CoveAchievement {
+  id: string;
+  title: string;
+  description: string;
+  unlockedAt: IsoDateTime | null;
+  current: number;
+  target: number;
 }
 
 export interface PluginInfo {
@@ -419,12 +513,18 @@ export type AppErrorKind =
   | "notRunning"
   | "launch"
   | "compatToolNotFound"
-  | "notSupported"
   | "offline"
   | "catalogNotConfigured"
   | "catalogAuth"
   | "catalogProvider"
-  | "keyring";
+  | "keyring"
+  | "recommenderUnavailable"
+  | "recommender"
+  | "loginFailed"
+  | "reauthRequired"
+  | "privateProfile"
+  | "storeUnavailable"
+  | "connectorsUnavailable";
 
 /** Error shape of every rejected Tauri command. */
 export interface AppErrorPayload {
@@ -480,4 +580,74 @@ export type ProxyErrorCode =
 /** Body of every non-2xx proxy response. */
 export interface ProxyError {
   error: { code: ProxyErrorCode; message: string };
+}
+
+// ───────────── recommender sidecar (services/recommender) ─────────────
+
+/** A catalogue game as the recommender sees it (content features + prior). */
+export interface RecommenderGame {
+  id: string;
+  title: string;
+  genres: string[];
+  themes: string[];
+  gameModes: string[];
+  perspectives: string[];
+  keywords: string[];
+  developer: string;
+  releaseYear: number | null;
+  rating: number | null;
+  popularity: number;
+}
+
+/** A library game as the recommender sees it (interaction signals). */
+export interface RecommenderLibraryGame {
+  /** Catalogue id when linked, otherwise the library game id. */
+  gameId: string;
+  title: string;
+  playtimeMinutes: number;
+  lastPlayedAt: IsoDateTime | null;
+  favorite: boolean;
+  achievements: AchievementProgress;
+  sessionCount: number;
+}
+
+/** `GET /v1/steam/profile/:steamid` */
+export interface ProxySteamProfile {
+  steamId: string;
+  personaName: string;
+  avatarUrl: string | null;
+  /** False when the profile is private (library and achievements are hidden). */
+  public: boolean;
+}
+
+export interface ProxySteamGame {
+  appId: string;
+  name: string;
+  playtimeMinutes: number;
+  lastPlayedAt: IsoDateTime | null;
+  iconUrl: string | null;
+}
+
+/** `GET /v1/steam/owned/:steamid` */
+export interface ProxySteamOwned {
+  /** True when Steam hides the games (profile or "game details" private). */
+  private: boolean;
+  games: ProxySteamGame[];
+}
+
+export interface ProxySteamAchievement {
+  id: string;
+  title: string;
+  description: string;
+  iconUrl: string | null;
+  iconLockedUrl: string | null;
+  hidden: boolean;
+  unlockedAt: IsoDateTime | null;
+  rarityPercent: number | null;
+}
+
+/** `GET /v1/steam/achievements/:steamid/:appid` */
+export interface ProxySteamAchievements {
+  private: boolean;
+  achievements: ProxySteamAchievement[];
 }

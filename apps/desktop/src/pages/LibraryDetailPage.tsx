@@ -85,19 +85,41 @@ function Overview({ item }: { item: LibraryItem }) {
 
 type AchievementFilter = "all" | "unlocked" | "locked";
 
+/** Store icon when there is one; a calm trophy/lock otherwise (or when it fails to load). */
+function AchievementIcon({ achievement, unlocked }: { achievement: Achievement; unlocked: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const url = achievement.icon.url;
+  if (url && !failed) {
+    return (
+      <img
+        src={url}
+        alt=""
+        loading="lazy"
+        onError={() => {
+          setFailed(true);
+        }}
+        className="size-10 shrink-0 rounded-md border border-border object-cover"
+      />
+    );
+  }
+  return (
+    <div
+      className={cx(
+        "flex size-10 shrink-0 items-center justify-center rounded-md border border-border",
+        unlocked ? "bg-accent-subtle text-accent-text" : "bg-sidebar text-fg-subtle",
+      )}
+    >
+      {unlocked ? <Trophy aria-hidden /> : <Lock aria-hidden />}
+    </div>
+  );
+}
+
 function AchievementRow({ achievement }: { achievement: Achievement }) {
   const unlocked = achievement.unlockedAt !== null;
   const secret = achievement.hidden && !unlocked;
   return (
     <li className="flex items-center gap-4 border-b border-border py-3 last:border-b-0">
-      <div
-        className={cx(
-          "flex size-10 shrink-0 items-center justify-center rounded-md border border-border",
-          unlocked ? "bg-accent-subtle text-accent-text" : "bg-sidebar text-fg-subtle",
-        )}
-      >
-        {unlocked ? <Trophy aria-hidden /> : <Lock aria-hidden />}
-      </div>
+      <AchievementIcon achievement={achievement} unlocked={unlocked} />
       <div className="min-w-0 flex-1">
         <p className={cx("truncate text-sm font-medium", unlocked ? "text-fg" : "text-fg-muted")}>
           {secret ? "Verstecktes Achievement" : achievement.title}

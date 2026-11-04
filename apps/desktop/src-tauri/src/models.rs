@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 pub type GameId = String;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum StoreSource {
     Steam,
@@ -16,7 +16,15 @@ pub enum StoreSource {
 }
 
 impl StoreSource {
-    #[cfg(test)]
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Steam => "Steam",
+            Self::Gog => "GOG",
+            Self::Epic => "Epic",
+            Self::Manual => "Manuell",
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Steam => "steam",
@@ -113,6 +121,18 @@ pub struct Game {
     pub rating: Option<i64>,
     pub popularity: i64,
     pub artwork: GameArtwork,
+    /// Extra descriptors for the recommender; None when the source does not provide them.
+    #[serde(default)]
+    pub features: Option<GameFeatures>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GameFeatures {
+    pub themes: Vec<String>,
+    pub game_modes: Vec<String>,
+    pub perspectives: Vec<String>,
+    pub keywords: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -231,6 +251,7 @@ pub struct Achievement {
     pub unlocked_at: Option<String>,
     pub rarity_percent: Option<f64>,
     pub hidden: bool,
+    pub icon: ImageRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -320,14 +341,121 @@ pub struct UserProfile {
     pub avatar_url: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StoreAccountStatus {
+    Disconnected,
+    Connected,
+    NeedsReauth,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConnectorLoginMode {
+    Browser,
+    Webview,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum StoreProblemKind {
+    PrivateProfile,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreProblem {
+    pub kind: StoreProblemKind,
+    pub message: String,
+    pub help_url: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreAccount {
     pub store: StoreSource,
+    pub status: StoreAccountStatus,
     pub connected: bool,
     pub account_name: Option<String>,
     pub game_count: i64,
     pub last_synced_at: Option<String>,
+    pub login_mode: ConnectorLoginMode,
+    pub problem: Option<StoreProblem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorLoginStart {
+    pub store: StoreSource,
+    pub mode: ConnectorLoginMode,
+    pub fallback_url: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorLoginFinished {
+    pub store: StoreSource,
+    pub account: Option<StoreAccount>,
+    pub error: Option<crate::error::AppErrorPayload>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalStoreGame {
+    pub store: StoreSource,
+    pub store_game_id: String,
+    pub title: String,
+    pub install_path: String,
+    pub executable_path: Option<String>,
+    pub size_bytes: Option<i64>,
+    pub in_library: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportSummary {
+    pub store: StoreSource,
+    pub added: i64,
+    pub updated: i64,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SyncPhase {
+    Library,
+    Matching,
+    Achievements,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProgress {
+    pub store: StoreSource,
+    pub phase: SyncPhase,
+    pub done: i64,
+    pub total: i64,
+    pub finished: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AchievementsSyncSummary {
+    pub games: i64,
+    pub achievements: i64,
+    pub newly_unlocked: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoveAchievement {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub unlocked_at: Option<String>,
+    pub current: i64,
+    pub target: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -469,6 +597,9 @@ pub struct CatalogPage {
     pub total: Option<i64>,
     /// True when the provider was unreachable and cached data is shown.
     pub offline: bool,
+    /// Recommendation reasons by game id (sort "recommended", empty otherwise).
+    #[serde(default)]
+    pub reasons: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -641,6 +772,48 @@ pub struct LaunchResult {
     pub method: LaunchMethod,
     /// False when Cove cannot observe the game (e.g. started via a store client without known install dir).
     pub tracked: bool,
+}
+
+// ───────────── recommender (services/recommender) ─────────────
+
+/// A recommended catalogue game with a short reason for the UI.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Recommendation {
+    pub game: Game,
+    /// 0–1 relevance score.
+    pub score: f64,
+    pub reason: String,
+}
+
+/// A catalogue game as the recommender sees it (content features + prior).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommenderGame {
+    pub id: String,
+    pub title: String,
+    pub genres: Vec<String>,
+    pub themes: Vec<String>,
+    pub game_modes: Vec<String>,
+    pub perspectives: Vec<String>,
+    pub keywords: Vec<String>,
+    pub developer: String,
+    pub release_year: Option<i32>,
+    pub rating: Option<i64>,
+    pub popularity: i64,
+}
+
+/// A library game as the recommender sees it (interaction signals).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecommenderLibraryGame {
+    /// Catalogue id when linked, otherwise the library game id.
+    pub game_id: String,
+    pub title: String,
+    pub playtime_minutes: i64,
+    pub last_played_at: Option<String>,
+    pub favorite: bool,
+    pub achievements: AchievementProgress,
+    pub session_count: i64,
 }
 
 /// Current UTC time as ISO-8601 with second precision (`2026-11-03T09:52:57Z`).

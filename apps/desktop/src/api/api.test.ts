@@ -97,9 +97,14 @@ describe("core commands", () => {
     const continuePlaying = await api.home.getContinuePlaying();
     expect(continuePlaying.map((i) => i.game.id)).toEqual(["tidewater"]);
     core.library[0] = fakeItem("tidewater", "Tidewater", { catalogId: "igdb-1", matchStatus: "matched" });
-    const recommendations = await api.home.getRecommendations();
-    // Same genre as the owned game ranks first.
-    expect(recommendations.map((r) => r.game.id)).toEqual(["igdb-3", "igdb-2"]);
+    const recommended = await api.home.getRecommendations();
+    expect(recommended[0]?.reason).toBe("Weil du 40 Std. Tidewater gespielt hast");
+    expect(core.calls.some((c) => c.command === "recommendations_for_user")).toBe(true);
+
+    // Without the recommender: owned games excluded, same genre first.
+    core.recommender = false;
+    const fallback = await api.home.getRecommendations();
+    expect(fallback.map((r) => r.game.id)).toEqual(["igdb-3", "igdb-2"]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { Trophy, X } from "lucide-react";
 import { cx } from "../../lib/cx.ts";
 import { useToasts } from "../../stores/toasts.ts";
 
@@ -17,7 +17,11 @@ export function Toaster() {
             t.tone === "danger" ? "text-danger" : "text-fg",
           )}
         >
-          <p className="min-w-0 flex-1 pt-0.5">{t.message}</p>
+          {t.kind === "achievement" && <Trophy aria-hidden className="mt-0.5 shrink-0 text-accent-text" />}
+          <div className="min-w-0 flex-1 pt-0.5">
+            {t.title && <p className="text-xs text-fg-muted">{t.title}</p>}
+            <p className={t.title ? "font-medium" : undefined}>{t.message}</p>
+          </div>
           <button
             type="button"
             aria-label="Hinweis schließen"

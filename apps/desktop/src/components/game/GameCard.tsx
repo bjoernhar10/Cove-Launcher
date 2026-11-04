@@ -9,8 +9,8 @@ import { GameCover } from "./GameCover.tsx";
 interface GameCardProps {
   game: Game;
   to: string;
-  /** Replaces the default "Genre · Jahr" line. */
-  meta?: ReactNode;
+  /** Replaces the default "Genre · Jahr" line (e.g. a recommendation reason). */
+  meta?: ReactNode | undefined;
 }
 
 /** Portrait cover + title. The whole card is one link. */

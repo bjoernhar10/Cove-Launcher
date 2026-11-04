@@ -1,15 +1,20 @@
 //! Cove core: owns the game library, launches games and supervises the
 //! sidecar services (connectors, recommender) over JSON-RPC/stdio.
 
+mod auth;
 mod catalog;
 mod commands;
+mod cove_achievements;
 mod db;
 mod error;
 mod launcher;
 mod models;
 mod plugins;
+mod recommend;
 mod scanner;
+mod sidecar;
 mod state;
+mod stores;
 
 #[cfg(test)]
 mod contract_tests;
@@ -44,8 +49,16 @@ macro_rules! cove_handlers {
             $crate::commands::game_running_list,
             $crate::commands::settings_get,
             $crate::commands::settings_update,
-            $crate::commands::sources_list,
-            $crate::commands::sources_connect,
+            $crate::commands::connectors_list,
+            $crate::commands::connector_login_start,
+            $crate::commands::connector_login_complete,
+            $crate::commands::connector_login_cancel,
+            $crate::commands::connector_refresh,
+            $crate::commands::connector_logout,
+            $crate::commands::connector_detect_local,
+            $crate::commands::connector_import_library,
+            $crate::commands::achievements_sync,
+            $crate::commands::cove_achievements_list,
             $crate::commands::plugins_list,
             $crate::commands::plugins_set_enabled,
             $crate::commands::downloads_list,
@@ -66,6 +79,10 @@ macro_rules! cove_handlers {
             $crate::commands::library_link_catalog,
             $crate::commands::library_reject_match,
             $crate::commands::library_rematch,
+            $crate::commands::recommendations_for_user,
+            $crate::commands::recommendations_discover,
+            $crate::commands::recommendations_similar,
+            $crate::commands::recommendation_explain,
         ]
     };
 }
@@ -83,8 +100,29 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
     }
 
     let host = HostEnv::detect(data_dir.join("compat"));
+
+    let mut plugin_dirs = vec![data_dir.join("plugins")];
+    if cfg!(debug_assertions) {
+        // Development: also show the example plugins from the repository.
+        plugin_dirs
+            .push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../plugins"));
+    }
+
+    let unlock_handle = app.handle().clone();
+    let cove_achievements = Arc::new(cove_achievements::CoveAchievements::new(
+        pool.clone(),
+        plugin_dirs.clone(),
+        Arc::new(move |achievement| {
+            let _ = unlock_handle.emit(commands::ACHIEVEMENT_UNLOCKED, achievement);
+        }),
+    ));
     let handle = app.handle().clone();
-    let emit = Arc::new(move |event| {
+    let checker = cove_achievements.clone();
+    let emit = Arc::new(move |event: models::GameStateEvent| {
+        // A finished session may unlock playtime or night-owl achievements.
+        if event.session_seconds.is_some() {
+            checker.check_in_background();
+        }
         let _ = handle.emit(GAME_STATE_CHANGED, event);
     });
     let opener_handle = app.handle().clone();
@@ -94,13 +132,6 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
             .open_url(url, None::<&str>)
             .map_err(|e| AppError::Launch(e.to_string()))
     });
-
-    let mut plugin_dirs = vec![data_dir.join("plugins")];
-    if cfg!(debug_assertions) {
-        // Development: also show the example plugins from the repository.
-        plugin_dirs
-            .push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../plugins"));
-    }
 
     let pruned = tauri::async_runtime::block_on(db::catalog_cache::prune(
         &pool,
@@ -118,7 +149,36 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         catalog::Endpoints::default(),
     ));
 
+    let recommender = Arc::new(recommend::Recommender::new(
+        sidecar::Sidecar::new(sidecar::resolve_recommender()),
+        pool.clone(),
+        catalog.clone(),
+    ));
+    // Start the sidecar early: a PyInstaller binary needs a few seconds to unpack.
+    let warm = recommender.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = warm.warm_up().await {
+            eprintln!("[cove] {error}");
+        }
+    });
+
+    let stores = Arc::new(stores::StoreService::new(
+        Arc::new(sidecar::Sidecar::with_errors(
+            sidecar::resolve_connectors(),
+            stores::CONNECTOR_ERRORS,
+        )),
+        pool.clone(),
+        Arc::new(catalog::secrets::KeyringStore),
+        catalog::proxy::build_time_url(),
+        std::time::Duration::from_millis(1100),
+    ));
+
     Ok(AppState {
+        recommender,
+        stores,
+        login_flows: Arc::new(stores::login::LoginFlows::default()),
+        cove_achievements,
+        open_url: open_url.clone(),
         launcher: Launcher::new(pool.clone(), emit, open_url, Timing::default()),
         defaults,
         catalog,

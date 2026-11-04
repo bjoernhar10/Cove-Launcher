@@ -8,6 +8,7 @@ pub mod library;
 pub mod sessions;
 pub mod settings;
 pub mod sources;
+pub mod store_games;
 
 use std::path::Path;
 

@@ -35,6 +35,8 @@ use crate::models::{
 };
 
 pub const CACHE_TTL_DAYS: i64 = 7;
+/// Bump when cached `Game` data changes shape (v2: recommender features).
+pub const CACHE_VERSION: u32 = 2;
 /// Entries older than this are deleted on startup (still usable offline until then).
 pub const CACHE_MAX_AGE_DAYS: i64 = 60;
 pub const PAGE_SIZE: u32 = 24;
@@ -273,6 +275,9 @@ impl CatalogService {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T, ProviderError>>,
     {
+        // Versioned keys: entries written before a format change are simply not found.
+        let versioned = format!("v{CACHE_VERSION}:{key}");
+        let key = versioned.as_str();
         let cached = db::catalog_cache::get(&self.pool, key).await?;
         let stale = match cached {
             Some(c) => {
@@ -353,6 +358,7 @@ impl CatalogService {
             .cached(provider.id(), &key, || provider.browse(&query))
             .await?;
         Ok(CatalogPage {
+            reasons: std::collections::BTreeMap::new(),
             items: fetched.value.items,
             page,
             has_more: fetched.value.has_more,
@@ -365,6 +371,7 @@ impl CatalogService {
         let text = text.trim();
         if text.is_empty() {
             return Ok(CatalogPage {
+                reasons: std::collections::BTreeMap::new(),
                 items: Vec::new(),
                 page: 0,
                 has_more: false,
@@ -378,6 +385,7 @@ impl CatalogService {
             .cached(provider.id(), &key, || provider.search(text, SEARCH_LIMIT))
             .await?;
         Ok(CatalogPage {
+            reasons: std::collections::BTreeMap::new(),
             items: fetched.value,
             page: 0,
             has_more: false,
@@ -426,6 +434,7 @@ impl CatalogService {
             .cached(provider.id(), &key, || provider.similar(&native))
             .await?;
         Ok(CatalogPage {
+            reasons: std::collections::BTreeMap::new(),
             items: fetched.value,
             page: 0,
             has_more: false,
@@ -613,7 +622,7 @@ mod tests {
         // Expire the entry, then ask through a provider that cannot be reached.
         crate::db::catalog_cache::set_fetched_at(
             &svc.pool,
-            "rawg-1:details",
+            "v2:rawg-1:details",
             chrono::Utc::now() - chrono::Duration::days(8),
         )
         .await;
@@ -823,7 +832,7 @@ mod source_order_tests {
         // Everything unreachable → stale cache with offline flag.
         crate::db::catalog_cache::set_fetched_at(
             &svc.pool,
-            "igdb-7:details",
+            "v2:igdb-7:details",
             chrono::Utc::now() - chrono::Duration::days(8),
         )
         .await;

@@ -6,6 +6,10 @@ import type {
   AppErrorKind,
   AppSettings,
   CatalogPage,
+  ConnectableStore,
+  CoveAchievement,
+  LocalStoreGame,
+  StoreAccount,
   CoveEvents,
   MatchCandidate,
   CoveCommand,
@@ -37,6 +41,7 @@ export function fakeGame(id: string, title: string): Game {
     rating: 80,
     popularity: 50,
     artwork: { cover: { url: null, alt: "" }, header: { url: null, alt: "" }, screenshots: [] },
+    features: null,
   };
 }
 
@@ -84,13 +89,42 @@ export const FAKE_CATALOG: Game[] = [
   { ...fakeGame("igdb-3", "Paper Orbit"), releaseDate: null },
 ];
 
+export function fakeAccount(store: ConnectableStore, overrides: Partial<StoreAccount> = {}): StoreAccount {
+  return {
+    store,
+    status: "disconnected",
+    connected: false,
+    accountName: null,
+    gameCount: 0,
+    lastSyncedAt: null,
+    loginMode: store === "steam" ? "browser" : "webview",
+    problem: null,
+    ...overrides,
+  };
+}
+
+export const FAKE_LOCAL: LocalStoreGame[] = [
+  { store: "steam", storeGameId: "105600", title: "Terraria", installPath: "/s/Terraria", executablePath: null, sizeBytes: 470_000_000, inLibrary: false },
+  { store: "gog", storeGameId: "1207664663", title: "The Witcher 3", installPath: "/g/Witcher3", executablePath: null, sizeBytes: null, inLibrary: true },
+];
+
+export const FAKE_COVE_ACHIEVEMENTS: CoveAchievement[] = [
+  { id: "first-hour", title: "Erste Stunde", description: "Spiele insgesamt eine Stunde über Cove.", unlockedAt: "2026-11-01T10:00:00Z", current: 1, target: 1 },
+  { id: "ten-hours", title: "10 Stunden", description: "Spiele insgesamt 10 Stunden über Cove.", unlockedAt: null, current: 3, target: 10 },
+];
+
 export interface FakeCore {
   library: LibraryItem[];
   settings: AppSettings;
   calls: { command: string; args: unknown }[];
   /** Catalogue state: configured providers and whether the provider is reachable. */
   catalog: { cove: boolean; igdb: boolean; rawg: boolean; offline: boolean };
+  /** Whether the recommender sidecar is running. */
+  recommender: boolean;
   candidates: Record<string, MatchCandidate[]>;
+  accounts: Record<ConnectableStore, StoreAccount>;
+  local: LocalStoreGame[];
+  coveAchievements: CoveAchievement[];
 }
 
 /** Installs the fake core. Returns its (mutable) state for assertions. */
@@ -101,13 +135,24 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     calls: [],
     catalog: { cove: true, igdb: false, rawg: false, offline: false },
     candidates: {},
+    recommender: true,
+    accounts: { steam: fakeAccount("steam"), gog: fakeAccount("gog"), epic: fakeAccount("epic") },
+    local: structuredClone(FAKE_LOCAL),
+    coveAchievements: structuredClone(FAKE_COVE_ACHIEVEMENTS),
   };
   const requireCatalog = () => {
     const cove = core.catalog.cove && core.settings.catalog.useCoveService;
     if (!cove && !core.catalog.igdb && !core.catalog.rawg) reject("catalogNotConfigured", "Kein Katalog verfügbar.");
   };
   const catalogGame = (id: string) => FAKE_CATALOG.find((g) => g.id === id) ?? reject("catalogProvider", "Eintrag nicht gefunden");
-  const page = (items: Game[], p = 0): CatalogPage => ({ items, page: p, hasMore: false, total: items.length, offline: core.catalog.offline });
+  const page = (items: Game[], p = 0, reasons: Record<string, string> = {}): CatalogPage => ({
+    items,
+    page: p,
+    hasMore: false,
+    total: items.length,
+    offline: core.catalog.offline,
+    reasons,
+  });
   const find = (gameId: string) => core.library.find((i) => i.game.id === gameId) ?? null;
   const require = (gameId: string) => {
     const item = find(gameId);
@@ -174,11 +219,35 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       core.settings = settings;
       return settings;
     },
-    sources_list: () =>
-      (["steam", "gog", "epic"] as const).map((store) => ({ store, connected: false, accountName: null, gameCount: 0, lastSyncedAt: null })),
-    sources_connect: () => {
-      reject("notSupported", "Noch nicht verfügbar: Die Verbindung kommt mit dem Connector-Service.");
+    connectors_list: () => Object.values(core.accounts),
+    connector_login_start: ({ store }) => ({
+      store,
+      mode: core.accounts[store].loginMode,
+      fallbackUrl: store === "epic" ? "https://www.epicgames.com/id/login" : null,
+    }),
+    connector_login_complete: ({ store, code }) => {
+      if (code.trim() === "bad") reject("loginFailed", "Das ist kein gültiger Epic-Anmeldecode.");
+      core.accounts[store] = { ...core.accounts[store], status: "connected", connected: true, accountName: "Tiny" };
+      return core.accounts[store];
     },
+    connector_login_cancel: () => null,
+    connector_refresh: ({ store }) => {
+      if (core.accounts[store].status === "needsReauth") reject("reauthRequired", "Bitte melde dich erneut an.");
+      return core.accounts[store];
+    },
+    connector_logout: ({ store, keepGames }) => {
+      core.accounts[store] = fakeAccount(store, { gameCount: keepGames ? core.accounts[store].gameCount : 0 });
+      return core.accounts[store];
+    },
+    connector_detect_local: ({ store }) => core.local.filter((g) => store === null || g.store === store),
+    connector_import_library: ({ store }) => {
+      const fresh = core.local.filter((g) => g.store === store && !g.inLibrary);
+      for (const g of fresh) g.inLibrary = true;
+      core.accounts[store].gameCount += fresh.length;
+      return { store, added: fresh.length, updated: 0, total: fresh.length };
+    },
+    achievements_sync: () => ({ games: 1, achievements: 2, newlyUnlocked: 1 }),
+    cove_achievements_list: () => core.coveAchievements,
     plugins_list: () => [],
     plugins_set_enabled: () => {
       reject("invalidInput", "Plugin nicht gefunden");
@@ -214,10 +283,12 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       requireCatalog();
       return page(FAKE_CATALOG.filter((g) => g.title.toLowerCase().includes(query.trim().toLowerCase())));
     },
-    catalog_browse: ({ filter, page: p }) => {
+    catalog_browse: ({ filter, sort, page: p }) => {
       requireCatalog();
       const items = FAKE_CATALOG.filter((g) => filter.genres.length === 0 || g.genres.some((x) => filter.genres.includes(x)));
-      return page(items, p);
+      const reasons: Record<string, string> =
+        sort === "recommended" && core.recommender ? Object.fromEntries(items.map((g) => [g.id, `Ähnlich wie ${g.title}`])) : {};
+      return page(items, p, reasons);
     },
     catalog_game_details: ({ gameId }) => {
       requireCatalog();
@@ -241,6 +312,24 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       const item = require(gameId);
       item.entry.matchStatus = "rejected";
       return item;
+    },
+    recommendations_for_user: ({ limit }) => {
+      if (!core.recommender) reject("recommenderUnavailable", "Empfehlungen sind gerade nicht verfügbar.");
+      requireCatalog();
+      return FAKE_CATALOG.slice(0, limit).map((game, i) => ({ game, score: 1 - i / 10, reason: "Weil du 40 Std. Tidewater gespielt hast" }));
+    },
+    recommendations_discover: ({ limit }) => {
+      if (!core.recommender) reject("recommenderUnavailable", "Empfehlungen sind gerade nicht verfügbar.");
+      requireCatalog();
+      return FAKE_CATALOG.slice(1, 1 + limit).map((game, i) => ({ game, score: 0.5 - i / 20, reason: "Neu für dich: Horror" }));
+    },
+    recommendations_similar: ({ gameId, limit }) => {
+      if (!core.recommender) reject("recommenderUnavailable", "Empfehlungen sind gerade nicht verfügbar.");
+      return FAKE_CATALOG.filter((g) => g.id !== gameId).slice(0, limit).map((game) => ({ game, score: 0.5, reason: "Ähnlich" }));
+    },
+    recommendation_explain: () => {
+      if (!core.recommender) reject("recommenderUnavailable", "Empfehlungen sind gerade nicht verfügbar.");
+      return "Weil du 40 Std. Tidewater gespielt hast";
     },
     library_rematch: ({ gameId }) => {
       require(gameId);

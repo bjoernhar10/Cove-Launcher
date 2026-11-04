@@ -8,10 +8,17 @@ export const TTL = {
   search: 24 * 60 * 60,
   /** Game details, similar games */
   details: 7 * 24 * 60 * 60,
+  /** Steam user data (profile, owned games, progress) */
+  steamUser: 60 * 60,
+  /** Steam achievement schema and global rarity */
+  steamSchema: 7 * 24 * 60 * 60,
 } as const;
 
+/** Bump when the response format changes, so old cached answers are ignored. */
+export const CACHE_VERSION = 2;
+
 function cacheKey(key: string): Request {
-  return new Request(`https://cache.cove.internal/${encodeURIComponent(key)}`);
+  return new Request(`https://cache.cove.internal/v${String(CACHE_VERSION)}/${encodeURIComponent(key)}`);
 }
 
 export interface JsonCache {

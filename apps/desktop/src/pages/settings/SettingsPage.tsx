@@ -4,7 +4,6 @@ import type {
   CatalogCredentials,
   CatalogProviderId,
   CatalogSource,
-  ConnectableStore,
   ThemePreference,
 } from "@cove/shared";
 import { Check, ChevronRight, ExternalLink, FolderOpen, FolderSearch, Monitor, Moon, Plus, Puzzle, RefreshCw, Sun, Trash2 } from "lucide-react";
@@ -12,16 +11,17 @@ import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { Navigate, NavLink, useParams } from "react-router";
 import { api } from "../../api/index.ts";
 import { Button } from "../../components/ui/Button.tsx";
-import { EmptyState, ErrorState, LoadingRegion, Skeleton } from "../../components/ui/Feedback.tsx";
+import { EmptyState, ErrorState } from "../../components/ui/Feedback.tsx";
 import { Field, Input, Select, SettingRow, Switch } from "../../components/ui/Field.tsx";
 import { Page } from "../../components/ui/Page.tsx";
 import { useCatalogStatus } from "../../hooks/useCatalog.ts";
+import { AccountsTab } from "./AccountsTab.tsx";
+import { Group, Panel, SettingsSkeleton } from "./parts.tsx";
 import { useQuery } from "../../hooks/useQuery.ts";
 import { queryClient } from "../../lib/queryClient.ts";
 import { cx } from "../../lib/cx.ts";
 import { modKeyLabel } from "../../lib/env.ts";
-import { formatRelative } from "../../lib/format.ts";
-import { ACCENT_LABELS, PLATFORM_LABELS, SOURCE_LABELS, THEME_LABELS } from "../../lib/labels.ts";
+import { ACCENT_LABELS, PLATFORM_LABELS, THEME_LABELS } from "../../lib/labels.ts";
 import { usePreferences } from "../../stores/preferences.ts";
 import { invalidateQueries } from "../../stores/query.ts";
 import { errorMessage, toast } from "../../stores/toasts.ts";
@@ -39,20 +39,6 @@ const TABS = [
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
-
-function Panel({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
-  return (
-    <section aria-label={title}>
-      <h2 className="text-lg font-semibold tracking-tight text-fg">{title}</h2>
-      {description && <p className="mt-1 text-sm text-fg-muted">{description}</p>}
-      <div className="mt-6">{children}</div>
-    </section>
-  );
-}
-
-function Group({ children }: { children: ReactNode }) {
-  return <div className="divide-y divide-border border-y border-border">{children}</div>;
-}
 
 /** Loads settings once and saves every change immediately. */
 function useSettings(): {
@@ -78,16 +64,6 @@ function useSettings(): {
     retry: query.retry,
     save,
   };
-}
-
-function SettingsSkeleton() {
-  return (
-    <LoadingRegion label="Einstellungen werden geladen" className="flex flex-col gap-4">
-      {[0, 1, 2].map((i) => (
-        <Skeleton key={i} className="h-14" />
-      ))}
-    </LoadingRegion>
-  );
 }
 
 function GeneralTab() {
@@ -342,59 +318,6 @@ function LibraryTab() {
           </SettingRow>
         </Group>
       </div>
-    </Panel>
-  );
-}
-
-function AccountsTab() {
-  const query = useQuery("accounts", api.settings.listAccounts);
-  const [busy, setBusy] = useState<ConnectableStore | null>(null);
-
-  async function connect(store: ConnectableStore): Promise<void> {
-    setBusy(store);
-    try {
-      await api.settings.connectStore(store);
-      toast(`${SOURCE_LABELS[store]} verbunden`);
-      invalidateQueries();
-    } catch (error: unknown) {
-      toast(errorMessage(error), "danger");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  return (
-    <Panel title="Konten & Stores" description="Verbinde deine Store-Konten, um Spiele und Achievements zu importieren.">
-      {query.status === "loading" && <SettingsSkeleton />}
-      {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
-      {query.status === "success" && (
-        <ul className="rounded-lg border border-border">
-          {query.data.map((account) => (
-            <li key={account.store} className="flex items-center gap-4 border-b border-border px-4 py-4 last:border-b-0">
-              {/* Neutral monogram instead of store logos */}
-              <span aria-hidden className="flex size-10 items-center justify-center rounded-md border border-border bg-sidebar text-sm font-semibold text-fg-muted">
-                {SOURCE_LABELS[account.store].charAt(0)}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-fg">{SOURCE_LABELS[account.store]}</p>
-                <p className="truncate text-sm text-fg-muted">
-                  {account.connected && account.accountName
-                    ? `Verbunden als ${account.accountName}${account.lastSyncedAt ? ` · synchronisiert ${formatRelative(account.lastSyncedAt)}` : ""}`
-                    : "Nicht verbunden"}
-                </p>
-              </div>
-              <Button
-                variant={account.connected ? "secondary" : "primary"}
-                disabled={busy !== null || account.connected}
-                onClick={() => void connect(account.store)}
-              >
-                {account.connected ? "Verbunden" : "Verbinden"}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <p className="mt-4 text-xs text-fg-subtle">Die Store-Anbindung kommt mit dem Connector-Service. Cove speichert keine Passwörter, die Anmeldung erfolgt direkt beim jeweiligen Store.</p>
     </Panel>
   );
 }

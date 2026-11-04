@@ -19,7 +19,8 @@ import {
 } from "./igdb-query.ts";
 import { mapGame, type IgdbGame } from "./mapping.ts";
 import { normalize, score } from "./match.ts";
-import { browseQuery, gameId, matchBody, searchQuery } from "./schemas.ts";
+import { browseQuery, gameId, matchBody, searchQuery, steamAppId, steamId } from "./schemas.ts";
+import { SteamClient, steamAchievements, steamOwned, steamProfile, steamRarity, steamSchema } from "./steam.ts";
 
 const SEARCH_LIMIT = 20;
 const MATCH_MIN_SCORE = 0.55;
@@ -54,7 +55,7 @@ function parse<T extends z.ZodType>(schema: T, input: unknown): z.output<T> {
 }
 
 export function createApp(deps: Deps = {}) {
-  const app = new Hono<{ Bindings: Env; Variables: { igdb: IgdbClient; cache: JsonCache } }>();
+  const app = new Hono<{ Bindings: Env; Variables: { igdb: IgdbClient; steam: SteamClient; cache: JsonCache } }>();
   const now = deps.now ?? Date.now;
 
   // Per-client-IP limit (60 req/min) against abuse.
@@ -63,6 +64,7 @@ export function createApp(deps: Deps = {}) {
     const { success } = await c.env.IP_LIMIT.limit({ key: ip });
     if (!success) throw new ApiError(429, "rate_limited", "Too many requests, slow down.");
     c.set("igdb", new IgdbClient(c.env, deps.fetch, now));
+    c.set("steam", new SteamClient(c.env, deps.fetch));
     c.set("cache", deps.cache ?? cacheApi(caches.default));
     await next();
   });
@@ -139,6 +141,37 @@ export function createApp(deps: Deps = {}) {
         .sort((a, b) => b.score - a.score)
         .slice(0, 5);
       return { candidates } satisfies ProxyMatchResponse;
+    });
+    return c.json(body);
+  });
+
+  // ───────────── Steam (key stays in the Worker) ─────────────
+
+  app.get("/v1/steam/profile/:steamid", async (c) => {
+    const id = parse(steamId, c.req.param("steamid"));
+    const body = await cached(c.get("cache"), `steam:profile:${id}`, TTL.steamUser, async () => {
+      const profile = await steamProfile(c.get("steam"), id);
+      if (!profile) throw new ApiError(404, "not_found", "Steam profile not found");
+      return profile;
+    });
+    return c.json(body);
+  });
+
+  app.get("/v1/steam/owned/:steamid", async (c) => {
+    const id = parse(steamId, c.req.param("steamid"));
+    const body = await cached(c.get("cache"), `steam:owned:${id}`, TTL.steamUser, () => steamOwned(c.get("steam"), id));
+    return c.json(body);
+  });
+
+  app.get("/v1/steam/achievements/:steamid/:appid", async (c) => {
+    const id = parse(steamId, c.req.param("steamid"));
+    const appId = parse(steamAppId, c.req.param("appid"));
+    const steam = c.get("steam");
+    const cache = c.get("cache");
+    const body = await cached(cache, `steam:achievements:${id}:${appId}`, TTL.steamUser, async () => {
+      const schema = await cached(cache, `steam:schema:${appId}`, TTL.steamSchema, () => steamSchema(steam, appId));
+      const rarity = await cached(cache, `steam:rarity:${appId}`, TTL.steamSchema, () => steamRarity(steam, appId));
+      return steamAchievements(steam, id, appId, schema, rarity);
     });
     return c.json(body);
   });

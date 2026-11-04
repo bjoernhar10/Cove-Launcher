@@ -1,5 +1,5 @@
 import type { LibraryItem } from "@cove/shared";
-import { Compass, Library, Plus, Trophy } from "lucide-react";
+import { Compass, Library, Medal, Plus, Trophy } from "lucide-react";
 import { Link } from "react-router";
 import { api } from "../api/index.ts";
 import { GameCard, GameCardSkeleton } from "../components/game/GameCard.tsx";
@@ -7,7 +7,7 @@ import { GameCover } from "../components/game/GameCover.tsx";
 import { PlayButton } from "../components/game/PlayButton.tsx";
 import { ScrollItem, ScrollRow } from "../components/game/ScrollRow.tsx";
 import { Button, ButtonLink } from "../components/ui/Button.tsx";
-import { EmptyState, ErrorState, LoadingRegion, Skeleton } from "../components/ui/Feedback.tsx";
+import { EmptyState, ErrorState, LoadingRegion, ProgressBar, Skeleton } from "../components/ui/Feedback.tsx";
 import { Page, Section } from "../components/ui/Page.tsx";
 import { useQuery } from "../hooks/useQuery.ts";
 import { formatPlaytime, formatRelative } from "../lib/format.ts";
@@ -140,16 +140,16 @@ function Recommended() {
 function Discover() {
   const query = useQuery("home/discover", api.home.getDiscover);
   return (
-    <ScrollRow title="Neu entdecken" description="Spiele, die du noch nie gespielt hast.">
+    <ScrollRow title="Neu entdecken" description="Genres, die du noch nicht gespielt hast, die aber zu dir passen.">
       {query.status === "loading" && <RowSkeleton label="Lädt Vorschläge" />}
       {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
       {query.status === "success" && query.data.length === 0 && (
-        <p className="py-6 text-sm text-fg-muted">Du hast schon alles ausprobiert. Beeindruckend.</p>
+        <p className="py-6 text-sm text-fg-muted">Gerade gibt es nichts Neues für dich. Schau später wieder vorbei.</p>
       )}
       {query.status === "success" &&
-        query.data.map((game) => (
-          <ScrollItem key={game.id}>
-            <GameCard game={game} to={`/catalogue/${game.id}`} />
+        query.data.map((rec) => (
+          <ScrollItem key={rec.game.id}>
+            <GameCard game={rec.game} to={`/catalogue/${rec.game.id}`} meta={rec.reason} />
           </ScrollItem>
         ))}
     </ScrollRow>
@@ -208,6 +208,54 @@ function RecentAchievements() {
   );
 }
 
+function CoveAchievements() {
+  const query = useQuery("home/cove-achievements", api.accounts.listCoveAchievements);
+  return (
+    <Section title="Cove-Achievements">
+      {query.status === "loading" && (
+        <LoadingRegion label="Lädt Cove-Achievements" className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </LoadingRegion>
+      )}
+      {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
+      {query.status === "success" && query.data.length === 0 && (
+        <div className="rounded-lg border border-border">
+          <EmptyState compact icon={Medal} title="Keine Cove-Achievements" description="Plugins können eigene Achievements hinzufügen." />
+        </div>
+      )}
+      {query.status === "success" && query.data.length > 0 && (
+        <ul className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {query.data.map((a) => (
+            <li key={a.id} className="rounded-xl border border-border bg-surface p-4">
+              <div className="flex items-start gap-3">
+                <Medal aria-hidden className={a.unlockedAt ? "shrink-0 text-accent-text" : "shrink-0 text-fg-subtle"} />
+                <div className="min-w-0 flex-1">
+                  <p className={a.unlockedAt ? "truncate text-sm font-medium text-fg" : "truncate text-sm font-medium text-fg-muted"}>{a.title}</p>
+                  <p className="text-xs text-fg-subtle">{a.description}</p>
+                </div>
+              </div>
+              {a.unlockedAt ? (
+                <p className="mt-3 text-xs text-fg-muted">
+                  Freigeschaltet <time dateTime={a.unlockedAt}>{formatRelative(a.unlockedAt)}</time>
+                </p>
+              ) : (
+                <div className="mt-3">
+                  <p className="num text-xs text-fg-muted">
+                    {a.current} / {a.target}
+                  </p>
+                  <ProgressBar value={a.current} max={a.target} label={`Fortschritt ${a.title}`} className="mt-1.5" />
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
 export function HomePage() {
   return (
     <Page>
@@ -219,6 +267,7 @@ export function HomePage() {
       <Recommended />
       <Discover />
       <RecentAchievements />
+      <CoveAchievements />
     </Page>
   );
 }
