@@ -171,7 +171,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
     let defaults = default_settings(host.home.as_ref());
     let catalog = Arc::new(catalog::CatalogService::new(
         pool.clone(),
-        Arc::new(catalog::secrets::KeyringStore),
+        Arc::new(catalog::secrets::KeyringStore::app()),
         app.path().app_cache_dir()?.join("images"),
         defaults.clone(),
         catalog::Endpoints::default(),
@@ -196,7 +196,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
             stores::CONNECTOR_ERRORS,
         )),
         pool.clone(),
-        Arc::new(catalog::secrets::KeyringStore),
+        Arc::new(catalog::secrets::KeyringStore::app()),
         catalog::proxy::build_time_url(),
         std::time::Duration::from_millis(1100),
     ));
@@ -235,7 +235,7 @@ fn build_downloads(
         pool.clone(),
         defaults.clone(),
         downloads::itch::ItchApi::new(
-            Arc::new(catalog::secrets::KeyringStore),
+            Arc::new(catalog::secrets::KeyringStore::app()),
             downloads::itch::API_BASE,
         ),
         Some(stores.clone()),

@@ -22,33 +22,59 @@ pub trait SecretStore: Send + Sync {
     fn delete(&self, key: &str) -> AppResult<()>;
 }
 
-/// The real OS keyring.
-pub struct KeyringStore;
+/// The real OS keyring, entries under one service name.
+pub struct KeyringStore(&'static str);
 
-fn entry(key: &str) -> AppResult<keyring::Entry> {
-    keyring::Entry::new(KEYRING_SERVICE, key).map_err(|e| AppError::Keyring(e.to_string()))
+impl KeyringStore {
+    /// Cove's own entries (`app.cove.desktop`).
+    pub const fn app() -> Self {
+        Self(KEYRING_SERVICE)
+    }
+
+    /// Separate entries for tests against the real keyring.
+    #[cfg(test)]
+    pub const fn testing() -> Self {
+        Self("app.cove.desktop.test")
+    }
+
+    fn entry(&self, key: &str) -> AppResult<keyring::Entry> {
+        keyring::Entry::new(self.0, key).map_err(|e| AppError::Keyring(e.to_string()))
+    }
+}
+
+/// Runs a keyring call on a plain thread without a tokio context.
+///
+/// The Secret Service backend (zbus with the `tokio` feature) drives every call
+/// with its own `Runtime::block_on`, which panics on a thread that already runs
+/// tokio tasks ("Cannot start a runtime from within a runtime"). Commands call
+/// the keyring from async code, so it must never run on the caller's thread.
+fn off_runtime<T: Send>(f: impl FnOnce() -> AppResult<T> + Send) -> AppResult<T> {
+    std::thread::scope(|scope| scope.spawn(f).join())
+        .map_err(|_| AppError::Keyring("keyring call panicked".into()))?
 }
 
 impl SecretStore for KeyringStore {
     fn get(&self, key: &str) -> AppResult<Option<String>> {
-        match entry(key)?.get_password() {
+        off_runtime(|| match self.entry(key)?.get_password() {
             Ok(value) => Ok(Some(value)),
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(AppError::Keyring(e.to_string())),
-        }
+        })
     }
 
     fn set(&self, key: &str, value: &str) -> AppResult<()> {
-        entry(key)?
-            .set_password(value)
-            .map_err(|e| AppError::Keyring(e.to_string()))
+        off_runtime(|| {
+            self.entry(key)?
+                .set_password(value)
+                .map_err(|e| AppError::Keyring(e.to_string()))
+        })
     }
 
     fn delete(&self, key: &str) -> AppResult<()> {
-        match entry(key)?.delete_credential() {
+        off_runtime(|| match self.entry(key)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(AppError::Keyring(e.to_string())),
-        }
+        })
     }
 }
 
@@ -189,14 +215,29 @@ mod tests {
         .is_err());
     }
 
+    /// Regression: the Secret Service backend starts its own runtime per call,
+    /// which used to panic inside async commands.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn keyring_calls_may_start_their_own_runtime() {
+        let value = off_runtime(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .build()
+                .map_err(|e| AppError::Keyring(e.to_string()))?;
+            Ok(runtime.block_on(async { 42 }))
+        })
+        .unwrap();
+        assert_eq!(value, 42);
+    }
+
     /// Talks to the real OS keyring. Run manually: `cargo test real_keyring -- --ignored`.
-    #[test]
+    #[tokio::test(flavor = "multi_thread")]
     #[ignore = "needs a desktop session with a keyring"]
-    fn real_keyring_roundtrip() {
+    async fn real_keyring_roundtrip() {
         let key = "cove-test-entry";
-        KeyringStore.set(key, "value").unwrap();
-        assert_eq!(KeyringStore.get(key).unwrap().as_deref(), Some("value"));
-        KeyringStore.delete(key).unwrap();
-        assert_eq!(KeyringStore.get(key).unwrap(), None);
+        let store = KeyringStore::testing();
+        store.set(key, "value").unwrap();
+        assert_eq!(store.get(key).unwrap().as_deref(), Some("value"));
+        store.delete(key).unwrap();
+        assert_eq!(store.get(key).unwrap(), None);
     }
 }

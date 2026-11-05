@@ -47,11 +47,25 @@ fn fake_connectors(
 }
 
 async fn app() -> TestApp {
+    app_with(
+        crate::stores::tests::FakeRpc::new(fake_connectors),
+        Arc::new(crate::catalog::secrets::MemoryStore::default()),
+        "http://127.0.0.1:1",
+    )
+    .await
+}
+
+/// The app state with exchangeable connectors, keyring and itch.io API.
+async fn app_with(
+    connectors: Arc<dyn crate::stores::ConnectorRpc>,
+    secrets: Arc<dyn crate::catalog::secrets::SecretStore>,
+    itch_base: &str,
+) -> TestApp {
     let tmp = tempfile::tempdir().unwrap();
     let pool = crate::db::open_in_memory().await.unwrap();
     let catalog = Arc::new(crate::catalog::CatalogService::new(
         pool.clone(),
-        Arc::new(crate::catalog::secrets::MemoryStore::default()),
+        secrets.clone(),
         tmp.path().join("images"),
         default_settings(None),
         // Tests never talk to real services, not even the default proxy.
@@ -82,9 +96,9 @@ async fn app() -> TestApp {
             catalog.clone(),
         )),
         stores: Arc::new(crate::stores::StoreService::new(
-            crate::stores::tests::FakeRpc::new(fake_connectors),
+            connectors,
             pool.clone(),
-            Arc::new(crate::catalog::secrets::MemoryStore::default()),
+            secrets.clone(),
             None,
             std::time::Duration::ZERO,
         )),
@@ -98,10 +112,7 @@ async fn app() -> TestApp {
         downloads: Arc::new(crate::downloads::DownloadManager::new(
             pool.clone(),
             default_settings(None),
-            crate::downloads::itch::ItchApi::new(
-                Arc::new(crate::catalog::secrets::MemoryStore::default()),
-                "http://127.0.0.1:1",
-            ),
+            crate::downloads::itch::ItchApi::new(secrets, itch_base),
             None,
             crate::downloads::Hooks {
                 changed: Arc::new(|| {}),
@@ -537,4 +548,93 @@ async fn plugin_commands_accept_frontend_payloads() {
         (Some("active"), Some(true))
     );
     invoke_raw(&app, "plugins_uninstall", json!({ "id": "pick" })).unwrap();
+}
+
+/// The real connectors sidecar for `store.loginStart`; everything that would
+/// need a real store account answers like a successful login.
+struct LoginStartOnly(crate::sidecar::Sidecar);
+
+#[async_trait::async_trait]
+impl crate::stores::ConnectorRpc for LoginStartOnly {
+    async fn call(&self, method: &str, params: Value) -> crate::error::AppResult<Value> {
+        if method == "store.loginStart" {
+            return self.0.call(method, params).await;
+        }
+        match method {
+            "store.loginComplete" | "store.refresh" => Ok(json!({
+                "store": if method == "store.refresh" { &params["session"]["store"] } else { &params["store"] },
+                "accountId": "acc1",
+                "displayName": "Tiny", "accessToken": "a", "refreshToken": "r",
+                "expiresAt": "2099-01-01T00:00:00Z" })),
+            "store.library" | "store.detectLocal" => Ok(json!({ "games": [] })),
+            _ => Ok(Value::Null),
+        }
+    }
+}
+
+/// Steam, GOG, Epic and itch.io against the real OS keyring (own test service
+/// name) and the built connectors sidecar, through the async command path
+/// that used to panic inside the Secret Service backend.
+/// Run manually: `cargo test real_keyring -- --ignored`.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs a desktop session with a keyring and the built connectors sidecar"]
+async fn real_keyring_store_and_itch_logins() {
+    use wiremock::matchers::{header, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let itch = MockServer::start().await;
+    Mock::given(path("/profile"))
+        .and(header("Authorization", "abc123"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({ "user": { "username": "tiny", "display_name": "Tiny" } })),
+        )
+        .mount(&itch)
+        .await;
+    let sidecar = crate::sidecar::Sidecar::with_errors(
+        crate::sidecar::resolve_connectors(),
+        crate::stores::CONNECTOR_ERRORS,
+    );
+    assert!(sidecar.is_configured(), "build the connectors first");
+    let secrets = Arc::new(crate::catalog::secrets::KeyringStore::testing());
+    let app = app_with(Arc::new(LoginStartOnly(sidecar)), secrets, &itch.uri()).await;
+
+    for (store, mode) in [
+        ("steam", "browser"),
+        ("gog", "webview"),
+        ("epic", "webview"),
+    ] {
+        let start: Value = invoke(&app, "connector_login_start", json!({ "store": store }));
+        assert_eq!(start["mode"], mode, "{store}");
+        invoke_raw(&app, "connector_login_cancel", json!({ "store": store })).unwrap();
+
+        // What the login window / browser callback hands over: session into the keyring.
+        let account: Value = invoke(
+            &app,
+            "connector_login_complete",
+            json!({ "store": store, "code": "abc123" }),
+        );
+        assert_eq!(account["status"], "connected", "{store}");
+        let refreshed: Value = invoke(&app, "connector_refresh", json!({ "store": store }));
+        assert_eq!(
+            refreshed["accountName"], "Tiny",
+            "{store}: session read back"
+        );
+        let out: Value = invoke(
+            &app,
+            "connector_logout",
+            json!({ "store": store, "keepGames": true }),
+        );
+        assert_eq!(out["status"], "disconnected", "{store}");
+    }
+
+    let status: Value = invoke(&app, "itch_status", json!({}));
+    assert_eq!(status["connected"], false);
+    let status: Value = invoke(&app, "itch_set_api_key", json!({ "apiKey": "abc123" }));
+    assert_eq!(status, json!({ "connected": true, "userName": "Tiny" }));
+    let status: Value = invoke(&app, "itch_status", json!({}));
+    assert_eq!(status["connected"], true, "key read back from the keyring");
+    invoke_raw(&app, "itch_clear_api_key", json!({})).unwrap();
+    let status: Value = invoke(&app, "itch_status", json!({}));
+    assert_eq!(status["connected"], false);
 }
