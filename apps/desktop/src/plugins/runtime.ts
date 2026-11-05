@@ -36,6 +36,20 @@ function activateOf(module: unknown): ((cove: CoveApi) => unknown) | null {
   return typeof candidate === "function" ? (candidate as (cove: CoveApi) => unknown) : null;
 }
 
+/** The runtime's own messages (it runs in a worker without the UI dictionaries). */
+const RUNTIME_TEXT = {
+  de: {
+    unsupported: (version: number) => `Plugin-API ${String(version)} wird nicht unterstützt.`,
+    needsOnClick: "Ein Seitenleisten-Eintrag braucht onClick.",
+    noActivate: "Das Plugin exportiert keine Funktion „activate“.",
+  },
+  en: {
+    unsupported: (version: number) => `Plugin API ${String(version)} is not supported.`,
+    needsOnClick: "A sidebar entry needs onClick.",
+    noActivate: "The plugin exports no “activate” function.",
+  },
+} as const;
+
 export function runPlugin(port: RuntimePort, load: ModuleLoader): void {
   let nextId = 1;
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
@@ -51,7 +65,7 @@ export function runPlugin(port: RuntimePort, load: ModuleLoader): void {
 
   async function start(init: Extract<HostToPlugin, { type: "init" }>): Promise<void> {
     if (init.apiVersion !== PLUGIN_API_VERSION) {
-      port.postMessage({ type: "failed", message: `Plugin-API ${String(init.apiVersion)} wird nicht unterstützt.` });
+      port.postMessage({ type: "failed", message: RUNTIME_TEXT[init.language].unsupported(init.apiVersion) });
       return;
     }
     const cove: CoveApi = Object.freeze({
@@ -66,7 +80,7 @@ export function runPlugin(port: RuntimePort, load: ModuleLoader): void {
       achievements: Object.freeze({ define: (achievements: unknown[]) => call("achievements.define", { achievements }) }),
       ui: Object.freeze({
         addSidebarItem: async (item: SidebarItem) => {
-          if (typeof item.onClick !== "function") throw new CovePluginError("invalidInput", "Ein Seitenleisten-Eintrag braucht onClick.");
+          if (typeof item.onClick !== "function") throw new CovePluginError("invalidInput", RUNTIME_TEXT[init.language].needsOnClick);
           await call("ui.addSidebarItem", { id: item.id, label: item.label, icon: item.icon ?? "puzzle", pickFile: item.pickFile ?? null });
           clickHandlers.set(item.id, item.onClick);
         },
@@ -81,7 +95,7 @@ export function runPlugin(port: RuntimePort, load: ModuleLoader): void {
     }) as CoveApi;
     try {
       const activate = activateOf(await load(init.entryUrl));
-      if (!activate) throw new Error("Das Plugin exportiert keine Funktion „activate“.");
+      if (!activate) throw new Error(RUNTIME_TEXT[init.language].noActivate);
       await activate(cove);
       port.postMessage({ type: "ready" });
     } catch (error: unknown) {

@@ -77,40 +77,65 @@ fn valid_version(version: &str) -> bool {
 
 /// Reads and checks `<dir>/plugin.json`. Errors are user-facing (German).
 pub fn read_manifest(dir: &Path) -> Result<Manifest, String> {
-    let raw = std::fs::read_to_string(dir.join(MANIFEST))
-        .map_err(|_| format!("{MANIFEST} fehlt oder ist nicht lesbar."))?;
+    let raw = std::fs::read_to_string(dir.join(MANIFEST)).map_err(|_| {
+        tr!(
+            "{MANIFEST} fehlt oder ist nicht lesbar.",
+            "{MANIFEST} is missing or can't be read."
+        )
+    })?;
     let raw: RawManifest = serde_json::from_str(&raw).map_err(|e| {
         if e.to_string().contains("unknown variant") {
-            format!("{MANIFEST} enthält eine unbekannte Berechtigung ({e}).")
+            tr!(
+                "{MANIFEST} enthält eine unbekannte Berechtigung ({e}).",
+                "{MANIFEST} contains an unknown permission ({e})."
+            )
         } else {
-            format!("{MANIFEST} ist ungültig ({e}).")
+            tr!(
+                "{MANIFEST} ist ungültig ({e}).",
+                "{MANIFEST} is invalid ({e})."
+            )
         }
     })?;
     if !valid_id(&raw.id) {
-        return Err(
-            "Die Plugin-ID darf nur Kleinbuchstaben, Ziffern und Bindestriche enthalten.".into(),
-        );
+        return Err(tr!(
+            "Die Plugin-ID darf nur Kleinbuchstaben, Ziffern und Bindestriche enthalten.",
+            "The plugin ID may only contain lowercase letters, digits and hyphens."
+        ));
     }
     let name = raw.name.trim();
     if name.is_empty() || name.chars().count() > 60 {
-        return Err("Der Name fehlt oder ist länger als 60 Zeichen.".into());
+        return Err(tr!(
+            "Der Name fehlt oder ist länger als 60 Zeichen.",
+            "The name is missing or longer than 60 characters."
+        ));
     }
     if !valid_version(&raw.version) {
-        return Err("Die Version muss die Form 1.2.3 haben.".into());
+        return Err(tr!(
+            "Die Version muss die Form 1.2.3 haben.",
+            "The version must look like 1.2.3."
+        ));
     }
     let api = raw.api_version.unwrap_or(API_VERSION);
     if api != API_VERSION {
-        return Err(format!(
-            "Das Plugin braucht die Plugin-API {api}; diese Cove-Version bietet {API_VERSION}."
+        return Err(tr!(
+            "Das Plugin braucht die Plugin-API {api}; diese Cove-Version bietet {API_VERSION}.",
+            "The plugin needs plugin API {api}; this version of Cove offers {API_VERSION}."
         ));
     }
     let entry = safe_relative(&raw.entry)
         .filter(|p| p.extension().is_some_and(|e| e == "js" || e == "mjs"))
         .ok_or_else(|| {
-            "„entry“ muss eine .js- oder .mjs-Datei im Plugin-Ordner sein.".to_owned()
+            tr!(
+                "„entry“ muss eine .js- oder .mjs-Datei im Plugin-Ordner sein.",
+                "“entry” must be a .js or .mjs file in the plugin folder."
+            )
         })?;
     if !dir.join(&entry).is_file() {
-        return Err(format!("Die Einstiegsdatei {} fehlt.", entry.display()));
+        return Err(tr!(
+            "Die Einstiegsdatei {} fehlt.",
+            "The entry file {} is missing.",
+            entry.display()
+        ));
     }
     let permissions: BTreeSet<PluginPermission> = raw.permissions.into_iter().collect();
     Ok(Manifest {
@@ -164,18 +189,25 @@ pub struct Plugins {
 }
 
 fn not_found(id: &str) -> AppError {
-    AppError::InvalidInput(format!("Plugin nicht gefunden: {id}"))
+    AppError::InvalidInput(tr!("Plugin nicht gefunden: {id}", "Plugin not found: {id}"))
 }
 
-fn label(permission: PluginPermission) -> &'static str {
+fn label(permission: PluginPermission) -> String {
     match permission {
-        PluginPermission::LibraryRead => "Bibliothek lesen",
-        PluginPermission::LibraryAdd => "Spiele zur Bibliothek hinzufügen",
-        PluginPermission::CatalogSearch => "Im Katalog suchen",
-        PluginPermission::AchievementsDefine => "Eigene Achievements festlegen",
-        PluginPermission::UiAddSidebarItem => "Einträge in der Seitenleiste",
-        PluginPermission::UiNotify => "Hinweise anzeigen",
-        PluginPermission::Storage => "Eigene Daten speichern",
+        PluginPermission::LibraryRead => tr!("Bibliothek lesen", "Read the library"),
+        PluginPermission::LibraryAdd => tr!(
+            "Spiele zur Bibliothek hinzufügen",
+            "Add games to the library"
+        ),
+        PluginPermission::CatalogSearch => tr!("Im Katalog suchen", "Search the catalogue"),
+        PluginPermission::AchievementsDefine => {
+            tr!("Eigene Achievements festlegen", "Define own achievements")
+        }
+        PluginPermission::UiAddSidebarItem => {
+            tr!("Einträge in der Seitenleiste", "Sidebar entries")
+        }
+        PluginPermission::UiNotify => tr!("Hinweise anzeigen", "Show notices"),
+        PluginPermission::Storage => tr!("Eigene Daten speichern", "Store own data"),
     }
 }
 
@@ -345,9 +377,10 @@ impl Plugins {
         match info.status {
             PluginStatus::Invalid => return Err(AppError::Plugin(info.error.unwrap_or_default())),
             PluginStatus::NeedsApproval if enabled => {
-                return Err(AppError::Plugin(
-                    "Bitte bestätige zuerst die Berechtigungen des Plugins.".into(),
-                ));
+                return Err(AppError::Plugin(tr!(
+                    "Bitte bestätige zuerst die Berechtigungen des Plugins.",
+                    "Please confirm the plugin's permissions first."
+                )));
             }
             _ => {}
         }
@@ -361,9 +394,10 @@ impl Plugins {
 
     pub fn inspect(&self, path: &Path) -> AppResult<PluginManifestPreview> {
         if !path.is_dir() {
-            return Err(AppError::InvalidInput(
-                "Bitte gib den Ordner des Plugins an (mit plugin.json).".into(),
-            ));
+            return Err(AppError::InvalidInput(tr!(
+                "Bitte gib den Ordner des Plugins an (mit plugin.json).",
+                "Please enter the plugin's folder (the one with plugin.json)."
+            )));
         }
         let m = read_manifest(path).map_err(AppError::Plugin)?;
         Ok(PluginManifestPreview {
@@ -410,7 +444,7 @@ impl Plugins {
             .ok_or_else(|| not_found(id))?;
         if !found.removable {
             return Err(AppError::Plugin(
-                "Dieses Plugin liegt nicht in Coves Plugin-Ordner und kann hier nicht entfernt werden.".into(),
+                tr!("Dieses Plugin liegt nicht in Coves Plugin-Ordner und kann hier nicht entfernt werden.", "This plugin isn't in Cove's plugin folder and can't be removed here."),
             ));
         }
         std::fs::remove_dir_all(&found.dir)?;
@@ -432,14 +466,16 @@ impl Plugins {
     pub async fn require(&self, id: &str, permission: PluginPermission) -> AppResult<PluginInfo> {
         let info = self.get(id).await?;
         if info.status != PluginStatus::Active {
-            return Err(AppError::Plugin(format!(
+            return Err(AppError::Plugin(tr!(
                 "Das Plugin „{}“ ist nicht aktiv.",
+                "The plugin “{}” is not active.",
                 info.name
             )));
         }
         if !info.granted.contains(&permission) {
-            return Err(AppError::Plugin(format!(
+            return Err(AppError::Plugin(tr!(
                 "Das Plugin „{}“ hat keine Berechtigung für „{}“.",
+                "The plugin “{}” has no permission to “{}”.",
                 info.name,
                 label(permission)
             )));
@@ -451,9 +487,10 @@ impl Plugins {
 
     fn check_key(key: &str) -> AppResult<()> {
         if key.is_empty() || key.len() > 200 {
-            return Err(AppError::InvalidInput(
-                "Speicher-Schlüssel müssen 1 bis 200 Zeichen lang sein.".into(),
-            ));
+            return Err(AppError::InvalidInput(tr!(
+                "Speicher-Schlüssel müssen 1 bis 200 Zeichen lang sein.",
+                "Storage keys must be 1 to 200 characters long."
+            )));
         }
         Ok(())
     }
@@ -477,9 +514,10 @@ impl Plugins {
         Self::check_key(key)?;
         let raw = serde_json::to_string(value)?;
         if raw.len() > MAX_VALUE_BYTES {
-            return Err(AppError::Plugin(
-                "Ein gespeicherter Wert darf höchstens 64 KB groß sein.".into(),
-            ));
+            return Err(AppError::Plugin(tr!(
+                "Ein gespeicherter Wert darf höchstens 64 KB groß sein.",
+                "A stored value may be at most 64 KB."
+            )));
         }
         let (used, keys): (i64, i64) = sqlx::query_as(
             "SELECT COALESCE(SUM(LENGTH(value) + LENGTH(key)), 0), COUNT(*) FROM plugin_storage WHERE plugin_id = ? AND key <> ?",
@@ -490,9 +528,10 @@ impl Plugins {
         .await?;
         let size = i64::try_from(raw.len() + key.len()).unwrap_or(i64::MAX);
         if used + size > MAX_STORAGE_BYTES || keys >= MAX_KEYS {
-            return Err(AppError::Plugin(
-                "Der Speicher des Plugins ist voll (1 MB).".into(),
-            ));
+            return Err(AppError::Plugin(tr!(
+                "Der Speicher des Plugins ist voll (1 MB).",
+                "The plugin's storage is full (1 MB)."
+            )));
         }
         sqlx::query(
             "INSERT INTO plugin_storage (plugin_id, key, value) VALUES (?, ?, ?) \
@@ -595,17 +634,20 @@ impl Plugins {
                 .find(|(_, t)| crate::auth::state::constant_time_eq(t, token))
                 .map(|(id, _)| id.clone())
         }
-        .ok_or_else(|| AppError::InvalidInput("Unbekannter Plugin-Pfad.".into()))?;
+        .ok_or_else(|| {
+            AppError::InvalidInput(tr!("Unbekannter Plugin-Pfad.", "Unknown plugin path."))
+        })?;
         let id = id.as_str();
         let info = self.get(id).await?;
         if info.status != PluginStatus::Active {
-            return Err(AppError::Plugin(format!(
+            return Err(AppError::Plugin(tr!(
                 "Das Plugin „{}“ ist nicht aktiv.",
+                "The plugin “{}” is not active.",
                 info.name
             )));
         }
-        let relative =
-            safe_relative(rest).ok_or_else(|| AppError::InvalidInput("Ungültiger Pfad.".into()))?;
+        let relative = safe_relative(rest)
+            .ok_or_else(|| AppError::InvalidInput(tr!("Ungültiger Pfad.", "Invalid path.")))?;
         let (found, _) = self.manifest(id)?;
         let root = found.dir.canonicalize()?;
         let file = root
@@ -614,7 +656,10 @@ impl Plugins {
             .map_err(|_| not_found(id))?;
         // Symlinks must not lead out of the plugin folder.
         if !file.starts_with(&root) || !file.is_file() {
-            return Err(AppError::InvalidInput("Ungültiger Pfad.".into()));
+            return Err(AppError::InvalidInput(tr!(
+                "Ungültiger Pfad.",
+                "Invalid path."
+            )));
         }
         Ok(file)
     }
@@ -622,29 +667,44 @@ impl Plugins {
 
 fn parse_definitions(raw: &[Value]) -> AppResult<Vec<Definition>> {
     if raw.len() > MAX_ACHIEVEMENTS {
-        return Err(AppError::Plugin(format!(
-            "Ein Plugin kann höchstens {MAX_ACHIEVEMENTS} Achievements festlegen."
+        return Err(AppError::Plugin(tr!(
+            "Ein Plugin kann höchstens {MAX_ACHIEVEMENTS} Achievements festlegen.",
+            "A plugin can define at most {MAX_ACHIEVEMENTS} achievements."
         )));
     }
     let mut ids = BTreeSet::new();
     raw.iter()
         .map(|value| {
-            let d: Definition = serde_json::from_value(value.clone())
-                .map_err(|e| AppError::Plugin(format!("Ungültiges Achievement ({e}).")))?;
-            let bad = |m: &str| Err(AppError::Plugin(format!("Achievement „{}“: {m}", d.id)));
+            let d: Definition = serde_json::from_value(value.clone()).map_err(|e| {
+                AppError::Plugin(tr!(
+                    "Ungültiges Achievement ({e}).",
+                    "Invalid achievement ({e})."
+                ))
+            })?;
+            let bad = |m: String| {
+                Err(AppError::Plugin(tr!(
+                    "Achievement „{}“: {m}",
+                    "Achievement “{}”: {m}",
+                    d.id
+                )))
+            };
             if !valid_id(&d.id) {
-                return bad("Die ID darf nur Kleinbuchstaben, Ziffern und Bindestriche enthalten.");
+                return bad(tr!(
+                    "Die ID darf nur Kleinbuchstaben, Ziffern und Bindestriche enthalten.",
+                    "The ID may only contain lowercase letters, digits and hyphens."
+                ));
             }
             if !ids.insert(d.id.clone()) {
-                return bad("Die ID ist doppelt.");
+                return bad(tr!("Die ID ist doppelt.", "The ID is used twice."));
             }
             if d.title.trim().is_empty()
                 || d.title.chars().count() > 60
                 || d.description.chars().count() > 200
             {
-                return bad(
+                return bad(tr!(
                     "Titel (bis 60 Zeichen) oder Beschreibung (bis 200 Zeichen) passen nicht.",
-                );
+                    "Title (up to 60 characters) or description (up to 200 characters) don't fit."
+                ));
             }
             let ok = match d.rule {
                 Rule::PlaytimeHours { hours } => (1..=100_000).contains(&hours),
@@ -654,7 +714,10 @@ fn parse_definitions(raw: &[Value]) -> AppResult<Vec<Definition>> {
                 Rule::PlayedBetween { from_hour, to_hour } => from_hour < to_hour && to_hour <= 24,
             };
             if !ok {
-                return bad("Die Regel hat ungültige Werte.");
+                return bad(tr!(
+                    "Die Regel hat ungültige Werte.",
+                    "The rule has invalid values."
+                ));
             }
             Ok(d)
         })
@@ -678,9 +741,10 @@ fn copy_tree(from: &Path, to: &Path, budget: &mut (usize, u64)) -> AppResult<()>
         } else {
             let size = entry.metadata()?.len();
             if budget.0 == 0 || size > budget.1 {
-                return Err(AppError::Plugin(
-                    "Das Plugin ist zu groß (höchstens 20 MB und 1000 Dateien).".into(),
-                ));
+                return Err(AppError::Plugin(tr!(
+                    "Das Plugin ist zu groß (höchstens 20 MB und 1000 Dateien).",
+                    "The plugin is too large (at most 20 MB and 1000 files)."
+                )));
             }
             budget.0 -= 1;
             budget.1 -= size;

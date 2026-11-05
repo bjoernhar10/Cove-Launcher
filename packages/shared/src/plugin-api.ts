@@ -167,6 +167,8 @@ export type HostToPlugin =
       apiVersion: number;
       plugin: { id: string; name: string; version: string; permissions: PluginPermission[] };
       entryUrl: string;
+      /** UI language, for the runtime's own error messages. */
+      language: "de" | "en";
     }
   | { type: "result"; id: number; result: unknown }
   | { type: "error"; id: number; error: { kind: string; message: string } }

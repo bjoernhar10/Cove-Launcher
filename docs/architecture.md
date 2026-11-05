@@ -34,6 +34,9 @@
   - mirrored types in Rust, C# (`Rpc/Messages.cs`) and Python (`rpc.py`).
 - Method names: `<area>.<verb>` in camelCase, e.g. `system.ping`, `library.list`.
 - Every service implements `system.ping` → `{ service, version, message }`.
+- Every service implements `system.setLanguage` `{ language: "de" | "en" }`: the core sends it before
+  the first request of a process and again after a language change, so error texts and
+  recommendation reasons follow the UI language.
 
 ## Frontend (`apps/desktop/src`)
 
@@ -53,6 +56,11 @@ test/        Fake core for UI tests (Tauri mockIPC); e2e.ts = Playwright entry w
 - Code splitting: Home and Library are in the start bundle, every other page is a lazy route.
 - Errors: `RouteError` replaces React Router's developer screen; `errorMessage()` only shows texts
   written for people (from the core or `UserFacingError`).
+- Languages: German and English. All UI texts live in `i18n/de.ts` (source) and `i18n/en.ts`
+  (same keys, checked by TypeScript and `i18n.test.ts`). Components use `useMessages()`, other code
+  `messages()`; label tables (`SOURCE_LABELS` …) are `localized()` views. Switching the language in
+  Settings re-renders the app from the root and saves it in the core, which then answers in that
+  language too (`tr!` in Rust, see `src-tauri/src/i18n.rs`).
 
 - Routing: `createHashRouter`, behaves the same in the browser and under Tauri.
 - Custom title bar: `decorations: false`. The topbar is the drag region (`data-tauri-drag-region`),

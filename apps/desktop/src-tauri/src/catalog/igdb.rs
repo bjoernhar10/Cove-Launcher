@@ -406,7 +406,10 @@ impl IgdbProvider {
             let body = response.text().await.unwrap_or_default();
             // Twitch answers 400/403 for unknown client id or wrong secret.
             return Err(if matches!(status.as_u16(), 400 | 401 | 403) {
-                ProviderError::Auth("Client-ID oder Secret falsch".into())
+                ProviderError::Auth(tr!(
+                    "Client-ID oder Secret falsch",
+                    "Client ID or secret is wrong"
+                ))
             } else {
                 status_error(status, &body)
             });

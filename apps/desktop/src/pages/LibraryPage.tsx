@@ -1,3 +1,4 @@
+import { localized, useMessages } from "../i18n/index.ts";
 import type { LibraryItem } from "@cove/shared";
 import { LayoutGrid, Library, List, Plus, Star } from "lucide-react";
 import { memo, useCallback, useMemo, useRef } from "react";
@@ -22,15 +23,13 @@ import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 import { useUi } from "../stores/ui.ts";
 
-const GROUPS: { value: LibraryGroup; label: string }[] = [
-  { value: "all", label: "Alle" },
-  { value: "installed", label: "Installiert" },
-  { value: "favorites", label: "Favoriten" },
-  { value: "steam", label: SOURCE_LABELS.steam },
-  { value: "gog", label: SOURCE_LABELS.gog },
-  { value: "epic", label: SOURCE_LABELS.epic },
-  { value: "manual", label: SOURCE_LABELS.manual },
-];
+const GROUPS: LibraryGroup[] = ["all", "installed", "favorites", "steam", "gog", "epic", "manual"];
+
+function groupLabel(group: LibraryGroup): string {
+  return group === "all" || group === "installed" || group === "favorites" ? GROUP_LABELS[group] : SOURCE_LABELS[group];
+}
+
+const GROUP_LABELS = localized((m) => m.library.groups);
 
 function matchesGroup(item: LibraryItem, group: LibraryGroup): boolean {
   if (group === "all") return true;
@@ -39,26 +38,19 @@ function matchesGroup(item: LibraryItem, group: LibraryGroup): boolean {
   return item.entry.source === group;
 }
 
-const EMPTY_GROUP: Record<LibraryGroup, { title: string; description: string }> = {
-  all: { title: "", description: "" },
-  installed: { title: "Nichts installiert", description: "Installierte Spiele erscheinen hier. Starte einen Download über „Installieren“." },
-  favorites: { title: "Noch keine Favoriten", description: "Markiere Spiele mit dem Stern, um sie hier schnell wiederzufinden." },
-  steam: { title: "Keine Steam-Spiele", description: "Verbinde dein Steam-Konto in den Einstellungen, um deine Spiele zu importieren." },
-  gog: { title: "Keine GOG-Spiele", description: "Verbinde dein GOG-Konto in den Einstellungen, um deine Spiele zu importieren." },
-  epic: { title: "Keine Epic-Spiele", description: "Verbinde dein Epic-Konto in den Einstellungen, um deine Spiele zu importieren." },
-  manual: { title: "Keine manuellen Spiele", description: "Spiele, die du selbst hinzufügst, landen hier." },
-};
+const EMPTY_GROUP: Record<LibraryGroup, { title: string; description: string }> = localized((m) => m.library.emptyGroup);
 
 type FavoriteHandler = (item: LibraryItem, favorite: boolean) => void;
 
 function FavoriteButton({ item, onToggle }: { item: LibraryItem; onToggle: FavoriteHandler }) {
+  const t = useMessages();
   const { favorite } = item.entry;
   return (
     <button
       type="button"
       aria-pressed={favorite}
-      aria-label={favorite ? `${item.game.title} aus Favoriten entfernen` : `${item.game.title} zu Favoriten hinzufügen`}
-      title={favorite ? "Aus Favoriten entfernen" : "Zu Favoriten"}
+      aria-label={favorite ? t.library.unfavoriteTitle(item.game.title) : t.library.favoriteTitle(item.game.title)}
+      title={favorite ? t.library.unfavorite : t.library.favorite}
       onClick={() => {
         onToggle(item, !favorite);
       }}
@@ -73,6 +65,7 @@ function FavoriteButton({ item, onToggle }: { item: LibraryItem; onToggle: Favor
 }
 
 const GridCard = memo(function GridCard({ item, onFavorite }: { item: LibraryItem; onFavorite: FavoriteHandler }) {
+  const t = useMessages();
   const { game, entry } = item;
   return (
     <div className="group relative">
@@ -87,8 +80,8 @@ const GridCard = memo(function GridCard({ item, onFavorite }: { item: LibraryIte
           <p className="truncate text-sm font-medium text-fg">{game.title}</p>
           <p className="num mt-1 truncate text-xs text-fg-muted">
             {formatPlaytime(entry.playtimeMinutes)}
-            {!entry.installed && " · Nicht installiert"}
-            {entry.matchStatus === "pending" && " · Zuordnung prüfen"}
+            {!entry.installed && ` · ${t.library.notInstalled}`}
+            {entry.matchStatus === "pending" && ` · ${t.library.checkMatch}`}
           </p>
         </div>
         <FavoriteButton item={item} onToggle={onFavorite} />
@@ -102,6 +95,7 @@ const GridCard = memo(function GridCard({ item, onFavorite }: { item: LibraryIte
 const LIST_ROW_HEIGHT = 57;
 
 const ListRow = memo(function ListRow({ item, onFavorite }: { item: LibraryItem; onFavorite: FavoriteHandler }) {
+  const t = useMessages();
   const { game, entry } = item;
   return (
     <tr style={{ height: LIST_ROW_HEIGHT }} className="border-b border-border transition-colors duration-150 ease-out last:border-b-0 hover:bg-hover">
@@ -110,7 +104,7 @@ const ListRow = memo(function ListRow({ item, onFavorite }: { item: LibraryItem;
           <GameCover game={game} aspect="square" showTitle={false} className="w-10 shrink-0 rounded-md" />
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium text-fg">{game.title}</span>
-            <span className="block truncate text-xs text-fg-subtle">{entry.installed ? "Installiert" : "Nicht installiert"}</span>
+            <span className="block truncate text-xs text-fg-subtle">{entry.installed ? t.library.installed : t.library.notInstalled}</span>
           </span>
         </Link>
       </td>
@@ -131,6 +125,7 @@ const ListRow = memo(function ListRow({ item, onFavorite }: { item: LibraryItem;
 });
 
 function LibraryTable({ items, onFavorite }: { items: LibraryItem[]; onFavorite: FavoriteHandler }) {
+  const t = useMessages();
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const virtual = items.length > VIRTUALIZE_FROM;
   const virtualizer = useMainVirtualizer({ listRef: bodyRef, count: virtual ? items.length : 0, estimateSize: LIST_ROW_HEIGHT, overscan: 8 });
@@ -146,13 +141,13 @@ function LibraryTable({ items, onFavorite }: { items: LibraryItem[]; onFavorite:
       <table className="w-full border-collapse text-left" aria-rowcount={items.length + 1}>
         <thead>
           <tr className="border-b border-border text-xs text-fg-subtle">
-            <th scope="col" className="py-3 pl-4 font-medium">Spiel</th>
-            <th scope="col" className="px-4 font-medium">Quelle</th>
-            <th scope="col" className="px-4 font-medium">Spielzeit</th>
-            <th scope="col" className="px-4 font-medium">Zuletzt gespielt</th>
-            <th scope="col" className="px-4 font-medium">Fortschritt</th>
+            <th scope="col" className="py-3 pl-4 font-medium">{t.library.colGame}</th>
+            <th scope="col" className="px-4 font-medium">{t.library.colSource}</th>
+            <th scope="col" className="px-4 font-medium">{t.library.colPlaytime}</th>
+            <th scope="col" className="px-4 font-medium">{t.library.colLastPlayed}</th>
+            <th scope="col" className="px-4 font-medium">{t.library.colProgress}</th>
             <th scope="col" className="pr-4">
-              <span className="sr-only">Aktionen</span>
+              <span className="sr-only">{t.palette.actions}</span>
             </th>
           </tr>
         </thead>
@@ -169,6 +164,7 @@ function LibraryTable({ items, onFavorite }: { items: LibraryItem[]; onFavorite:
 }
 
 export function LibraryPage() {
+  const t = useMessages();
   const query = useQuery("library", api.library.listLibrary);
   const view = usePreferences((s) => s.libraryView);
   const setView = usePreferences((s) => s.setLibraryView);
@@ -197,7 +193,7 @@ export function LibraryPage() {
   const items = useMemo(() => all.filter((i) => matchesGroup(i, group)), [all, group]);
   const counts = useMemo(() => {
     const result = {} as Record<LibraryGroup, number>;
-    for (const g of GROUPS) result[g.value] = all.filter((i) => matchesGroup(i, g.value)).length;
+    for (const g of GROUPS) result[g] = all.filter((i) => matchesGroup(i, g)).length;
     return result;
   }, [all]);
   const cells = useMemo(
@@ -212,7 +208,7 @@ export function LibraryPage() {
         openAddGame();
       }}
     >
-      Spiel hinzufügen
+      {t.palette.addGame}
     </Button>
   );
 
@@ -220,18 +216,18 @@ export function LibraryPage() {
     <Page>
       <PageHeader
         title="My Library"
-        description={query.status === "success" ? <><span className="num">{formatNumber(all.length)}</span> Spiele</> : "Deine Spiele aus allen Quellen"}
+        description={query.status === "success" ? <><span className="num">{formatNumber(all.length)}</span> {t.library.games}</> : t.library.subtitle}
         actions={addButton}
       />
 
       {query.status === "success" && all.length === 0 ? (
         <EmptyState
           icon={Library}
-          title="Deine Bibliothek ist noch leer"
-          description="Verbinde Steam, GOG oder Epic, um deine Spiele automatisch zu importieren – oder füge ein Spiel von Hand hinzu."
+          title={t.library.emptyTitle}
+          description={t.library.emptyText}
           actions={
             <>
-              <ButtonLink to="/settings/accounts">Store verbinden</ButtonLink>
+              <ButtonLink to="/settings/accounts">{t.home.connectStore}</ButtonLink>
               {addButton}
             </>
           }
@@ -239,49 +235,49 @@ export function LibraryPage() {
       ) : (
         <>
           <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-            <nav aria-label="Gruppierung" className="flex flex-wrap gap-1">
+            <nav aria-label={t.library.grouping} className="flex flex-wrap gap-1">
               {GROUPS.map((g) => {
-                const selected = g.value === group;
+                const selected = g === group;
                 return (
                   <button
-                    key={g.value}
+                    key={g}
                     type="button"
                     aria-pressed={selected}
                     onClick={() => {
-                      setGroup(g.value);
+                      setGroup(g);
                     }}
                     className={cx(
                       "inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm transition-colors duration-150 ease-out",
                       selected ? "bg-active font-medium text-fg" : "text-fg-muted hover:bg-hover hover:text-fg",
-                      g.value === "steam" && "ml-3",
+                      g === "steam" && "ml-3",
                     )}
                   >
-                    {g.label}
-                    {query.status === "success" && <span className="num text-xs text-fg-subtle">{counts[g.value]}</span>}
+                    {groupLabel(g)}
+                    {query.status === "success" && <span className="num text-xs text-fg-subtle">{counts[g]}</span>}
                   </button>
                 );
               })}
             </nav>
             <Segmented
-              label="Ansicht"
+              label={t.library.view}
               value={view}
               onChange={setView}
               options={[
-                { value: "grid", label: "Raster", icon: LayoutGrid, iconOnly: true },
-                { value: "list", label: "Liste", icon: List, iconOnly: true },
+                { value: "grid", label: t.library.grid, icon: LayoutGrid, iconOnly: true },
+                { value: "list", label: t.library.list, icon: List, iconOnly: true },
               ]}
             />
           </div>
 
           {query.status === "loading" &&
             (view === "grid" ? (
-              <LoadingRegion label="Bibliothek wird geladen" className={COVER_GRID}>
+              <LoadingRegion label={t.library.loading} className={COVER_GRID}>
                 {Array.from({ length: 12 }, (_, i) => (
                   <GameCardSkeleton key={i} />
                 ))}
               </LoadingRegion>
             ) : (
-              <LoadingRegion label="Bibliothek wird geladen" className="rounded-lg border border-border">
+              <LoadingRegion label={t.library.loading} className="rounded-lg border border-border">
                 {Array.from({ length: 8 }, (_, i) => (
                   <div key={i} className="flex items-center gap-3 border-b border-border px-4 py-2 last:border-b-0">
                     <Skeleton className="size-10" />
@@ -297,7 +293,7 @@ export function LibraryPage() {
             <EmptyState compact icon={Library} title={EMPTY_GROUP[group].title} description={EMPTY_GROUP[group].description} />
           )}
 
-          {query.status === "success" && items.length > 0 && view === "grid" && <VirtualGrid cells={cells} label="Spiele" />}
+          {query.status === "success" && items.length > 0 && view === "grid" && <VirtualGrid cells={cells} label={t.palette.games} />}
 
           {query.status === "success" && items.length > 0 && view === "list" && <LibraryTable items={items} onFavorite={setFavorite} />}
         </>

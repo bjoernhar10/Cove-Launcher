@@ -12,8 +12,12 @@ use crate::error::{AppError, AppResult};
 
 fn random_token(bytes: usize) -> AppResult<String> {
     let mut buf = vec![0u8; bytes];
-    getrandom::fill(&mut buf)
-        .map_err(|e| AppError::Launch(format!("Zufallsquelle nicht verfügbar: {e}")))?;
+    getrandom::fill(&mut buf).map_err(|e| {
+        AppError::Launch(tr!(
+            "Zufallsquelle nicht verfügbar: {e}",
+            "No source of randomness available: {e}"
+        ))
+    })?;
     Ok(URL_SAFE_NO_PAD.encode(buf))
 }
 

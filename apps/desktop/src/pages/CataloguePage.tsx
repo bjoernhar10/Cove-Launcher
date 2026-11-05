@@ -1,3 +1,4 @@
+import { messages, useMessages } from "../i18n/index.ts";
 import type { Genre, Platform, YearRange } from "@cove/shared";
 import { Compass, SearchX, X } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
@@ -20,18 +21,18 @@ const GENRES = Object.keys(GENRE_LABELS) as Genre[];
 const PLATFORMS = Object.keys(PLATFORM_LABELS) as Platform[];
 
 const YEAR_OPTIONS: { label: string; range: YearRange | null }[] = [
-  { label: "Alle Jahre", range: null },
+  { get label() { return messages().catalogue.allYears; }, range: null },
   { label: "2025–2026", range: { from: 2025, to: 2026 } },
   { label: "2022–2024", range: { from: 2022, to: 2024 } },
   { label: "2018–2021", range: { from: 2018, to: 2021 } },
-  { label: "Vor 2018", range: { from: 1970, to: 2017 } },
+  { get label() { return messages().catalogue.before(2018); }, range: { from: 1970, to: 2017 } },
 ];
 
 const RATING_OPTIONS: { label: string; value: number | null }[] = [
-  { label: "Alle Bewertungen", value: null },
-  { label: "Ab 90", value: 90 },
-  { label: "Ab 80", value: 80 },
-  { label: "Ab 70", value: 70 },
+  { get label() { return messages().catalogue.allRatings; }, value: null },
+  { get label() { return messages().catalogue.from(90); }, value: 90 },
+  { get label() { return messages().catalogue.from(80); }, value: 80 },
+  { get label() { return messages().catalogue.from(70); }, value: 70 },
 ];
 
 function toggle<T>(list: T[], value: T, on: boolean): T[] {
@@ -45,11 +46,12 @@ function summarize(labels: string[]): string | undefined {
 }
 
 function SortSelect() {
+  const t = useMessages();
   const sort = useCatalogFilter((s) => s.sort);
   const setSort = useCatalogFilter((s) => s.setSort);
   return (
     <label className="flex items-center gap-2 text-sm text-fg-muted">
-      Sortierung
+      {t.catalogue.sort}
       <Select
         className="w-36"
         value={sort}
@@ -61,6 +63,7 @@ function SortSelect() {
 }
 
 function FilterBar() {
+  const t = useMessages();
   const filter = useCatalogFilter((s) => s.filter);
   const setFilter = useCatalogFilter((s) => s.setFilter);
   const reset = useCatalogFilter((s) => s.reset);
@@ -69,11 +72,11 @@ function FilterBar() {
   const count = activeFilterCount(filter);
 
   return (
-    <div role="toolbar" aria-label="Filter" className="sticky top-0 z-20 -mx-8 mb-8 flex flex-wrap items-center gap-2 border-b border-border bg-bg px-8 py-3">
+    <div role="toolbar" aria-label={t.catalogue.filter} className="sticky top-0 z-20 -mx-8 mb-8 flex flex-wrap items-center gap-2 border-b border-border bg-bg px-8 py-3">
       <Input
         type="search"
-        aria-label="Im Katalog suchen"
-        placeholder="Titel oder Studio …"
+        aria-label={t.catalogue.search}
+        placeholder={t.catalogue.searchPlaceholder}
         className="h-8 w-52"
         value={filter.query}
         onChange={(e) => {
@@ -94,7 +97,7 @@ function FilterBar() {
           ))}
         </div>
       </Popover>
-      <Popover label="Plattform" value={summarize(filter.platforms.map((p) => PLATFORM_LABELS[p]))} active={filter.platforms.length > 0}>
+      <Popover label={t.catalogue.platform} value={summarize(filter.platforms.map((p) => PLATFORM_LABELS[p]))} active={filter.platforms.length > 0}>
         {PLATFORMS.map((p) => (
           <CheckOption
             key={p}
@@ -106,7 +109,7 @@ function FilterBar() {
           />
         ))}
       </Popover>
-      <Popover label="Erscheinungsjahr" value={filter.releaseYears ? yearLabel : undefined} active={filter.releaseYears !== null}>
+      <Popover label={t.catalogue.releaseYear} value={filter.releaseYears ? yearLabel : undefined} active={filter.releaseYears !== null}>
         {YEAR_OPTIONS.map((o) => (
           <RadioOption
             key={o.label}
@@ -119,7 +122,7 @@ function FilterBar() {
           />
         ))}
       </Popover>
-      <Popover label="Bewertung" value={filter.minRating !== null ? ratingLabel : undefined} active={filter.minRating !== null}>
+      <Popover label={t.catalogue.rating} value={filter.minRating !== null ? ratingLabel : undefined} active={filter.minRating !== null}>
         {RATING_OPTIONS.map((o) => (
           <RadioOption
             key={o.label}
@@ -134,7 +137,7 @@ function FilterBar() {
       </Popover>
       {count > 0 && (
         <Button variant="ghost" size="sm" icon={X} onClick={reset}>
-          Zurücksetzen
+          {t.catalogue.reset}
         </Button>
       )}
     </div>
@@ -142,6 +145,7 @@ function FilterBar() {
 }
 
 export function CataloguePage() {
+  const t = useMessages();
   const liveFilter = useCatalogFilter((s) => s.filter);
   const sort = useCatalogFilter((s) => s.sort);
   const reset = useCatalogFilter((s) => s.reset);
@@ -192,10 +196,10 @@ export function CataloguePage() {
           <span className="inline-flex items-center gap-3">
             {total !== null ? (
               <span>
-                <span className="num">{formatNumber(total)}</span> Spiele
+                <span className="num">{formatNumber(total)}</span> {t.library.games}
               </span>
             ) : (
-              "Spieldaten von IGDB"
+              t.catalogue.dataFromIgdb
             )}
             {offline && <OfflineBadge />}
           </span>
@@ -210,7 +214,7 @@ export function CataloguePage() {
           <FilterBar />
 
           {query.isPending && (
-            <LoadingRegion label="Katalog wird geladen" className={COVER_GRID}>
+            <LoadingRegion label={t.catalogue.loading} className={COVER_GRID}>
               {Array.from({ length: 12 }, (_, i) => (
                 <GameCardSkeleton key={i} />
               ))}
@@ -222,22 +226,22 @@ export function CataloguePage() {
           {query.isSuccess && cells.length === 0 && (
             <EmptyState
               icon={SearchX}
-              title="Keine Spiele gefunden"
-              description="Zu diesen Filtern passt gerade nichts. Versuch es mit weniger Einschränkungen."
-              actions={<Button onClick={reset}>Filter zurücksetzen</Button>}
+              title={t.catalogue.emptyTitle}
+              description={t.catalogue.emptyText}
+              actions={<Button onClick={reset}>{t.catalogue.resetFilters}</Button>}
             />
           )}
 
           {cells.length > 0 && (
             <>
-              <VirtualGrid cells={loadingCells.length > 0 ? [...cells, ...loadingCells] : cells} label="Spiele" />
+              <VirtualGrid cells={loadingCells.length > 0 ? [...cells, ...loadingCells] : cells} label={t.palette.games} />
               <div ref={sentinel} className="h-px" />
               {query.isFetchNextPageError && (
                 <div className="mt-8 flex justify-center">
-                  <Button onClick={() => void fetchNextPage()}>Weitere Spiele laden</Button>
+                  <Button onClick={() => void fetchNextPage()}>{t.catalogue.loadMore}</Button>
                 </div>
               )}
-              {!hasNextPage && <p className="mt-12 text-center text-sm text-fg-subtle">Das war alles.</p>}
+              {!hasNextPage && <p className="mt-12 text-center text-sm text-fg-subtle">{t.catalogue.end}</p>}
             </>
           )}
         </>
@@ -248,14 +252,15 @@ export function CataloguePage() {
 
 /** Shown when no catalogue source is available (no Cove service in this build / switched off, no own keys). */
 export function CatalogSetupState() {
+  const t = useMessages();
   return (
     <EmptyState
       icon={Compass}
-      title="Katalog nicht verfügbar"
-      description="Der Cove-Katalogdienst ist in diesem Build nicht enthalten oder ausgeschaltet. Unter Einstellungen → Katalog kannst du ihn einschalten oder eigene Zugangsdaten für IGDB eintragen."
+      title={t.catalogue.unavailableTitle}
+      description={t.catalogue.unavailableText}
       actions={
         <ButtonLink to="/settings/catalog" variant="primary">
-          Zu den Einstellungen
+          {t.catalogue.toSettings}
         </ButtonLink>
       }
     />

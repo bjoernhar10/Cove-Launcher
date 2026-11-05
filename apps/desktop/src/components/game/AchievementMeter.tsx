@@ -1,10 +1,12 @@
+import { useMessages } from "../../i18n/index.ts";
 import type { AchievementProgress } from "@cove/shared";
 import { ProgressBar } from "../ui/Feedback.tsx";
 
 /** "12/40" + thin bar. Renders a dash when a game has no achievements. */
 export function AchievementMeter({ progress, className }: { progress: AchievementProgress; className?: string }) {
+  const t = useMessages();
   if (progress.total === 0) {
-    return <span className="text-xs text-fg-subtle">Keine Achievements</span>;
+    return <span className="text-xs text-fg-subtle">{t.achievements.none}</span>;
   }
   return (
     <div className={className}>
@@ -17,7 +19,7 @@ export function AchievementMeter({ progress, className }: { progress: Achievemen
       <ProgressBar
         value={progress.unlocked}
         max={progress.total}
-        label={`${String(progress.unlocked)} von ${String(progress.total)} Achievements`}
+        label={t.achievements.progress(progress.unlocked, progress.total)}
         className="mt-2"
       />
     </div>

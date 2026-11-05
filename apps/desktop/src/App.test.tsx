@@ -137,6 +137,29 @@ describe("Settings", () => {
   });
 });
 
+describe("Language", () => {
+  it("switches the whole UI to English and saves it in the core", async () => {
+    renderAt("/settings/general");
+    const select = await screen.findByRole("combobox", { name: "Sprache" });
+    fireEvent.change(select, { target: { value: "en" } });
+    expect(await screen.findByRole("combobox", { name: "Language" })).toBeDefined();
+    expect(screen.getByRole("navigation", { name: "Sections" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "Accounts & stores" })).toBeDefined();
+    expect(document.documentElement.lang).toBe("en");
+    await waitFor(() => {
+      expect(core.settings.general.language).toBe("en");
+    });
+  });
+
+  it("starts in the language saved in the core", async () => {
+    core.settings.general.language = "en";
+    renderAt("/library");
+    expect(await screen.findByRole("button", { name: /Add game/ })).toBeDefined();
+    expect(screen.getByRole("navigation", { name: "Grouping" })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Favourites/ })).toBeDefined();
+  });
+});
+
 describe("Catalogue", () => {
   it("shows catalogue games from the core", async () => {
     renderAt("/catalogue");

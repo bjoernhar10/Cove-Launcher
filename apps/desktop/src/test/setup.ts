@@ -1,9 +1,14 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { setLanguage } from "../i18n/index.ts";
 import { queryClient } from "../lib/queryClient.ts";
+
+// The tests check German texts (the default UI copy); English has its own tests.
+setLanguage("de");
 
 afterEach(() => {
   cleanup();
+  setLanguage("de");
   queryClient.clear();
   window.location.hash = "";
 });

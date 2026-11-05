@@ -234,6 +234,11 @@ public class EpicConnectorTests
     }
 }
 
+/// <summary>Tests that read or change the process-wide UI language never run in parallel.</summary>
+[CollectionDefinition("Language", DisableParallelization = true)]
+public sealed class LanguageCollection;
+
+[Collection("Language")]
 public class FailureTests
 {
     [Fact]

@@ -78,7 +78,7 @@ public sealed class RpcDispatcher
         catch (Exception e) when (e is InvalidOperationException or FormatException or KeyNotFoundException)
         {
             // A store answered in an unexpected shape (undocumented APIs change): report, never crash.
-            return isNotification ? null : Error(id, StoreError, "Der Store hat unerwartet geantwortet. Bitte später erneut versuchen.", "unavailable");
+            return isNotification ? null : Error(id, StoreError, Texts.T("Der Store hat unerwartet geantwortet. Bitte später erneut versuchen.", "The store answered unexpectedly. Please try again later."), "unavailable");
         }
 
         if (isNotification)
@@ -96,7 +96,7 @@ public sealed class RpcDispatcher
 
     private IStoreConnector Connector(string store) =>
         _connectors.GetValueOrDefault(store)
-            ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, $"Unbekannter Store: {store}");
+            ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, Texts.T($"Unbekannter Store: {store}", $"Unknown store: {store}"));
 
     private static JsonNode? Node<T>(T value, JsonTypeInfo<T> type) => JsonSerializer.SerializeToNode(value, type);
 
@@ -109,6 +109,17 @@ public sealed class RpcDispatcher
                 {
                     var ping = p is null ? new PingParams(null) : Params(p, ctx.PingParams);
                     return Node(new PingResult("connectors", Version, $"pong: {ping.Message}"), ctx.PingResult);
+                }
+
+            case "system.setLanguage":
+                {
+                    var args = Params(p, ctx.SetLanguageParams);
+                    if (!Texts.SetLanguage(args.Language))
+                    {
+                        throw new JsonException("language must be 'de' or 'en'");
+                    }
+
+                    return Node(new SetLanguageResult(Texts.Language), ctx.SetLanguageResult);
                 }
 
             case "store.list":

@@ -26,9 +26,12 @@ fn network(e: reqwest::Error) -> AppError {
     // Download links are signed; keep them out of messages.
     let e = e.without_url();
     if e.is_timeout() || e.is_connect() {
-        AppError::Offline("itch.io ist nicht erreichbar.".into())
+        AppError::Offline(tr!(
+            "itch.io ist nicht erreichbar.",
+            "itch.io can't be reached."
+        ))
     } else {
-        AppError::Itch(format!("Anfrage fehlgeschlagen ({e})"))
+        AppError::Itch(tr!("Anfrage fehlgeschlagen ({e})", "Request failed ({e})"))
     }
 }
 
@@ -59,9 +62,10 @@ impl ItchApi {
 
     fn key(&self) -> AppResult<String> {
         self.secrets.get(KEY)?.ok_or_else(|| {
-            AppError::Itch(
-                "Verbinde zuerst dein itch.io-Konto (Einstellungen → Konten & Stores).".into(),
-            )
+            AppError::Itch(tr!(
+                "Verbinde zuerst dein itch.io-Konto (Einstellungen → Konten & Stores).",
+                "Connect your itch.io account first (Settings → Accounts & stores)."
+            ))
         })
     }
 
@@ -76,22 +80,25 @@ impl ItchApi {
         let status = response.status();
         let body: Value = response.json().await.unwrap_or(Value::Null);
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err(AppError::Itch(
-                "Der API-Schlüssel ist ungültig oder abgelaufen.".into(),
-            ));
+            return Err(AppError::Itch(tr!(
+                "Der API-Schlüssel ist ungültig oder abgelaufen.",
+                "The API key is invalid or has expired."
+            )));
         }
         if let Some(errors) = body.get("errors").and_then(Value::as_array) {
             let text: Vec<&str> = errors.iter().filter_map(Value::as_str).collect();
             if text.iter().any(|t| t.contains("invalid key")) {
-                return Err(AppError::Itch(
-                    "Der API-Schlüssel ist ungültig oder abgelaufen.".into(),
-                ));
+                return Err(AppError::Itch(tr!(
+                    "Der API-Schlüssel ist ungültig oder abgelaufen.",
+                    "The API key is invalid or has expired."
+                )));
             }
             return Err(AppError::Itch(text.join(", ")));
         }
         if !status.is_success() {
-            return Err(AppError::Itch(format!(
+            return Err(AppError::Itch(tr!(
                 "itch.io antwortet mit HTTP {}.",
+                "itch.io answers with HTTP {}.",
                 status.as_u16()
             )));
         }
@@ -117,9 +124,10 @@ impl ItchApi {
     pub async fn set_key(&self, key: &str) -> AppResult<ItchStatus> {
         let key = key.trim();
         if key.is_empty() || key.len() > 200 || !key.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return Err(AppError::InvalidInput(
-                "Das sieht nicht wie ein itch.io-API-Schlüssel aus.".into(),
-            ));
+            return Err(AppError::InvalidInput(tr!(
+                "Das sieht nicht wie ein itch.io-API-Schlüssel aus.",
+                "That doesn't look like an itch.io API key."
+            )));
         }
         self.get("/profile", key).await?;
         self.secrets.set(KEY, key)?;
@@ -183,7 +191,10 @@ impl ItchApi {
     /// A game by its public page (e.g. a free game): `https://<user>.itch.io/<game>`.
     pub async fn lookup(&self, page_url: &str) -> AppResult<ItchGame> {
         let url: reqwest::Url = page_url.trim().parse().map_err(|_| {
-            AppError::InvalidInput("Bitte gib die Adresse einer itch.io-Spielseite ein.".into())
+            AppError::InvalidInput(tr!(
+                "Bitte gib die Adresse einer itch.io-Spielseite ein.",
+                "Please enter the address of an itch.io game page."
+            ))
         })?;
         let host_ok = url
             .host_str()
@@ -192,9 +203,10 @@ impl ItchApi {
             || !host_ok
             || url.path().trim_matches('/').is_empty()
         {
-            return Err(AppError::InvalidInput(
-                "Bitte gib die Adresse einer itch.io-Spielseite ein (https://…itch.io/…).".into(),
-            ));
+            return Err(AppError::InvalidInput(tr!(
+                "Bitte gib die Adresse einer itch.io-Spielseite ein (https://…itch.io/…).",
+                "Please enter the address of an itch.io game page (https://…itch.io/…)."
+            )));
         }
         let data = format!("{}/data.json", url.as_str().trim_end_matches('/'));
         let body: Value = self
@@ -205,9 +217,18 @@ impl ItchApi {
             .map_err(network)?
             .json()
             .await
-            .map_err(|_| AppError::Itch("Die Seite gehört zu keinem itch.io-Spiel.".into()))?;
-        let mut game = Self::game(&body, None)
-            .ok_or_else(|| AppError::Itch("Die Seite gehört zu keinem itch.io-Spiel.".into()))?;
+            .map_err(|_| {
+                AppError::Itch(tr!(
+                    "Die Seite gehört zu keinem itch.io-Spiel.",
+                    "The page doesn't belong to an itch.io game."
+                ))
+            })?;
+        let mut game = Self::game(&body, None).ok_or_else(|| {
+            AppError::Itch(tr!(
+                "Die Seite gehört zu keinem itch.io-Spiel.",
+                "The page doesn't belong to an itch.io game."
+            ))
+        })?;
         game.url = Some(url.to_string());
         Ok(game)
     }
@@ -282,7 +303,10 @@ impl ItchApi {
                 .and_then(|v| v.to_str().ok())
                 .map(str::to_owned)
                 .ok_or_else(|| {
-                    AppError::Itch("itch.io hat keine Download-Adresse geliefert.".into())
+                    AppError::Itch(tr!(
+                        "itch.io hat keine Download-Adresse geliefert.",
+                        "itch.io didn't provide a download address."
+                    ))
                 });
         }
         let status = response.status();
@@ -291,13 +315,15 @@ impl ItchApi {
             return Ok(url);
         }
         if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err(AppError::Itch(
-                "Für diese Datei fehlt der Kauf oder der API-Schlüssel ist ungültig.".into(),
-            ));
+            return Err(AppError::Itch(tr!(
+                "Für diese Datei fehlt der Kauf oder der API-Schlüssel ist ungültig.",
+                "You don't own this file, or the API key is invalid."
+            )));
         }
-        Err(AppError::Itch(
-            "itch.io hat keine Download-Adresse geliefert.".into(),
-        ))
+        Err(AppError::Itch(tr!(
+            "itch.io hat keine Download-Adresse geliefert.",
+            "itch.io didn't provide a download address."
+        )))
     }
 }
 

@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useRef, type ReactNode } from "react";
 import { Button } from "../ui/Button.tsx";
@@ -12,6 +13,7 @@ interface ScrollRowProps {
 
 /** Horizontal row of fixed-width items with previous/next buttons. */
 export function ScrollRow({ title, description, children, extraActions }: ScrollRowProps) {
+  const t = useMessages();
   const scroller = useRef<HTMLDivElement>(null);
 
   function scroll(direction: 1 | -1): void {
@@ -28,8 +30,8 @@ export function ScrollRow({ title, description, children, extraActions }: Scroll
       actions={
         <>
           {extraActions}
-          <Button variant="ghost" size="sm" iconOnly icon={ChevronLeft} label="Zurückblättern" onClick={() => { scroll(-1); }} />
-          <Button variant="ghost" size="sm" iconOnly icon={ChevronRight} label="Weiterblättern" onClick={() => { scroll(1); }} />
+          <Button variant="ghost" size="sm" iconOnly icon={ChevronLeft} label={t.common.scrollBack} onClick={() => { scroll(-1); }} />
+          <Button variant="ghost" size="sm" iconOnly icon={ChevronRight} label={t.common.scrollForward} onClick={() => { scroll(1); }} />
         </>
       }
     >

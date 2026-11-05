@@ -1,4 +1,4 @@
-from cove_recommender import engine
+from cove_recommender import engine, texts
 from cove_recommender.data import LibraryGame
 
 from .fixtures import CATALOG, NOW, played
@@ -130,3 +130,17 @@ def test_explain_variants() -> None:
     assert engine.explain_recommendation("hk", [played("ori", "Ori", 4.5)], CATALOG, NOW) == (
         "Weil du 4,5 Std. Ori gespielt hast"
     )
+
+
+def test_explain_variants_in_english() -> None:
+    texts.set_language("en")
+    try:
+        assert engine.explain_recommendation("hk", [played("ori", "Ori", 4.5)], CATALOG, NOW) == (
+            "Because you played Ori for 4.5 h"
+        )
+        favorite_only = [LibraryGame("ori", "Ori", 30, NOW, True, 0, 0, 1)]
+        assert engine.explain_recommendation("hk", favorite_only, CATALOG, NOW) == (
+            "Because Ori is one of your favourites"
+        )
+    finally:
+        texts.set_language("de")

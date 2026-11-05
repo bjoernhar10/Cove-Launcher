@@ -26,16 +26,47 @@ pub struct Callback {
     pub params: HashMap<String, String>,
 }
 
-const DONE_PAGE: &str = "<!doctype html><html lang=\"de\"><meta charset=\"utf-8\"><title>Cove</title>\
+/// The small page the browser shows after the redirect, in the UI language.
+fn page(title: &str, text: &str, close: bool) -> String {
+    let lang = if crate::i18n::is_english() {
+        "en"
+    } else {
+        "de"
+    };
+    let script = if close {
+        "<script>setTimeout(function(){window.close()},800)</script>"
+    } else {
+        ""
+    };
+    format!(
+        "<!doctype html><html lang=\"{lang}\"><meta charset=\"utf-8\"><title>Cove</title>\
 <body style=\"font-family:system-ui,sans-serif;display:grid;place-items:center;height:90vh;color:#18181b\">\
-<div style=\"text-align:center\"><h1 style=\"font-size:20px;font-weight:600\">Angemeldet</h1>\
-<p style=\"color:#5c5c66\">Du kannst dieses Fenster schließen und zu Cove zurückkehren.</p></div>\
-<script>setTimeout(function(){window.close()},800)</script></body></html>";
+<div style=\"text-align:center\"><h1 style=\"font-size:20px;font-weight:600\">{title}</h1>\
+<p style=\"color:#5c5c66\">{text}</p></div>{script}</body></html>"
+    )
+}
 
-const ERROR_PAGE: &str = "<!doctype html><html lang=\"de\"><meta charset=\"utf-8\"><title>Cove</title>\
-<body style=\"font-family:system-ui,sans-serif;display:grid;place-items:center;height:90vh;color:#18181b\">\
-<div style=\"text-align:center\"><h1 style=\"font-size:20px;font-weight:600\">Anmeldung nicht möglich</h1>\
-<p style=\"color:#5c5c66\">Diese Antwort gehört nicht zu einer Anmeldung in Cove. Starte die Anmeldung in Cove erneut.</p></div></body></html>";
+fn done_page() -> String {
+    page(
+        &tr!("Angemeldet", "Signed in"),
+        &tr!(
+            "Du kannst dieses Fenster schließen und zu Cove zurückkehren.",
+            "You can close this window and return to Cove."
+        ),
+        true,
+    )
+}
+
+fn error_page() -> String {
+    page(
+        &tr!("Anmeldung nicht möglich", "Sign-in not possible"),
+        &tr!(
+            "Diese Antwort gehört nicht zu einer Anmeldung in Cove. Starte die Anmeldung in Cove erneut.",
+            "This response doesn't belong to a sign-in from Cove. Start the sign-in in Cove again."
+        ),
+        false,
+    )
+}
 
 fn decode(component: &str) -> String {
     percent_encoding::percent_decode_str(&component.replace('+', " "))
@@ -78,7 +109,10 @@ impl LoopbackServer {
             }
         };
         tokio::time::timeout(timeout, work).await.map_err(|_| {
-            AppError::LoginFailed("Die Anmeldung wurde nicht rechtzeitig abgeschlossen.".into())
+            AppError::LoginFailed(tr!(
+                "Die Anmeldung wurde nicht rechtzeitig abgeschlossen.",
+                "The sign-in wasn't finished in time."
+            ))
         })?
     }
 
@@ -114,10 +148,10 @@ impl LoopbackServer {
             .get("state")
             .is_some_and(|s| constant_time_eq(s, expected_state));
         if !state_ok {
-            Self::respond(&mut stream, "400 Bad Request", ERROR_PAGE).await;
+            Self::respond(&mut stream, "400 Bad Request", &error_page()).await;
             return Ok(None);
         }
-        Self::respond(&mut stream, "200 OK", DONE_PAGE).await;
+        Self::respond(&mut stream, "200 OK", &done_page()).await;
         Ok(Some(Callback {
             url: format!("http://127.0.0.1:{port}{target}"),
             params,

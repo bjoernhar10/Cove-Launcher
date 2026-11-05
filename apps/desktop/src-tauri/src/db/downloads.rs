@@ -79,8 +79,13 @@ pub async fn get(pool: &SqlitePool, id: &str) -> AppResult<DownloadItem> {
     .bind(id)
     .fetch_optional(pool)
     .await?;
-    row.ok_or_else(|| AppError::InvalidInput(format!("Download nicht gefunden: {id}")))?
-        .into_item()
+    row.ok_or_else(|| {
+        AppError::InvalidInput(tr!(
+            "Download nicht gefunden: {id}",
+            "Download not found: {id}"
+        ))
+    })?
+    .into_item()
 }
 
 /// Everything the engine needs to (re)start a transfer.
@@ -115,7 +120,7 @@ pub async fn record(pool: &SqlitePool, id: &str) -> AppResult<Record> {
     .bind(id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| AppError::InvalidInput(format!("Download nicht gefunden: {id}")))
+    .ok_or_else(|| AppError::InvalidInput(tr!("Download nicht gefunden: {id}", "Download not found: {id}")))
 }
 
 /// Queued transfers (direct + itch) in queue order.
@@ -185,7 +190,7 @@ pub async fn enqueue_handoff(
     let store = StoreSource::parse(&source).filter(|s| *s != StoreSource::Manual);
     let (Some(store), Some(store_game_id)) = (store, store_game_id) else {
         return Err(AppError::InvalidInput(
-            "Dieses Spiel stammt aus keinem Store. Lade es über einen Link oder itch.io herunter oder lege den Pfad fest.".into(),
+            tr!("Dieses Spiel stammt aus keinem Store. Lade es über einen Link oder itch.io herunter oder lege den Pfad fest.", "This game doesn't come from a store. Download it from a link or itch.io, or set its path."),
         ));
     };
     let active: Option<String> = sqlx::query_scalar(
@@ -230,7 +235,10 @@ pub struct NewTransfer {
 pub async fn enqueue_transfer(pool: &SqlitePool, input: &NewTransfer) -> AppResult<String> {
     let title = input.title.trim();
     if title.is_empty() {
-        return Err(AppError::InvalidInput("Bitte gib einen Namen ein.".into()));
+        return Err(AppError::InvalidInput(tr!(
+            "Bitte gib einen Namen ein.",
+            "Please enter a name."
+        )));
     }
     let origin = input.origin.unwrap_or(DownloadOrigin::Direct);
     let base = match (origin, input.itch_game_id) {
@@ -252,8 +260,9 @@ pub async fn enqueue_transfer(pool: &SqlitePool, input: &NewTransfer) -> AppResu
         .fetch_optional(pool)
         .await?;
         if active.is_some() && origin == DownloadOrigin::Itch {
-            return Err(AppError::InvalidInput(format!(
-                "„{title}“ wird bereits heruntergeladen."
+            return Err(AppError::InvalidInput(tr!(
+                "„{title}“ wird bereits heruntergeladen.",
+                "“{title}” is already downloading."
             )));
         }
         if in_library.is_none() && active.is_none() {
@@ -263,9 +272,13 @@ pub async fn enqueue_transfer(pool: &SqlitePool, input: &NewTransfer) -> AppResu
         n += 1;
     }
     let now = now_iso();
-    let note = match origin {
-        DownloadOrigin::Itch => "Von itch.io heruntergeladen.",
-        _ => "Über einen Link heruntergeladen.",
+    let note = if matches!(origin, DownloadOrigin::Itch) {
+        tr!("Von itch.io heruntergeladen.", "Downloaded from itch.io.")
+    } else {
+        tr!(
+            "Über einen Link heruntergeladen.",
+            "Downloaded from a link."
+        )
     };
     sqlx::query(
         "INSERT INTO games (id, title, summary, description, platforms, release_date, created_at) \
@@ -274,13 +287,11 @@ pub async fn enqueue_transfer(pool: &SqlitePool, input: &NewTransfer) -> AppResu
     )
     .bind(&game_id)
     .bind(title)
-    .bind(note)
-    .bind(
-        input
-            .url
-            .as_deref()
-            .map_or_else(|| note.to_owned(), |u| format!("{note}\n\nQuelle: {u}")),
-    )
+    .bind(&note)
+    .bind(input.url.as_deref().map_or_else(
+        || note.clone(),
+        |u| tr!("{note}\n\nQuelle: {u}", "{note}\n\nSource: {u}"),
+    ))
     .bind(serde_json::to_string(&[Platform::current()])?)
     .bind(&now)
     .execute(pool)
@@ -333,8 +344,9 @@ pub async fn set_status(pool: &SqlitePool, id: &str, status: DownloadStatus) -> 
         .await?
     };
     if result.rows_affected() == 0 {
-        return Err(AppError::InvalidInput(format!(
-            "Download nicht gefunden: {id}"
+        return Err(AppError::InvalidInput(tr!(
+            "Download nicht gefunden: {id}",
+            "Download not found: {id}"
         )));
     }
     renumber(pool).await

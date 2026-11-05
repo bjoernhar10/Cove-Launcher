@@ -173,7 +173,10 @@ fn store_url(source: StoreSource, id: &str) -> Option<String> {
 
 fn split_args(raw: &str) -> AppResult<Vec<String>> {
     shlex::split(raw).ok_or_else(|| {
-        AppError::InvalidInput("Startparameter: Anführungszeichen sind nicht geschlossen.".into())
+        AppError::InvalidInput(tr!(
+            "Startparameter: Anführungszeichen sind nicht geschlossen.",
+            "Launch arguments: a quotation mark is not closed."
+        ))
     })
 }
 
@@ -201,7 +204,7 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
             return Ok(LaunchPlan::Url(url));
         }
         return Err(AppError::Launch(
-            "Für dieses Spiel ist noch keine ausführbare Datei festgelegt. Trage sie unter Einstellungen ein.".into(),
+            tr!("Für dieses Spiel ist noch keine ausführbare Datei festgelegt. Trage sie unter Einstellungen ein.", "No executable is set for this game yet. Enter it under Settings."),
         ));
     };
 
@@ -214,12 +217,15 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
     let (program, mut args) = if has_ext("desktop") {
         let content = std::fs::read_to_string(&exe)?;
         let entry = parse_desktop_entry(&content).ok_or_else(|| {
-            AppError::Launch("Die .desktop-Datei enthält keinen gültigen Start-Eintrag.".into())
+            AppError::Launch(tr!(
+                "Die .desktop-Datei enthält keinen gültigen Start-Eintrag.",
+                "The .desktop file has no valid launch entry."
+            ))
         })?;
         let mut parts = split_args(&entry.exec)?.into_iter();
-        let program = parts
-            .next()
-            .ok_or_else(|| AppError::Launch("Exec-Zeile ist leer.".into()))?;
+        let program = parts.next().ok_or_else(|| {
+            AppError::Launch(tr!("Exec-Zeile ist leer.", "The Exec line is empty."))
+        })?;
         if let Some(dir) = entry.working_dir {
             cwd = Some(PathBuf::from(dir));
         }
@@ -228,7 +234,7 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
         match target.options.compatibility_tool {
             CompatibilityTool::Native => {
                 return Err(AppError::Launch(
-                    "Das ist ein Windows-Spiel. Wähle unter Einstellungen → Kompatibilität Proton oder Wine.".into(),
+                    tr!("Das ist ein Windows-Spiel. Wähle unter Einstellungen → Kompatibilität Proton oder Wine.", "This is a Windows game. Choose Proton or Wine under Settings → Compatibility."),
                 ))
             }
             CompatibilityTool::Wine => (PathBuf::from("wine"), vec![executable.to_owned()]),
@@ -502,8 +508,9 @@ impl Launcher {
                 cwd,
             } => {
                 if program.is_absolute() && !program.exists() {
-                    return Err(AppError::Launch(format!(
+                    return Err(AppError::Launch(tr!(
                         "Datei nicht gefunden: {}",
+                        "File not found: {}",
                         program.display()
                     )));
                 }
@@ -526,8 +533,9 @@ impl Launcher {
                     command.process_group(0);
                 }
                 let mut child = command.spawn().map_err(|e| {
-                    AppError::Launch(format!(
+                    AppError::Launch(tr!(
                         "{} konnte nicht gestartet werden: {e}",
+                        "{} could not be started: {e}",
                         program.display()
                     ))
                 })?;

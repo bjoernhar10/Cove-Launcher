@@ -72,7 +72,7 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
     public Task<StoreSession> LoginCompleteAsync(LoginCompleteRequest request, StoreContext context, CancellationToken ct)
     {
         var code = ExtractCode(request.Code)
-            ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, "Das ist kein gültiger Epic-Anmeldecode.");
+            ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, Texts.T("Das ist kein gültiger Epic-Anmeldecode.", "That's not a valid Epic sign-in code."));
         return TokenAsync(new() { ["grant_type"] = "authorization_code", ["code"] = code, ["token_type"] = "eg1" }, ct);
     }
 

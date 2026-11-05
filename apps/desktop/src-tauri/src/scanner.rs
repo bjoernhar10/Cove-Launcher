@@ -412,8 +412,9 @@ fn folder_size(dir: &Path) -> u64 {
 /// `known` = executable paths already in the library.
 pub fn scan(root: &Path, known: &HashSet<String>) -> AppResult<Vec<ScanCandidate>> {
     if !root.is_dir() {
-        return Err(AppError::InvalidInput(format!(
+        return Err(AppError::InvalidInput(tr!(
             "„{}“ ist kein Ordner.",
+            "“{}” is not a folder.",
             root.display()
         )));
     }

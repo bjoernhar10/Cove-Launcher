@@ -38,6 +38,29 @@ pub enum ProviderError {
     Decode(String),
 }
 
+impl ProviderError {
+    /// The text for the UI (the `Display` form stays for the log).
+    pub fn user_text(&self) -> String {
+        match self {
+            Self::Network(detail) => tr!("Keine Verbindung: {detail}", "No connection: {detail}"),
+            Self::Auth(detail) => tr!(
+                "Zugangsdaten ungültig: {detail}",
+                "Invalid credentials: {detail}"
+            ),
+            Self::RateLimited => tr!(
+                "Zu viele Anfragen – bitte kurz warten.",
+                "Too many requests. Please wait a moment."
+            ),
+            Self::NotFound => tr!("Eintrag nicht gefunden", "Entry not found"),
+            Self::Http(status, detail) => format!("HTTP {status}: {detail}"),
+            Self::Decode(detail) => tr!(
+                "Unerwartete Antwort: {detail}",
+                "Unexpected answer: {detail}"
+            ),
+        }
+    }
+}
+
 impl From<reqwest::Error> for ProviderError {
     fn from(e: reqwest::Error) -> Self {
         // Never show the URL: it can hold the user's RAWG key or Twitch client secret.

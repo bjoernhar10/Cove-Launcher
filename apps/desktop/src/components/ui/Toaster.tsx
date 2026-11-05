@@ -1,9 +1,11 @@
+import { useMessages } from "../../i18n/index.ts";
 import { Trophy, X } from "lucide-react";
 import { Link } from "react-router";
 import { cx } from "../../lib/cx.ts";
 import { useToasts } from "../../stores/toasts.ts";
 
 export function Toaster() {
+  const m = useMessages();
   const toasts = useToasts((s) => s.toasts);
   const dismiss = useToasts((s) => s.dismiss);
   return (
@@ -36,7 +38,7 @@ export function Toaster() {
           </div>
           <button
             type="button"
-            aria-label="Hinweis schließen"
+            aria-label={m.common.closeNotice}
             onClick={() => {
               dismiss(t.id);
             }}

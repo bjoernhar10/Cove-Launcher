@@ -17,11 +17,11 @@ public static class StoreHttp
         }
         catch (HttpRequestException e)
         {
-            throw new ConnectorException(ConnectorErrorKind.Network, $"{store} ist nicht erreichbar.", e);
+            throw new ConnectorException(ConnectorErrorKind.Network, Texts.T($"{store} ist nicht erreichbar.", $"{store} can't be reached."), e);
         }
         catch (TaskCanceledException e) when (!ct.IsCancellationRequested)
         {
-            throw new ConnectorException(ConnectorErrorKind.Network, $"{store} antwortet nicht (Zeitüberschreitung).", e);
+            throw new ConnectorException(ConnectorErrorKind.Network, Texts.T($"{store} antwortet nicht (Zeitüberschreitung).", $"{store} isn't responding (timeout)."), e);
         }
 
         using (response)
@@ -40,8 +40,8 @@ public static class StoreHttp
                                                body.Contains("errors.com.epicgames.account.oauth", StringComparison.OrdinalIgnoreCase) =>
                     new ConnectorException(ConnectorErrorKind.AuthFailed, $"{store} hat die Anmeldung abgelehnt."),
                 HttpStatusCode.TooManyRequests =>
-                    new ConnectorException(ConnectorErrorKind.Unavailable, $"{store} meldet zu viele Anfragen, bitte später erneut versuchen."),
-                _ => new ConnectorException(ConnectorErrorKind.Unavailable, $"{store} ist gerade nicht verfügbar (HTTP {(int)response.StatusCode})."),
+                    new ConnectorException(ConnectorErrorKind.Unavailable, Texts.T($"{store} meldet zu viele Anfragen, bitte später erneut versuchen.", $"{store} reports too many requests. Please try again later.")),
+                _ => new ConnectorException(ConnectorErrorKind.Unavailable, Texts.T($"{store} ist gerade nicht verfügbar (HTTP {(int)response.StatusCode}).", $"{store} is not available right now (HTTP {(int)response.StatusCode}).")),
             };
         }
     }

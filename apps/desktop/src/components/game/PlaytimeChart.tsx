@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import type { PlaytimeDay } from "@cove/shared";
 import { useState } from "react";
 import { formatDateShort, formatMinutesShort, formatWeekday } from "../../lib/format.ts";
@@ -8,6 +9,7 @@ import { formatDateShort, formatMinutesShort, formatWeekday } from "../../lib/fo
  * recessive axis, and a visually hidden table for screen readers.
  */
 export function PlaytimeChart({ days, title }: { days: PlaytimeDay[]; title: string }) {
+  const t = useMessages();
   const [hovered, setHovered] = useState<number | null>(null);
   const max = Math.max(60, ...days.map((d) => d.minutes));
   const ceiling = Math.ceil(max / 60) * 60;
@@ -52,7 +54,7 @@ export function PlaytimeChart({ days, title }: { days: PlaytimeDay[]; title: str
             <p className="text-fg-muted">
               {formatWeekday(active.date)}, {formatDateShort(active.date)}
             </p>
-            <p className="num font-medium text-fg">{active.minutes > 0 ? formatMinutesShort(active.minutes) : "Nicht gespielt"}</p>
+            <p className="num font-medium text-fg">{active.minutes > 0 ? formatMinutesShort(active.minutes) : t.common.notPlayed}</p>
           </div>
         )}
         <div className="mt-2 flex justify-between text-xs text-fg-subtle" aria-hidden>

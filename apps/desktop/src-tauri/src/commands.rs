@@ -60,8 +60,9 @@ pub async fn library_add_manual(
 ) -> AppResult<LibraryItem> {
     let path = input.executable_path.trim();
     if !path.is_empty() && !Path::new(path).is_file() {
-        return Err(AppError::InvalidInput(format!(
-            "Datei nicht gefunden: {path}"
+        return Err(AppError::InvalidInput(tr!(
+            "Datei nicht gefunden: {path}",
+            "File not found: {path}"
         )));
     }
     let item = db::library::add_manual(&state.pool, &input).await?;
@@ -101,8 +102,9 @@ pub async fn library_update(
 ) -> AppResult<LibraryItem> {
     if let Some(path) = patch.executable_path.as_deref().map(str::trim) {
         if !path.is_empty() && !Path::new(path).is_file() {
-            return Err(AppError::InvalidInput(format!(
-                "Datei nicht gefunden: {path}"
+            return Err(AppError::InvalidInput(tr!(
+                "Datei nicht gefunden: {path}",
+                "File not found: {path}"
             )));
         }
     }
@@ -117,7 +119,7 @@ pub async fn library_scan_folder(
     let known = db::library::executable_paths(&state.pool).await?;
     tauri::async_runtime::spawn_blocking(move || scanner::scan(Path::new(path.trim()), &known))
         .await
-        .map_err(|e| AppError::InvalidInput(format!("Scan abgebrochen: {e}")))?
+        .map_err(|e| AppError::InvalidInput(tr!("Scan abgebrochen: {e}", "Scan aborted: {e}")))?
 }
 
 #[tauri::command]
@@ -176,6 +178,7 @@ pub async fn settings_update(
     settings: AppSettings,
 ) -> AppResult<AppSettings> {
     db::settings::save(&state.pool, &settings).await?;
+    crate::i18n::set_language(&settings.general.language);
     // Bandwidth limit and parallel downloads apply at once.
     state.downloads.wake();
     db::settings::load(&state.pool, &state.defaults).await
@@ -233,8 +236,9 @@ pub fn plugins_open_folder<R: Runtime>(
     app.opener()
         .open_path(dir.to_string_lossy(), None::<&str>)
         .map_err(|e| {
-            AppError::Launch(format!(
-                "Der Plugin-Ordner konnte nicht geöffnet werden: {e}"
+            AppError::Launch(tr!(
+                "Der Plugin-Ordner konnte nicht geöffnet werden: {e}",
+                "The plugin folder could not be opened: {e}"
             ))
         })
 }
@@ -311,8 +315,9 @@ pub async fn plugin_library_add<R: Runtime>(
     {
         Some(path) => {
             if !Path::new(path).is_file() {
-                return Err(AppError::InvalidInput(format!(
-                    "Datei nicht gefunden: {path}"
+                return Err(AppError::InvalidInput(tr!(
+                    "Datei nicht gefunden: {path}",
+                    "File not found: {path}"
                 )));
             }
             let input = ManualGameInput {
@@ -727,9 +732,10 @@ pub async fn connector_login_complete<R: Runtime>(
     code: String,
 ) -> AppResult<StoreAccount> {
     if code.trim().is_empty() {
-        return Err(AppError::InvalidInput(
-            "Bitte füge den Anmeldecode ein.".into(),
-        ));
+        return Err(AppError::InvalidInput(tr!(
+            "Bitte füge den Anmeldecode ein.",
+            "Please paste the sign-in code."
+        )));
     }
     state.login_flows.cancel(store);
     close_login_window(&app, store);

@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import type { LibraryItem } from "@cove/shared";
 import { Download, Play, Settings2, Square } from "lucide-react";
 import { useState } from "react";
@@ -23,6 +24,7 @@ interface PlayButtonProps {
  * manual without executable → "Einrichten" · store game → "Installieren" / download progress.
  */
 export function PlayButton({ item, size = "md", iconOnly = false, className }: PlayButtonProps) {
+  const t = useMessages();
   const { entry, game } = item;
   const [busy, setBusy] = useState(false);
   const running = useRunningGames((s) => game.id in s.games);
@@ -49,8 +51,8 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
         size={size}
         icon={Square}
         iconOnly={iconOnly}
-        label={label("Läuft – beenden")}
-        title="Spiel beenden"
+        label={label(t.play.runningStop)}
+        title={t.play.stopGame}
         disabled={busy}
         className={className}
         onClick={() =>
@@ -59,7 +61,7 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
           })
         }
       >
-        Läuft
+        {t.play.running}
       </Button>
     );
   }
@@ -71,16 +73,14 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
         size={size}
         icon={Play}
         iconOnly={iconOnly}
-        label={iconOnly ? `${game.title} spielen` : "Spielen"}
+        label={iconOnly ? t.play.playTitle(game.title) : t.play.play}
         disabled={busy}
         className={className}
         onClick={() =>
           void run(async () => {
             const result = await api.library.launchGame(game.id);
             toast(
-              result.tracked
-                ? `„${game.title}“ wird gestartet …`
-                : `„${game.title}“ wird über ${SOURCE_LABELS[entry.source]} gestartet. Die Spielzeit kann Cove hier nicht erfassen.`,
+              result.tracked ? t.play.starting(game.title) : t.play.startingVia(game.title, SOURCE_LABELS[entry.source]),
             );
           })
         }
@@ -96,7 +96,7 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
         size={size}
         icon={Settings2}
         iconOnly={iconOnly}
-        label={label("Einrichten")}
+        label={label(t.play.setUp)}
         className={className}
       />
     );
@@ -106,9 +106,9 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
     const { downloadedBytes, totalBytes, status } = download.download;
     const text =
       status === "handedOff"
-        ? `Installation in ${SOURCE_LABELS[entry.source]}`
+        ? t.play.installingIn(SOURCE_LABELS[entry.source])
         : status === "queued" || totalBytes === 0
-          ? "In Warteschlange"
+          ? t.play.queued
           : formatPercent(downloadedBytes / totalBytes);
     return (
       <Button variant="secondary" size={size} icon={Download} iconOnly={iconOnly} label={label(text)} disabled className={className} />
@@ -121,13 +121,13 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
       size={size}
       icon={Download}
       iconOnly={iconOnly}
-      label={iconOnly ? `${game.title} installieren` : "Installieren"}
+      label={iconOnly ? t.play.installTitle(game.title) : t.play.install}
       disabled={busy}
       className={className}
       onClick={() =>
         void run(async () => {
           await api.downloads.enqueueDownload(game.id);
-          toast(`Installation von „${game.title}“ an ${SOURCE_LABELS[entry.source]} übergeben`);
+          toast(t.play.handedOff(game.title, SOURCE_LABELS[entry.source]));
           invalidateQueries();
         })
       }

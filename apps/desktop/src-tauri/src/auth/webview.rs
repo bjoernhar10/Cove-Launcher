@@ -35,7 +35,10 @@ pub fn classify(url: &str, callback_prefix: &str) -> Navigation {
         let params = parse_query(query.trim_start_matches('?'));
         return match params.get("value").map(String::as_str) {
             Some(code) if !code.is_empty() => Navigation::Code(code.to_owned()),
-            _ => Navigation::Failed("Der Anbieter hat keinen Anmeldecode geliefert.".into()),
+            _ => Navigation::Failed(tr!(
+                "Der Anbieter hat keinen Anmeldecode geliefert.",
+                "The provider didn't return a sign-in code."
+            )),
         };
     }
     if !url.starts_with(callback_prefix) {
@@ -49,7 +52,10 @@ pub fn classify(url: &str, callback_prefix: &str) -> Navigation {
         return Navigation::Code(code.clone());
     }
     if let Some(error) = params.get("error") {
-        return Navigation::Failed(format!("Anmeldung abgelehnt: {error}"));
+        return Navigation::Failed(tr!(
+            "Anmeldung abgelehnt: {error}",
+            "Sign-in declined: {error}"
+        ));
     }
     Navigation::ReadBody
 }
@@ -72,9 +78,9 @@ pub async fn login_in_window<R: Runtime>(
     callback_prefix: &str,
     timeout: Duration,
 ) -> AppResult<String> {
-    let target: tauri::Url = url
-        .parse()
-        .map_err(|_| AppError::LoginFailed("Ungültige Anmeldeadresse.".into()))?;
+    let target: tauri::Url = url.parse().map_err(|_| {
+        AppError::LoginFailed(tr!("Ungültige Anmeldeadresse.", "Invalid sign-in address."))
+    })?;
     if let Some(existing) = app.get_webview_window(label) {
         let _ = existing.destroy();
     }
@@ -106,13 +112,19 @@ pub async fn login_in_window<R: Runtime>(
         })
         .build()
         .map_err(|e| {
-            AppError::LoginFailed(format!("Anmeldefenster konnte nicht geöffnet werden: {e}"))
+            AppError::LoginFailed(tr!(
+                "Anmeldefenster konnte nicht geöffnet werden: {e}",
+                "The sign-in window could not be opened: {e}"
+            ))
         })?;
 
     let closed_tx = tx;
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
-            let _ = closed_tx.send(Err("Die Anmeldung wurde abgebrochen.".into()));
+            let _ = closed_tx.send(Err(tr!(
+                "Die Anmeldung wurde abgebrochen.",
+                "The sign-in was cancelled."
+            )));
         }
     });
 
@@ -121,12 +133,14 @@ pub async fn login_in_window<R: Runtime>(
     match result {
         Ok(Some(Ok(code))) => Ok(code),
         Ok(Some(Err(message))) => Err(AppError::LoginFailed(message)),
-        Ok(None) => Err(AppError::LoginFailed(
-            "Die Anmeldung wurde abgebrochen.".into(),
-        )),
-        Err(_) => Err(AppError::LoginFailed(
-            "Die Anmeldung wurde nicht rechtzeitig abgeschlossen.".into(),
-        )),
+        Ok(None) => Err(AppError::LoginFailed(tr!(
+            "Die Anmeldung wurde abgebrochen.",
+            "The sign-in was cancelled."
+        ))),
+        Err(_) => Err(AppError::LoginFailed(tr!(
+            "Die Anmeldung wurde nicht rechtzeitig abgeschlossen.",
+            "The sign-in wasn't finished in time."
+        ))),
     }
 }
 

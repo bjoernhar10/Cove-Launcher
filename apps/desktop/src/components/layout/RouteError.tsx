@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import { CircleAlert } from "lucide-react";
 import { useEffect } from "react";
 import { isRouteErrorResponse, useRouteError } from "react-router";
@@ -10,22 +11,23 @@ import { Page } from "../ui/Page.tsx";
  * The technical details go to the console, never into the UI.
  */
 export function RouteError() {
+  const t = useMessages();
   const error = useRouteError();
   const notFound = isRouteErrorResponse(error) && error.status === 404;
 
   useEffect(() => {
-    if (!notFound) console.error("[cove] Seite abgestürzt:", error);
+    if (!notFound) console.error("[cove] page crashed:", error);
   }, [error, notFound]);
 
   return (
     <Page>
       <EmptyState
         icon={CircleAlert}
-        title={notFound ? "Diese Seite gibt es nicht" : "Hier ist etwas schiefgelaufen"}
+        title={notFound ? t.routeError.notFoundTitle : t.routeError.crashTitle}
         description={
           notFound
-            ? "Vielleicht wurde sie verschoben. Zurück zur Startseite?"
-            : "Diese Ansicht konnte nicht angezeigt werden. Deine Daten sind sicher. Lade die Ansicht neu oder geh zurück zur Startseite."
+            ? t.routeError.notFoundText
+            : t.routeError.crashText
         }
         actions={
           <>
@@ -36,10 +38,10 @@ export function RouteError() {
                   window.location.reload();
                 }}
               >
-                Neu laden
+                {t.routeError.reload}
               </Button>
             )}
-            <ButtonLink to="/">Zu Home</ButtonLink>
+            <ButtonLink to="/">{t.routeError.home}</ButtonLink>
           </>
         }
       />

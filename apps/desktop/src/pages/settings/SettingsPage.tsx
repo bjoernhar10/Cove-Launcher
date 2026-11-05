@@ -1,3 +1,4 @@
+import { isLanguage, localized, messages, setLanguage, useMessages } from "../../i18n/index.ts";
 import type {
   AccentColor,
   AppSettings,
@@ -33,18 +34,11 @@ import { invalidateQueries } from "../../stores/query.ts";
 import { errorMessage, toast } from "../../stores/toasts.ts";
 import { useUi } from "../../stores/ui.ts";
 
-const TABS = [
-  { id: "general", label: "Allgemein" },
-  { id: "appearance", label: "Aussehen" },
-  { id: "library", label: "Bibliothek" },
-  { id: "accounts", label: "Konten & Stores" },
-  { id: "catalog", label: "Katalog" },
-  { id: "downloads", label: "Downloads" },
-  { id: "plugins", label: "Plugins" },
-  { id: "about", label: "Über Cove" },
-] as const;
+const TABS = ["general", "appearance", "library", "accounts", "catalog", "downloads", "plugins", "about"] as const;
 
-type TabId = (typeof TABS)[number]["id"];
+type TabId = (typeof TABS)[number];
+
+const TAB_LABELS: Record<TabId, string> = localized((m) => m.settings.tabs);
 
 /** Loads settings once and saves every change immediately. */
 function useSettings(): {
@@ -59,10 +53,19 @@ function useSettings(): {
     const { theme, accent } = usePreferences.getState();
     const next = { ...fn(query.data), appearance: { theme, accent } };
     query.update(() => next);
-    api.settings.saveSettings(next).catch((error: unknown) => {
-      toast(errorMessage(error), "danger");
-      query.retry();
-    });
+    const languageChanged = next.general.language !== query.data.general.language;
+    api.settings.saveSettings(next).then(
+      () => {
+        // Texts from the core (errors, store status, reasons) follow the new language.
+        if (!languageChanged) return;
+        invalidateQueries();
+        void queryClient.invalidateQueries();
+      },
+      (error: unknown) => {
+        toast(errorMessage(error), "danger");
+        query.retry();
+      },
+    );
   };
   return {
     settings: query.status === "success" ? query.data : null,
@@ -73,6 +76,7 @@ function useSettings(): {
 }
 
 function GeneralTab() {
+  const t = useMessages();
   const { settings, error, retry, save } = useSettings();
   if (error) return <ErrorState message={error} onRetry={retry} />;
   if (!settings) return <SettingsSkeleton />;
@@ -81,15 +85,16 @@ function GeneralTab() {
     save((s) => ({ ...s, general: { ...s.general, ...patch } }));
   };
   return (
-    <Panel title="Allgemein">
+    <Panel title={t.settings.tabs.general}>
       <Group>
-        <SettingRow title="Sprache" description="Die Sprache der Oberfläche.">
+        <SettingRow title={t.settings.language} description={t.settings.languageHint}>
           <Select
             className="w-40"
-            aria-label="Sprache"
+            aria-label={t.settings.language}
             value={g.language}
             onChange={(language) => {
               set({ language });
+              if (isLanguage(language)) setLanguage(language);
             }}
             options={[
               { value: "de", label: "Deutsch" },
@@ -97,10 +102,10 @@ function GeneralTab() {
             ]}
           />
         </SettingRow>
-        <SettingRow title="Startseite" description="Was Cove nach dem Öffnen zeigt.">
+        <SettingRow title={t.settings.startPage} description={t.settings.startPageHint}>
           <Select
             className="w-40"
-            aria-label="Startseite"
+            aria-label={t.settings.startPage}
             value={g.startPage}
             onChange={(startPage) => {
               set({ startPage });
@@ -111,18 +116,18 @@ function GeneralTab() {
             ]}
           />
         </SettingRow>
-        <SettingRow title="Mit dem System starten" description="Cove öffnet sich automatisch nach der Anmeldung.">
+        <SettingRow title={t.settings.autostart} description={t.settings.autostartHint}>
           <Switch
-            label="Mit dem System starten"
+            label={t.settings.autostart}
             checked={g.launchOnStartup}
             onChange={(launchOnStartup) => {
               set({ launchOnStartup });
             }}
           />
         </SettingRow>
-        <SettingRow title="Beim Schließen in den Infobereich" description="Cove läuft im Hintergrund weiter, z. B. für Downloads.">
+        <SettingRow title={t.settings.tray} description={t.settings.trayHint}>
           <Switch
-            label="Beim Schließen in den Infobereich"
+            label={t.settings.tray}
             checked={g.minimizeToTray}
             onChange={(minimizeToTray) => {
               set({ minimizeToTray });
@@ -193,6 +198,7 @@ function ThemeCard({ theme, selected, onSelect }: { theme: ThemePreference; sele
 }
 
 function AppearanceTab() {
+  const t = useMessages();
   const theme = usePreferences((s) => s.theme);
   const accent = usePreferences((s) => s.accent);
   const setTheme = usePreferences((s) => s.setTheme);
@@ -201,27 +207,27 @@ function AppearanceTab() {
   const toggleSidebar = usePreferences((s) => s.toggleSidebar);
 
   return (
-    <Panel title="Aussehen" description="Änderungen werden sofort übernommen.">
+    <Panel title={t.settings.tabs.appearance} description={t.settings.appearanceHint}>
       <div className="flex flex-col gap-10">
         <div>
-          <h3 className="mb-3 text-sm font-medium text-fg">Design</h3>
-          <div role="radiogroup" aria-label="Design" className="flex flex-wrap gap-3">
-            {(["light", "dark", "system"] as const).map((t) => (
+          <h3 className="mb-3 text-sm font-medium text-fg">{t.settings.theme}</h3>
+          <div role="radiogroup" aria-label={t.settings.theme} className="flex flex-wrap gap-3">
+            {(["light", "dark", "system"] as const).map((option) => (
               <ThemeCard
-                key={t}
-                theme={t}
-                selected={theme === t}
+                key={option}
+                theme={option}
+                selected={theme === option}
                 onSelect={() => {
-                  setTheme(t);
+                  setTheme(option);
                 }}
               />
             ))}
           </div>
         </div>
         <div>
-          <h3 className="text-sm font-medium text-fg">Akzentfarbe</h3>
-          <p className="mt-1 mb-3 text-sm text-fg-muted">Eine ruhige Farbe für aktive Elemente und Hervorhebungen.</p>
-          <div role="radiogroup" aria-label="Akzentfarbe" className="flex flex-wrap gap-4">
+          <h3 className="text-sm font-medium text-fg">{t.settings.accent}</h3>
+          <p className="mt-1 mb-3 text-sm text-fg-muted">{t.settings.accentHint}</p>
+          <div role="radiogroup" aria-label={t.settings.accent} className="flex flex-wrap gap-4">
             {ACCENTS.map((a) => (
               <AccentSwatch
                 key={a}
@@ -235,8 +241,8 @@ function AppearanceTab() {
           </div>
         </div>
         <Group>
-          <SettingRow title="Kompakte Seitenleiste" description={`Zeigt nur Symbole. Auch mit ${modKeyLabel}+B umschaltbar.`}>
-            <Switch label="Kompakte Seitenleiste" checked={collapsed} onChange={toggleSidebar} />
+          <SettingRow title={t.settings.compactSidebar} description={t.settings.compactSidebarHint(modKeyLabel)}>
+            <Switch label={t.settings.compactSidebar} checked={collapsed} onChange={toggleSidebar} />
           </SettingRow>
         </Group>
       </div>
@@ -245,6 +251,7 @@ function AppearanceTab() {
 }
 
 function LibraryTab() {
+  const t = useMessages();
   const { settings, error, retry, save } = useSettings();
   const openAddGame = useUi((s) => s.openAddGame);
   const [folder, setFolder] = useState("");
@@ -261,11 +268,11 @@ function LibraryTab() {
   }
 
   return (
-    <Panel title="Bibliothek" description="Ordner, in denen Cove nach installierten Spielen sucht.">
-      <h3 className="mb-3 text-sm font-medium text-fg">Scan-Ordner</h3>
+    <Panel title={t.settings.tabs.library} description={t.settings.libraryHint}>
+      <h3 className="mb-3 text-sm font-medium text-fg">{t.settings.scanFolders}</h3>
       {lib.scanFolders.length === 0 ? (
         <div className="rounded-lg border border-border">
-          <EmptyState compact icon={FolderOpen} title="Noch keine Ordner" description="Füge einen Ordner hinzu, z. B. deinen Spiele- oder Steam-Library-Ordner." />
+          <EmptyState compact icon={FolderOpen} title={t.settings.noFolders} description={t.settings.noFoldersHint} />
         </div>
       ) : (
         <ul className="rounded-lg border border-border">
@@ -278,7 +285,7 @@ function LibraryTab() {
                 size="sm"
                 iconOnly
                 icon={FolderSearch}
-                label={`${path} scannen`}
+                label={t.settings.scanPath(path)}
                 onClick={() => {
                   openAddGame({ mode: "scan", folder: path });
                 }}
@@ -288,7 +295,7 @@ function LibraryTab() {
                 size="sm"
                 iconOnly
                 icon={Trash2}
-                label={`${path} entfernen`}
+                label={t.settings.removePath(path)}
                 onClick={() => {
                   save((s) => ({ ...s, library: { ...s.library, scanFolders: s.library.scanFolders.filter((p) => p !== path) } }));
                 }}
@@ -299,8 +306,8 @@ function LibraryTab() {
       )}
       <form className="mt-3 flex gap-2" onSubmit={add}>
         <Input
-          aria-label="Neuer Scan-Ordner"
-          placeholder="/pfad/zum/ordner"
+          aria-label={t.settings.newFolder}
+          placeholder={t.settings.folderPlaceholder}
           spellCheck={false}
           value={folder}
           onChange={(e) => {
@@ -308,14 +315,14 @@ function LibraryTab() {
           }}
         />
         <Button type="submit" icon={Plus} disabled={!folder.trim()}>
-          Hinzufügen
+          {t.addGame.add}
         </Button>
       </form>
       <div className="mt-8">
         <Group>
-          <SettingRow title="Beim Start scannen" description="Neue Spiele in den Ordnern automatisch erkennen.">
+          <SettingRow title={t.settings.scanOnStart} description={t.settings.scanOnStartHint}>
             <Switch
-              label="Beim Start scannen"
+              label={t.settings.scanOnStart}
               checked={lib.scanOnStartup}
               onChange={(scanOnStartup) => {
                 save((s) => ({ ...s, library: { ...s.library, scanOnStartup } }));
@@ -338,8 +345,12 @@ const PROVIDERS: {
 }[] = [
   {
     id: "igdb",
-    name: "IGDB (eigene Twitch-Keys)",
-    help: "Kostenlos über eine Twitch-Anwendung: dev.twitch.tv/console → „Anwendung registrieren“, dann Client-ID und ein neues Client-Secret kopieren.",
+    get name() {
+      return messages().settings.igdbName;
+    },
+    get help() {
+      return messages().settings.igdbHelp;
+    },
     fields: [
       { key: "clientId", label: "Client-ID", secret: false },
       { key: "clientSecret", label: "Client-Secret", secret: true },
@@ -348,7 +359,9 @@ const PROVIDERS: {
   {
     id: "rawg",
     name: "RAWG",
-    help: "Kostenloser API-Key unter rawg.io/apidocs (Konto nötig).",
+    get help() {
+      return messages().settings.rawgHelp;
+    },
     fields: [{ key: "apiKey", label: "API-Key", secret: true }],
   },
 ];
@@ -360,6 +373,7 @@ function toCredentials(id: CatalogProviderId, values: Record<string, string>): C
 }
 
 function ProviderCard({ provider, configured }: { provider: (typeof PROVIDERS)[number]; configured: boolean }) {
+  const t = useMessages();
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -372,7 +386,7 @@ function ProviderCard({ provider, configured }: { provider: (typeof PROVIDERS)[n
     try {
       await api.catalog.setCatalogCredentials(toCredentials(provider.id, values));
       setValues({});
-      toast(`${provider.id === "igdb" ? "IGDB" : "RAWG"} verbunden`);
+      toast(t.settings.providerConnected(provider.id === "igdb" ? "IGDB" : "RAWG"));
       invalidateQueries();
     } catch (e: unknown) {
       setError(errorMessage(e));
@@ -385,7 +399,7 @@ function ProviderCard({ provider, configured }: { provider: (typeof PROVIDERS)[n
     setBusy(true);
     try {
       await api.catalog.clearCatalogCredentials(provider.id);
-      toast(`${provider.id === "igdb" ? "IGDB" : "RAWG"}-Zugangsdaten entfernt`);
+      toast(t.settings.providerRemoved(provider.id === "igdb" ? "IGDB" : "RAWG"));
       invalidateQueries();
     } catch (e: unknown) {
       toast(errorMessage(e), "danger");
@@ -400,7 +414,7 @@ function ProviderCard({ provider, configured }: { provider: (typeof PROVIDERS)[n
         <h3 className="text-sm font-medium text-fg">{provider.name}</h3>
         <span className={cx("inline-flex items-center gap-2 text-xs", configured ? "text-accent-text" : "text-fg-subtle")}>
           {configured && <Check aria-hidden />}
-          {configured ? "Eingerichtet" : "Nicht eingerichtet"}
+          {configured ? t.settings.configured : t.settings.notConfigured}
         </span>
       </div>
       <p className="mt-1 text-sm text-fg-muted">{provider.help}</p>
@@ -413,7 +427,7 @@ function ProviderCard({ provider, configured }: { provider: (typeof PROVIDERS)[n
                 type={field.secret ? "password" : "text"}
                 autoComplete="off"
                 spellCheck={false}
-                placeholder={configured ? "Gespeichert. Zum Ändern neu eingeben." : ""}
+                placeholder={configured ? t.settings.savedPlaceholder : ""}
                 value={values[field.key] ?? ""}
                 onChange={(e) => {
                   setValues((v) => ({ ...v, [field.key]: e.target.value }));
@@ -426,11 +440,11 @@ function ProviderCard({ provider, configured }: { provider: (typeof PROVIDERS)[n
       </div>
       <div className="mt-5 flex gap-2">
         <Button type="submit" variant="primary" disabled={!complete || busy}>
-          {busy ? "Wird geprüft …" : "Speichern & prüfen"}
+          {busy ? t.settings.checking : t.settings.saveAndCheck}
         </Button>
         {configured && (
           <Button variant="ghost" disabled={busy} onClick={() => void remove()}>
-            Entfernen
+            {t.game.remove}
           </Button>
         )}
       </div>
@@ -440,13 +454,10 @@ function ProviderCard({ provider, configured }: { provider: (typeof PROVIDERS)[n
 
 const IGDB_URL = "https://www.igdb.com";
 
-const SOURCE_NAMES: Record<CatalogSource, string> = {
-  cove: "Cove-Katalogdienst",
-  igdb: "eigene IGDB-Keys",
-  rawg: "eigener RAWG-Key",
-};
+const SOURCE_NAMES: Record<CatalogSource, string> = localized((m) => m.settings.sourceNames);
 
 function CatalogTab() {
+  const t = useMessages();
   const status = useCatalogStatus();
   const { settings, save } = useSettings();
   const [matching, setMatching] = useState(false);
@@ -458,9 +469,7 @@ function CatalogTab() {
       const open = items.filter((i) => i.entry.matchStatus === "none");
       for (const item of open) await api.library.rematch(item.game.id);
       toast(
-        open.length === 0
-          ? "Alle Spiele sind bereits zugeordnet."
-          : `${String(open.length)} ${open.length === 1 ? "Spiel wird" : "Spiele werden"} im Hintergrund abgeglichen.`,
+        open.length === 0 ? t.settings.allMatched : t.settings.matchingCount(open.length),
       );
     } catch (e: unknown) {
       toast(errorMessage(e), "danger");
@@ -471,8 +480,8 @@ function CatalogTab() {
 
   return (
     <Panel
-      title="Katalog"
-      description="Spieldaten, Cover und Screenshots stammen von IGDB. Antworten werden lokal gespeichert und stehen auch offline zur Verfügung."
+      title={t.settings.tabs.catalog}
+      description={t.settings.catalogHint}
     >
       {status.isPending && <SettingsSkeleton />}
       {status.isError && <ErrorState message={errorMessage(status.error)} onRetry={() => void status.refetch()} />}
@@ -483,19 +492,19 @@ function CatalogTab() {
               <>
                 <p className="flex items-center gap-2 text-sm font-medium text-fg">
                   <Check aria-hidden className="text-accent-text" />
-                  {status.data.sources[0] === "cove" ? "Bereit, keine Einrichtung nötig" : "Katalog eingerichtet"}
+                  {status.data.sources[0] === "cove" ? t.settings.catalogReady : t.settings.catalogConfigured}
                 </p>
                 <p className="mt-1 text-sm text-fg-muted">
-                  Reihenfolge: {status.data.sources.map((s) => SOURCE_NAMES[s]).join(", dann ")}, zuletzt gespeicherte Daten.
+                  {t.settings.order(status.data.sources.map((s) => SOURCE_NAMES[s]))}
                 </p>
               </>
             ) : (
               <>
-                <p className="text-sm font-medium text-fg">Katalog nicht verfügbar</p>
+                <p className="text-sm font-medium text-fg">{t.catalogue.unavailableTitle}</p>
                 <p className="mt-1 text-sm text-fg-muted">
                   {status.data.coveService.available
-                    ? "Der Cove-Katalogdienst ist ausgeschaltet. Schalte ihn unter „Erweitert“ ein oder trage eigene Zugangsdaten ein."
-                    : "Dieser Build enthält keinen Cove-Katalogdienst. Trage unter „Erweitert“ eigene Zugangsdaten ein."}
+                    ? t.settings.serviceOff
+                    : t.settings.serviceMissing}
                 </p>
               </>
             )}
@@ -504,11 +513,11 @@ function CatalogTab() {
           {status.data.sources.length > 0 && (
             <Group>
               <SettingRow
-                title="Bibliothek abgleichen"
-                description="Sucht für Spiele ohne Zuordnung den passenden Katalog-Eintrag. Bei Unsicherheit fragt Cove nach."
+                title={t.settings.matchLibrary}
+                description={t.settings.matchLibraryHint}
               >
                 <Button icon={RefreshCw} disabled={matching} onClick={() => void matchLibrary()}>
-                  Abgleichen
+                  {t.settings.match}
                 </Button>
               </SettingRow>
             </Group>
@@ -517,21 +526,17 @@ function CatalogTab() {
           <details className="group" open={status.data.sources.length === 0}>
             <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium text-fg [&::-webkit-details-marker]:hidden">
               <ChevronRight aria-hidden className="text-fg-subtle transition-transform duration-150 ease-out group-open:rotate-90" />
-              Erweitert
+              {t.settings.advanced}
             </summary>
             <div className="mt-4 flex flex-col gap-6">
               {settings && (
                 <Group>
                   <SettingRow
-                    title="Cove-Katalogdienst verwenden"
-                    description={
-                      status.data.coveService.available
-                        ? "Liefert IGDB-Daten ohne eigene Zugangsdaten. Ausgeschaltet nutzt Cove nur deine eigenen Keys."
-                        : "In diesem Build nicht verfügbar."
-                    }
+                    title={t.settings.useService}
+                    description={status.data.coveService.available ? t.settings.useServiceHint : t.settings.notInBuild}
                   >
                     <Switch
-                      label="Cove-Katalogdienst verwenden"
+                      label={t.settings.useService}
                       checked={settings.catalog.useCoveService && status.data.coveService.available}
                       disabled={!status.data.coveService.available}
                       onChange={(useCoveService) => {
@@ -543,8 +548,7 @@ function CatalogTab() {
                 </Group>
               )}
               <p className="text-sm text-fg-muted">
-                Eigene Zugangsdaten nutzt Cove, wenn der Cove-Katalogdienst nicht erreichbar oder ausgeschaltet ist. Sie
-                liegen im Schlüsselbund deines Systems und werden hier nie wieder angezeigt.
+                {t.settings.ownKeysHint}
               </p>
               {PROVIDERS.map((p) => (
                 <ProviderCard key={p.id} provider={p} configured={status.data.configured[p.id]} />
@@ -560,6 +564,7 @@ function CatalogTab() {
 const MB = 1e6;
 
 function DownloadsTab() {
+  const t = useMessages();
   const { settings, error, retry, save } = useSettings();
   if (error) return <ErrorState message={error} onRetry={retry} />;
   if (!settings) return <SettingsSkeleton />;
@@ -570,9 +575,9 @@ function DownloadsTab() {
   const limited = d.bandwidthLimitBytesPerSecond !== null;
 
   return (
-    <Panel title="Downloads">
+    <Panel title={t.settings.tabs.downloads}>
       <div className="flex max-w-xl flex-col gap-8">
-        <Field label="Zielordner" description="Neue Spiele werden hier installiert.">
+        <Field label={t.settings.targetFolder} description={t.settings.targetFolderHint}>
           {(props) => (
             <Input
               {...props}
@@ -585,9 +590,9 @@ function DownloadsTab() {
           )}
         </Field>
         <Group>
-          <SettingRow title="Bandbreite begrenzen" description="Lässt Platz für andere Dinge im Netzwerk.">
+          <SettingRow title={t.settings.limitBandwidth} description={t.settings.limitBandwidthHint}>
             <Switch
-              label="Bandbreite begrenzen"
+              label={t.settings.limitBandwidth}
               checked={limited}
               onChange={(on) => {
                 set({ bandwidthLimitBytesPerSecond: on ? 10 * MB : null });
@@ -595,13 +600,13 @@ function DownloadsTab() {
             />
           </SettingRow>
           {limited && (
-            <SettingRow title="Limit" description="In Megabyte pro Sekunde.">
+            <SettingRow title={t.settings.limit} description={t.settings.limitHint}>
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
                   min={1}
                   max={1000}
-                  aria-label="Limit in MB/s"
+                  aria-label={t.settings.limitLabel}
                   className="num w-24 text-right"
                   value={Math.round((d.bandwidthLimitBytesPerSecond ?? 0) / MB)}
                   onChange={(e) => {
@@ -613,10 +618,10 @@ function DownloadsTab() {
               </div>
             </SettingRow>
           )}
-          <SettingRow title="Gleichzeitige Downloads" description="Wie viele Spiele parallel geladen werden.">
+          <SettingRow title={t.settings.concurrent} description={t.settings.concurrentHint}>
             <Select
               className="w-24"
-              aria-label="Gleichzeitige Downloads"
+              aria-label={t.settings.concurrent}
               value={String(d.maxConcurrent) as "1" | "2" | "3"}
               onChange={(v) => {
                 set({ maxConcurrent: Number(v) });
@@ -634,27 +639,15 @@ function DownloadsTab() {
   );
 }
 
-const COMPONENT_LABELS: Record<ComponentVersion["name"], string> = {
-  core: "Kern",
-  connectors: "Store-Verbindungen",
-  recommender: "Empfehlungen",
-};
+const COMPONENT_LABELS: Record<ComponentVersion["name"], string> = localized((m) => m.settings.components);
 
 /** What is off while a service is unavailable (the rest of Cove keeps working). */
-const COMPONENT_IMPACT: Record<ComponentVersion["name"], string> = {
-  core: "",
-  connectors: "Anmelden und Abgleichen mit Steam, GOG und Epic ist gerade aus.",
-  recommender: "Cove zeigt einfache Vorschläge statt persönlicher Empfehlungen.",
-};
+const COMPONENT_IMPACT: Record<ComponentVersion["name"], string> = localized((m) => m.settings.componentImpact);
 
-const SERVICE_STATUS_LABELS: Record<ServiceStatus, string> = {
-  running: "Läuft",
-  idle: "Startet bei Bedarf",
-  unavailable: "Nicht verfügbar",
-  notInstalled: "Nicht enthalten",
-};
+const SERVICE_STATUS_LABELS: Record<ServiceStatus, string> = localized((m) => m.settings.serviceStatus);
 
 function UpdateSection() {
+  const t = useMessages();
   const [state, setState] = useState<
     | { phase: "idle" }
     | { phase: "checking" }
@@ -691,22 +684,22 @@ function UpdateSection() {
   const available = state.phase === "result" ? state.check.available : null;
   return (
     <div aria-live="polite">
-      <h3 className="mb-3 text-sm font-medium text-fg">Updates</h3>
+      <h3 className="mb-3 text-sm font-medium text-fg">{t.settings.updates}</h3>
       {state.phase === "installing" ? (
         <div className="max-w-md">
           <p className="text-sm text-fg-muted">
-            Update wird geladen und geprüft{" "}
+            {t.settings.updateLoading}{" "}
             {state.progress?.totalBytes ? <span className="num">{formatPercent(state.progress.downloadedBytes / state.progress.totalBytes)}</span> : "…"}
           </p>
-          <ProgressBar value={state.progress?.downloadedBytes ?? 0} max={state.progress?.totalBytes ?? 0} label="Update-Fortschritt" className="mt-3" />
+          <ProgressBar value={state.progress?.downloadedBytes ?? 0} max={state.progress?.totalBytes ?? 0} label={t.settings.updateProgress} className="mt-3" />
         </div>
       ) : (
         <div className="flex max-w-md flex-col items-start gap-3">
-          {state.phase === "result" && !available && <p className="text-sm text-fg-muted">Cove ist auf dem neuesten Stand.</p>}
+          {state.phase === "result" && !available && <p className="text-sm text-fg-muted">{t.settings.upToDate}</p>}
           {state.phase === "result" && available && (
             <div className="text-sm">
               <p className="text-fg">
-                Version <span className="num">{available.version}</span> ist verfügbar.
+                {t.settings.versionAvailable(available.version)}
               </p>
               {available.notes && <p className="mt-1 whitespace-pre-line text-fg-muted">{available.notes}</p>}
               {state.check.installHint && <p className="mt-2 text-fg-muted">{state.check.installHint}</p>}
@@ -721,11 +714,11 @@ function UpdateSection() {
                   void install(state.check);
                 }}
               >
-                Installieren und neu starten
+                {t.settings.installRestart}
               </Button>
             )}
             <Button icon={RefreshCw} disabled={state.phase === "checking"} onClick={() => void check()}>
-              {state.phase === "checking" ? "Suche …" : "Nach Updates suchen"}
+              {state.phase === "checking" ? t.settings.searching : t.settings.checkUpdates}
             </Button>
           </div>
         </div>
@@ -735,10 +728,11 @@ function UpdateSection() {
 }
 
 function AboutTab() {
+  const t = useMessages();
   const query = useQuery("about", api.system.getAbout);
 
   return (
-    <Panel title="Über Cove">
+    <Panel title={t.settings.tabs.about}>
       {query.status === "loading" && <SettingsSkeleton />}
       {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
       {query.status === "success" && (
@@ -746,9 +740,9 @@ function AboutTab() {
           <div>
             <p className="text-xl font-semibold tracking-tight text-fg">Cove</p>
             <p className="num mt-1 text-sm text-fg-muted">
-              Version {query.data.appVersion} · {PLATFORM_LABELS[query.data.platform]}
+              {t.settings.version(query.data.appVersion)} · {PLATFORM_LABELS[query.data.platform]}
             </p>
-            <p className="mt-3 max-w-md text-sm text-fg-muted">Ein ruhiger Ort für alle deine Spiele, egal aus welchem Store.</p>
+            <p className="mt-3 max-w-md text-sm text-fg-muted">{t.settings.tagline}</p>
             <p className="mt-3 text-sm text-fg-muted">
               Game data provided by{" "}
               <a
@@ -767,7 +761,7 @@ function AboutTab() {
             </p>
           </div>
           <div>
-            <h3 className="mb-3 text-sm font-medium text-fg">Komponenten</h3>
+            <h3 className="mb-3 text-sm font-medium text-fg">{t.settings.componentsTitle}</h3>
             <dl className="m-0 max-w-md rounded-lg border border-border px-4 text-sm">
               {query.data.components.map((c) => (
                 <div key={c.name} className="flex items-start justify-between gap-4 border-b border-border py-3 last:border-b-0">
@@ -799,21 +793,22 @@ const PANELS: Record<TabId, () => ReactNode> = {
 };
 
 export function SettingsPage() {
+  const t = useMessages();
   const { tab } = useParams();
-  const current = TABS.find((t) => t.id === tab);
+  const current = TABS.find((x) => x === tab);
   if (!current) return <Navigate to="/settings/general" replace />;
-  const PanelComponent = PANELS[current.id];
+  const PanelComponent = PANELS[current];
 
   return (
     <Page className="max-w-5xl">
       <h1 className="mb-8 text-xl font-semibold tracking-tight text-fg">Settings</h1>
       <div className="grid grid-cols-[200px_1fr] gap-12">
-        <nav aria-label="Einstellungen">
+        <nav aria-label={t.game.settings}>
           <ul className="flex flex-col gap-1">
-            {TABS.map((t) => (
-              <li key={t.id}>
+            {TABS.map((id) => (
+              <li key={id}>
                 <NavLink
-                  to={`/settings/${t.id}`}
+                  to={`/settings/${id}`}
                   className={({ isActive }) =>
                     cx(
                       "flex h-8 items-center rounded-md px-3 text-sm transition-colors duration-150 ease-out",
@@ -821,7 +816,7 @@ export function SettingsPage() {
                     )
                   }
                 >
-                  {t.label}
+                  {TAB_LABELS[id]}
                 </NavLink>
               </li>
             ))}

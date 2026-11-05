@@ -172,9 +172,10 @@ fn secret_key(store: StoreSource) -> String {
 
 fn connectable(store: StoreSource) -> AppResult<StoreSource> {
     if store == StoreSource::Manual {
-        return Err(AppError::InvalidInput(
-            "Manuelle Spiele haben kein Konto.".into(),
-        ));
+        return Err(AppError::InvalidInput(tr!(
+            "Manuelle Spiele haben kein Konto.",
+            "Manual games have no account."
+        )));
     }
     Ok(store)
 }
@@ -278,8 +279,9 @@ impl StoreService {
                 db::sources::set_needs_reauth(&self.pool, store).await?;
                 return Err(AppError::ReauthRequired(store.display_name().into()));
             }
-            return Err(AppError::InvalidInput(format!(
+            return Err(AppError::InvalidInput(tr!(
                 "Du bist nicht bei {} angemeldet.",
+                "You're not signed in to {}.",
                 store.display_name()
             )));
         };
@@ -371,8 +373,12 @@ impl StoreService {
     // ───────────── local + import ─────────────
 
     pub async fn detect_local(&self, store: Option<StoreSource>) -> AppResult<Vec<LocalStoreGame>> {
-        let home =
-            dirs_home().ok_or_else(|| AppError::Launch("Kein Benutzerordner gefunden.".into()))?;
+        let home = dirs_home().ok_or_else(|| {
+            AppError::Launch(tr!(
+                "Kein Benutzerordner gefunden.",
+                "No home folder found."
+            ))
+        })?;
         let value = self
             .rpc
             .call(
@@ -1011,6 +1017,16 @@ mod sidecar_contract {
             .await
             .unwrap_err();
         assert!(matches!(error, AppError::InvalidInput(_)), "{error:?}");
+        crate::i18n::set_thread_english(Some(true));
+        let english = stores
+            .login_complete(StoreSource::Epic, None, Some("not a code!"), None)
+            .await
+            .unwrap_err();
+        crate::i18n::set_thread_english(None);
+        assert_eq!(
+            english.user_message(),
+            "That's not a valid Epic sign-in code."
+        );
 
         // Local detection with a fake home folder.
         let home = tempfile::tempdir().unwrap();

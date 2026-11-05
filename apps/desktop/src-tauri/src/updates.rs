@@ -19,9 +19,10 @@ pub struct UpdaterRegistered;
 
 fn updater<R: Runtime>(app: &AppHandle<R>) -> AppResult<Updater> {
     if app.try_state::<UpdaterRegistered>().is_none() {
-        return Err(AppError::Update(
-            "Updates sind in diesem Build nicht eingerichtet.".into(),
-        ));
+        return Err(AppError::Update(tr!(
+            "Updates sind in diesem Build nicht eingerichtet.",
+            "Updates aren't set up in this build."
+        )));
     }
     app.updater().map_err(|e| update_error(&e))
 }
@@ -37,17 +38,17 @@ fn can_self_update() -> bool {
 
 fn install_hint() -> Option<String> {
     (!can_self_update()).then(|| {
-        "Cove wurde über ein Paket (.deb/.rpm) installiert. Aktualisiere es über deine Paketverwaltung oder lade die neue Version von GitHub."
-            .to_owned()
+        tr!("Cove wurde über ein Paket (.deb/.rpm) installiert. Aktualisiere es über deine Paketverwaltung oder lade die neue Version von GitHub.", "Cove was installed from a package (.deb/.rpm). Update it with your package manager or download the new version from GitHub.")
     })
 }
 
 /// Turns updater failures into plain text; details go to the log.
 fn update_error(error: &impl std::fmt::Display) -> AppError {
     eprintln!("[updater] {error}");
-    AppError::Update(
-        "Der Update-Server ist gerade nicht erreichbar. Versuch es später noch einmal.".into(),
-    )
+    AppError::Update(tr!(
+        "Der Update-Server ist gerade nicht erreichbar. Versuch es später noch einmal.",
+        "The update server can't be reached right now. Please try again later."
+    ))
 }
 
 pub async fn check<R: Runtime>(app: &AppHandle<R>) -> AppResult<UpdateCheck> {
@@ -72,9 +73,10 @@ pub async fn install<R: Runtime>(app: &AppHandle<R>) -> AppResult<()> {
     }
     let updater = updater(app)?;
     let Some(update) = updater.check().await.map_err(|e| update_error(&e))? else {
-        return Err(AppError::Update(
-            "Cove ist bereits auf dem neuesten Stand.".into(),
-        ));
+        return Err(AppError::Update(tr!(
+            "Cove ist bereits auf dem neuesten Stand.",
+            "Cove is already up to date."
+        )));
     };
     let progress_app = app.clone();
     let mut downloaded: u64 = 0;
@@ -96,8 +98,7 @@ pub async fn install<R: Runtime>(app: &AppHandle<R>) -> AppResult<()> {
         .map_err(|e| {
             eprintln!("[updater] {e}");
             AppError::Update(
-                "Das Update konnte nicht installiert werden. Deine bisherige Version bleibt erhalten."
-                    .into(),
+                tr!("Das Update konnte nicht installiert werden. Deine bisherige Version bleibt erhalten.", "The update could not be installed. Your current version is kept."),
             )
         })?;
     app.restart();

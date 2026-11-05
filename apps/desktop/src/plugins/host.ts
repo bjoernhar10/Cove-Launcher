@@ -1,3 +1,4 @@
+import { language, messages } from "../i18n/index.ts";
 /**
  * Plugin host (UI side). Starts one worker per active plugin, answers its
  * calls and enforces permissions. The core checks data-changing calls a
@@ -154,6 +155,7 @@ export class PluginHost {
       apiVersion: 1,
       plugin: { id: plugin.id, name: plugin.name, version: plugin.version, permissions: [...plugin.granted] },
       entryUrl: plugin.entryUrl,
+      language: language(),
     });
   }
 
@@ -184,7 +186,7 @@ export class PluginHost {
     const permission = (METHOD_PERMISSIONS as Partial<Record<string, string>>)[method];
     if (!permission) throw new PluginCallError("invalidInput", `Unbekannte Methode: ${method}`);
     if (!run.plugin.granted.includes(METHOD_PERMISSIONS[method])) {
-      throw new PluginCallError("plugin", `Das Plugin „${run.plugin.name}“ hat keine Berechtigung „${permission}“.`);
+      throw new PluginCallError("plugin", messages().plugins.noPermission(run.plugin.name, permission));
     }
     const params = isParams(raw) ? raw : {};
     const id = run.plugin.id;
@@ -213,7 +215,7 @@ export class PluginHost {
         const now = Date.now();
         run.notifications = run.notifications.filter((t) => now - t < NOTIFY_WINDOW_MS);
         if (run.notifications.length >= NOTIFY_LIMIT) {
-          throw new PluginCallError("plugin", "Zu viele Hinweise in kurzer Zeit.");
+          throw new PluginCallError("plugin", messages().plugins.tooManyNotices);
         }
         run.notifications.push(now);
         this.ui.notify(run.plugin.name, text(params, "message", 200), optionalText(params, "gameId"));
@@ -244,7 +246,7 @@ export class PluginHost {
     }
     const others = run.items.filter((i) => i.id !== itemId);
     if (others.length >= MAX_SIDEBAR_ITEMS) {
-      throw new PluginCallError("plugin", `Ein Plugin kann höchstens ${String(MAX_SIDEBAR_ITEMS)} Einträge anlegen.`);
+      throw new PluginCallError("plugin", messages().plugins.tooManyItems(MAX_SIDEBAR_ITEMS));
     }
     run.items = [...others, { pluginId: run.plugin.id, pluginName: run.plugin.name, id: itemId, label, icon, pickFile }];
     this.ui.setSidebarItems(run.plugin.id, run.items);

@@ -1,3 +1,4 @@
+import { localized, useMessages } from "../i18n/index.ts";
 import {
   closestCenter,
   DndContext,
@@ -50,10 +51,11 @@ const ORIGIN_LABELS: Record<DownloadItem["download"]["origin"], string> = {
 
 /** Store install running in the store's own client. */
 function HandedOff({ item }: { item: DownloadItem }) {
+  const t = useMessages();
   const { download, game } = item;
   const store = ORIGIN_LABELS[download.origin];
   return (
-    <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={`Installation ${game.title}`}>
+    <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={t.downloads.installation(game.title)}>
       <GameCover game={game} kind="header" aspect="landscape" showTitle={false} className="w-36 shrink-0 rounded-md" />
       <div className="min-w-0 flex-1">
         <Link to={`/library/${game.id}`} className="block truncate text-base font-medium text-fg hover:underline">
@@ -61,14 +63,14 @@ function HandedOff({ item }: { item: DownloadItem }) {
         </Link>
         <p className="mt-1 flex items-center gap-2 text-sm text-fg-muted">
           <ExternalLink aria-hidden />
-          Installation läuft in {download.origin === "steam" || navigator.userAgent.includes("Windows") ? store : `Heroic (${store})`}.
+          {t.downloads.installingIn(download.origin === "steam" || navigator.userAgent.includes("Windows") ? store : `Heroic (${store})`)}
         </p>
-        <p className="mt-1 text-xs text-fg-subtle">Cove erkennt automatisch, wenn das Spiel installiert ist.</p>
+        <p className="mt-1 text-xs text-fg-subtle">{t.downloads.detectsInstall}</p>
       </div>
       <Button
         iconOnly
         icon={X}
-        label={`${game.title} nicht mehr verfolgen`}
+        label={t.downloads.stopTracking(game.title)}
         onClick={() => void act(() => api.downloads.cancelDownload(download.id))}
       />
     </article>
@@ -76,6 +78,7 @@ function HandedOff({ item }: { item: DownloadItem }) {
 }
 
 function ActiveDownload({ item }: { item: DownloadItem }) {
+  const t = useMessages();
   const { download, game } = item;
   if (download.status === "handedOff") return <HandedOff item={item} />;
   const paused = download.status === "paused";
@@ -85,7 +88,7 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
   const eta = download.bytesPerSecond > 0 && known ? remaining / download.bytesPerSecond : Number.POSITIVE_INFINITY;
 
   return (
-    <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={`Download ${game.title}`}>
+    <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={t.downloads.download(game.title)}>
       <GameCover game={game} kind="header" aspect="landscape" showTitle={false} className="w-36 shrink-0 rounded-md" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-4">
@@ -93,28 +96,28 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
             {game.title}
           </Link>
           <span className="num shrink-0 text-sm font-medium text-fg">
-            {busy ? "100 %" : known ? formatPercent(download.downloadedBytes / download.totalBytes) : ""}
+            {busy ? formatPercent(1) : known ? formatPercent(download.downloadedBytes / download.totalBytes) : ""}
           </span>
         </div>
         <ProgressBar
           value={busy ? 1 : download.downloadedBytes}
           max={busy ? 1 : Math.max(download.totalBytes, 1)}
-          label={`Fortschritt ${game.title}`}
+          label={t.home.progressOf(game.title)}
           tone={paused ? "muted" : "accent"}
           className="mt-3"
         />
         <p className="num mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
           <span>
             {formatBytes(download.downloadedBytes)}
-            {known && <> von {formatBytes(download.totalBytes)}</>}
+            {known && <> {t.downloads.of} {formatBytes(download.totalBytes)}</>}
           </span>
-          {download.status === "verifying" && <span>Prüfsumme wird geprüft</span>}
-          {download.status === "extracting" && <span>Wird entpackt und eingerichtet</span>}
-          {paused && <span>Pausiert</span>}
+          {download.status === "verifying" && <span>{t.downloads.verifying}</span>}
+          {download.status === "extracting" && <span>{t.downloads.extracting}</span>}
+          {paused && <span>{t.downloads.paused}</span>}
           {download.status === "downloading" && (
             <>
               <span>{formatSpeed(download.bytesPerSecond)}</span>
-              {known && <span>Noch {formatEta(eta)}</span>}
+              {known && <span>{t.downloads.remaining(formatEta(eta))}</span>}
             </>
           )}
           <span>{ORIGIN_LABELS[download.origin]}</span>
@@ -122,17 +125,18 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
       </div>
       <div className="flex shrink-0 gap-1">
         {busy ? null : paused ? (
-          <Button iconOnly icon={Play} label={`${game.title} fortsetzen`} onClick={() => void act(() => api.downloads.resumeDownload(download.id))} />
+          <Button iconOnly icon={Play} label={t.downloads.resume(game.title)} onClick={() => void act(() => api.downloads.resumeDownload(download.id))} />
         ) : (
-          <Button iconOnly icon={Pause} label={`${game.title} pausieren`} onClick={() => void act(() => api.downloads.pauseDownload(download.id))} />
+          <Button iconOnly icon={Pause} label={t.downloads.pause(game.title)} onClick={() => void act(() => api.downloads.pauseDownload(download.id))} />
         )}
-        <Button iconOnly icon={X} label={`${game.title} abbrechen`} onClick={() => void act(() => api.downloads.cancelDownload(download.id))} />
+        <Button iconOnly icon={X} label={t.downloads.cancel(game.title)} onClick={() => void act(() => api.downloads.cancelDownload(download.id))} />
       </div>
     </article>
   );
 }
 
 function QueueRow({ item, position }: { item: DownloadItem; position: number }) {
+  const t = useMessages();
   const { download, game } = item;
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: download.id });
   return (
@@ -147,7 +151,7 @@ function QueueRow({ item, position }: { item: DownloadItem; position: number }) 
       <button
         ref={setActivatorNodeRef}
         type="button"
-        aria-label={`${game.title} verschieben (Leertaste, dann Pfeiltasten)`}
+        aria-label={t.downloads.move(game.title)}
         className="inline-flex size-8 cursor-grab items-center justify-center rounded-md text-fg-subtle hover:bg-hover hover:text-fg active:cursor-grabbing"
         {...attributes}
         {...listeners}
@@ -164,7 +168,7 @@ function QueueRow({ item, position }: { item: DownloadItem; position: number }) 
         size="sm"
         iconOnly
         icon={X}
-        label={`${game.title} aus der Warteschlange entfernen`}
+        label={t.downloads.removeFromQueue(game.title)}
         onClick={() => void act(() => api.downloads.cancelDownload(download.id))}
       />
     </li>
@@ -172,6 +176,7 @@ function QueueRow({ item, position }: { item: DownloadItem; position: number }) 
 }
 
 function Queue({ items }: { items: DownloadItem[] }) {
+  const t = useMessages();
   const [order, setOrder] = useState<string[] | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -197,12 +202,12 @@ function Queue({ items }: { items: DownloadItem[] }) {
       onDragEnd={onDragEnd}
       accessibility={{
         screenReaderInstructions: {
-          draggable: "Leertaste zum Aufnehmen, Pfeiltasten zum Verschieben, Leertaste zum Ablegen, Escape zum Abbrechen.",
+          draggable: t.downloads.dragInstructions,
         },
       }}
     >
       <SortableContext items={effective} strategy={verticalListSortingStrategy}>
-        <ul className="rounded-lg border border-border" aria-label="Warteschlange">
+        <ul className="rounded-lg border border-border" aria-label={t.downloads.queue}>
           {effective.map((id, index) => {
             const item = byId.get(id);
             return item ? <QueueRow key={id} item={item} position={index + 1} /> : null;
@@ -214,12 +219,15 @@ function Queue({ items }: { items: DownloadItem[] }) {
 }
 
 const HISTORY_STATUS = {
-  completed: { label: "Abgeschlossen", icon: CircleCheck, className: "text-fg-muted" },
-  failed: { label: "Fehlgeschlagen", icon: CircleAlert, className: "text-danger" },
-  cancelled: { label: "Abgebrochen", icon: CircleX, className: "text-fg-subtle" },
+  completed: { icon: CircleCheck, className: "text-fg-muted" },
+  failed: { icon: CircleAlert, className: "text-danger" },
+  cancelled: { icon: CircleX, className: "text-fg-subtle" },
 } as const;
 
+const HISTORY_LABELS = localized((m) => m.downloads.history);
+
 function HistoryRow({ item }: { item: DownloadItem }) {
+  const t = useMessages();
   const { download, game } = item;
   const status = download.status === "failed" ? "failed" : download.status === "cancelled" ? "cancelled" : "completed";
   const meta = HISTORY_STATUS[status];
@@ -238,7 +246,7 @@ function HistoryRow({ item }: { item: DownloadItem }) {
               {download.checksumVerified && (
                 <span className="ml-2 inline-flex items-center gap-1 align-middle">
                   <ShieldCheck aria-hidden />
-                  Prüfsumme bestätigt
+                  {t.downloads.checksumOk}
                 </span>
               )}
             </>
@@ -247,12 +255,12 @@ function HistoryRow({ item }: { item: DownloadItem }) {
       </div>
       <span className={cx("flex items-center gap-2 text-xs", meta.className)}>
         <Icon aria-hidden />
-        {meta.label}
+        {HISTORY_LABELS[status]}
       </span>
       <span className="w-28 text-right text-xs text-fg-subtle">{download.finishedAt ? formatRelative(download.finishedAt) : ""}</span>
       {status === "failed" ? (
         <Button size="sm" icon={RotateCcw} onClick={() => void act(() => api.downloads.retryDownload(download.id))}>
-          Erneut
+          {t.downloads.retry}
         </Button>
       ) : (
         <span className="w-22" aria-hidden />
@@ -262,6 +270,7 @@ function HistoryRow({ item }: { item: DownloadItem }) {
 }
 
 export function DownloadsPage() {
+  const t = useMessages();
   const items = useDownloads((s) => s.items);
   const loaded = useDownloads((s) => s.loaded);
   const error = useDownloads((s) => s.error);
@@ -282,7 +291,7 @@ export function DownloadsPage() {
           setDialog("itch");
         }}
       >
-        Von itch.io
+        {t.downloads.fromItch}
       </Button>
       <Button
         variant="primary"
@@ -291,7 +300,7 @@ export function DownloadsPage() {
           setDialog("url");
         }}
       >
-        Download per Link
+        {t.downloads.byLink}
       </Button>
     </>
   );
@@ -302,9 +311,9 @@ export function DownloadsPage() {
         title="Downloads"
         description={
           active.some((i) => i.download.status === "downloading") ? (
-            <span className="num">Gesamt {formatSpeed(totalSpeed)}</span>
+            <span className="num">{t.downloads.total(formatSpeed(totalSpeed))}</span>
           ) : (
-            "Downloads, Installationen und Store-Übergaben"
+            t.downloads.subtitle
           )
         }
         actions={addActions}
@@ -313,7 +322,7 @@ export function DownloadsPage() {
       <ItchDialog open={dialog === "itch"} onClose={close} />
 
       {!loaded && (
-        <LoadingRegion label="Downloads werden geladen" className="flex flex-col gap-3">
+        <LoadingRegion label={t.downloads.loading} className="flex flex-col gap-3">
           <Skeleton className="h-28 rounded-lg" />
           <Skeleton className="h-48 rounded-lg" />
         </LoadingRegion>
@@ -324,17 +333,17 @@ export function DownloadsPage() {
       {loaded && !error && items.length === 0 && (
         <EmptyState
           icon={Download}
-          title="Keine Downloads"
-          description="Lade DRM-freie Spiele per Link oder von itch.io herunter. Store-Spiele installierst du über die Bibliothek; Cove übergibt sie an Steam, GOG oder Epic."
-          actions={<ButtonLink to="/library">Zur Bibliothek</ButtonLink>}
+          title={t.downloads.emptyTitle}
+          description={t.downloads.emptyText}
+          actions={<ButtonLink to="/library">{t.downloads.toLibrary}</ButtonLink>}
         />
       )}
 
       {loaded && items.length > 0 && (
         <>
-          <Section title="Aktiv">
+          <Section title={t.downloads.active}>
             {active.length === 0 ? (
-              <p className="rounded-lg border border-border px-4 py-6 text-center text-sm text-fg-muted">Gerade wird nichts heruntergeladen.</p>
+              <p className="rounded-lg border border-border px-4 py-6 text-center text-sm text-fg-muted">{t.downloads.noneActive}</p>
             ) : (
               <div className="flex flex-col gap-3">
                 {active.map((item) => (
@@ -344,26 +353,26 @@ export function DownloadsPage() {
             )}
           </Section>
 
-          <Section title="Warteschlange" description={queued.length > 1 ? "Zum Umsortieren ziehen oder per Tastatur verschieben." : undefined}>
+          <Section title={t.downloads.queue} description={queued.length > 1 ? t.downloads.reorderHint : undefined}>
             {queued.length === 0 ? (
-              <p className="rounded-lg border border-border px-4 py-6 text-center text-sm text-fg-muted">Die Warteschlange ist leer.</p>
+              <p className="rounded-lg border border-border px-4 py-6 text-center text-sm text-fg-muted">{t.downloads.queueEmpty}</p>
             ) : (
               <Queue items={queued} />
             )}
           </Section>
 
           <Section
-            title="Verlauf"
+            title={t.downloads.historyTitle}
             actions={
               history.length > 0 ? (
                 <Button variant="ghost" size="sm" onClick={() => void act(() => api.downloads.clearDownloadHistory())}>
-                  Verlauf leeren
+                  {t.downloads.clearHistory}
                 </Button>
               ) : undefined
             }
           >
             {history.length === 0 ? (
-              <p className="rounded-lg border border-border px-4 py-6 text-center text-sm text-fg-muted">Noch keine abgeschlossenen Downloads.</p>
+              <p className="rounded-lg border border-border px-4 py-6 text-center text-sm text-fg-muted">{t.downloads.historyEmpty}</p>
             ) : (
               <ul className="rounded-lg border border-border">
                 {history.map((item) => (

@@ -1,3 +1,4 @@
+import { localized, useMessages } from "../../i18n/index.ts";
 import type { PluginInfo, PluginManifestPreview, PluginPermission } from "@cove/shared";
 import { ChevronDown, FolderOpen, Plus, Puzzle, ShieldCheck, Trash2 } from "lucide-react";
 import { useState, type SyntheticEvent } from "react";
@@ -14,8 +15,9 @@ import { errorMessage, toast } from "../../stores/toasts.ts";
 import { Panel, SettingsSkeleton } from "./parts.tsx";
 
 function PermissionList({ permissions }: { permissions: PluginPermission[] }) {
+  const t = useMessages();
   if (permissions.length === 0) {
-    return <p className="text-sm text-fg-muted">Dieses Plugin braucht keine Berechtigungen.</p>;
+    return <p className="text-sm text-fg-muted">{t.pluginsTab.noPermissions}</p>;
   }
   return (
     <ul className="flex flex-col gap-3">
@@ -45,15 +47,16 @@ function PermissionDialog({
   onClose: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const t = useMessages();
   return (
     <Dialog
       open={plugin !== null}
       onClose={onClose}
-      title={plugin ? `„${plugin.name}“ hinzufügen?` : ""}
-      description={plugin ? `Version ${plugin.version} von ${plugin.author}. Das Plugin darf:` : undefined}
+      title={plugin ? t.pluginsTab.addConfirm(plugin.name) : ""}
+      description={plugin ? t.pluginsTab.addDescription(plugin.version, plugin.author) : undefined}
       footer={
         <>
-          <Button onClick={onClose}>Abbrechen</Button>
+          <Button onClick={onClose}>{t.common.cancel}</Button>
           <Button
             variant="primary"
             disabled={busy}
@@ -73,7 +76,7 @@ function PermissionDialog({
         <>
           <PermissionList permissions={plugin.permissions} />
           <p className="mt-5 text-xs text-fg-subtle">
-            Plugins laufen abgeschottet: ohne Internet, ohne Zugriff auf deine Dateien und nur mit den Rechten oben. Installiere trotzdem nur Plugins aus Quellen, denen du vertraust.
+            {t.pluginsTab.sandboxNote}
           </p>
         </>
       )}
@@ -82,6 +85,7 @@ function PermissionDialog({
 }
 
 function InstallDialog({ open, onClose, onInstalled }: { open: boolean; onClose: () => void; onInstalled: () => void }) {
+  const t = useMessages();
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PluginManifestPreview | null>(null);
@@ -106,12 +110,12 @@ function InstallDialog({ open, onClose, onInstalled }: { open: boolean; onClose:
     return (
       <PermissionDialog
         plugin={preview}
-        confirmLabel={preview.alreadyInstalled ? "Aktualisieren" : "Installieren"}
+        confirmLabel={preview.alreadyInstalled ? t.pluginsTab.update : t.play.install}
         onClose={close}
         onConfirm={async () => {
           try {
             await api.plugins.installPlugin(path);
-            toast(`„${preview.name}“ installiert`);
+            toast(t.pluginsTab.installed(preview.name));
             onInstalled();
             close();
           } catch (e: unknown) {
@@ -123,14 +127,14 @@ function InstallDialog({ open, onClose, onInstalled }: { open: boolean; onClose:
   }
 
   return (
-    <Dialog open={open} onClose={close} title="Plugin installieren" description="Gib den Ordner des Plugins an, in dem die plugin.json liegt.">
+    <Dialog open={open} onClose={close} title={t.pluginsTab.install} description={t.pluginsTab.installHint}>
       <form className="flex flex-col gap-4" onSubmit={(e) => void inspect(e)} noValidate>
-        <Field label="Ordner" error={error}>
+        <Field label={t.addGame.folder} error={error}>
           {(props) => (
             <Input
               {...props}
               autoFocus
-              placeholder="/home/du/Downloads/mein-plugin"
+              placeholder={t.pluginsTab.folderPlaceholder}
               value={path}
               onChange={(e) => {
                 setPath(e.target.value);
@@ -141,10 +145,10 @@ function InstallDialog({ open, onClose, onInstalled }: { open: boolean; onClose:
         </Field>
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={close}>
-            Abbrechen
+            {t.common.cancel}
           </Button>
           <Button type="submit" variant="primary" disabled={path.trim() === ""}>
-            Weiter
+            {t.detail.next}
           </Button>
         </div>
       </form>
@@ -152,14 +156,10 @@ function InstallDialog({ open, onClose, onInstalled }: { open: boolean; onClose:
   );
 }
 
-const STATUS_TEXT: Record<PluginInfo["status"], string> = {
-  active: "Aktiv",
-  disabled: "Deaktiviert",
-  needsApproval: "Wartet auf deine Freigabe",
-  invalid: "Fehlerhaft",
-};
+const STATUS_TEXT: Record<PluginInfo["status"], string> = localized((m) => m.pluginsTab.status);
 
 function PluginRow({ plugin, onChanged, onReview }: { plugin: PluginInfo; onChanged: () => void; onReview: () => void }) {
+  const t = useMessages();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -188,18 +188,18 @@ function PluginRow({ plugin, onChanged, onReview }: { plugin: PluginInfo; onChan
           </p>
           {plugin.description && <p className="mt-1 text-sm text-fg-muted">{plugin.description}</p>}
           <p className={plugin.status === "invalid" ? "mt-1 text-xs text-danger" : "mt-1 text-xs text-fg-subtle"}>
-            {plugin.status === "invalid" ? plugin.error : `${STATUS_TEXT[plugin.status]} · von ${plugin.author}`}
+            {plugin.status === "invalid" ? plugin.error : `${STATUS_TEXT[plugin.status]} · ${t.pluginsTab.by(plugin.author)}`}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {plugin.status === "needsApproval" && (
             <Button variant="primary" size="sm" onClick={onReview}>
-              Prüfen
+              {t.pluginsTab.review}
             </Button>
           )}
           {(plugin.status === "active" || plugin.status === "disabled") && (
             <Switch
-              label={`${plugin.name} aktivieren`}
+              label={t.pluginsTab.enable(plugin.name)}
               checked={plugin.status === "active"}
               disabled={busy}
               onChange={(on) => void run(() => api.plugins.setPluginEnabled(plugin.id, on))}
@@ -211,9 +211,9 @@ function PluginRow({ plugin, onChanged, onReview }: { plugin: PluginInfo; onChan
               size="sm"
               iconOnly
               icon={Trash2}
-              label={`${plugin.name} entfernen`}
+              label={t.settings.removePath(plugin.name)}
               disabled={busy}
-              onClick={() => void run(() => api.plugins.uninstallPlugin(plugin.id), `„${plugin.name}“ entfernt`)}
+              onClick={() => void run(() => api.plugins.uninstallPlugin(plugin.id), t.pluginsTab.removed(plugin.name))}
             />
           )}
         </div>
@@ -228,7 +228,7 @@ function PluginRow({ plugin, onChanged, onReview }: { plugin: PluginInfo; onChan
               setOpen((o) => !o);
             }}
           >
-            Berechtigungen ({plugin.permissions.length})
+            {t.pluginsTab.permissions(plugin.permissions.length)}
             <ChevronDown aria-hidden className={open ? "rotate-180 transition-transform duration-150 ease-out" : "transition-transform duration-150 ease-out"} />
           </button>
           {open && (
@@ -243,6 +243,7 @@ function PluginRow({ plugin, onChanged, onReview }: { plugin: PluginInfo; onChan
 }
 
 export function PluginsTab() {
+  const t = useMessages();
   const query = useQuery("plugins", api.plugins.listPlugins);
   const [installing, setInstalling] = useState(false);
   const [review, setReview] = useState<PluginInfo | null>(null);
@@ -253,7 +254,7 @@ export function PluginsTab() {
   }
 
   return (
-    <Panel title="Plugins" description="Plugins erweitern Cove. Sie laufen abgeschottet und dürfen nur, was du ihnen erlaubst.">
+    <Panel title={t.settings.tabs.plugins} description={t.pluginsTab.description}>
       <div className="mb-4 flex flex-wrap gap-2">
         <Button
           variant="primary"
@@ -262,7 +263,7 @@ export function PluginsTab() {
             setInstalling(true);
           }}
         >
-          Plugin installieren
+          {t.pluginsTab.install}
         </Button>
         <Button
           icon={FolderOpen}
@@ -272,7 +273,7 @@ export function PluginsTab() {
             });
           }}
         >
-          Plugin-Ordner öffnen
+          {t.pluginsTab.openFolder}
         </Button>
       </div>
       {query.status === "loading" && <SettingsSkeleton />}
@@ -281,8 +282,8 @@ export function PluginsTab() {
         <div className="rounded-lg border border-border">
           <EmptyState
             icon={Puzzle}
-            title="Keine Plugins installiert"
-            description="Installiere ein Plugin aus einem Ordner oder lege es in den Plugin-Ordner."
+            title={t.pluginsTab.emptyTitle}
+            description={t.pluginsTab.emptyText}
             compact
           />
         </div>
@@ -310,7 +311,7 @@ export function PluginsTab() {
       />
       <PermissionDialog
         plugin={review}
-        confirmLabel="Erlauben und aktivieren"
+        confirmLabel={t.pluginsTab.allow}
         onClose={() => {
           setReview(null);
         }}
@@ -318,7 +319,7 @@ export function PluginsTab() {
           if (!review) return;
           try {
             await api.plugins.approvePlugin(review.id);
-            toast(`„${review.name}“ ist aktiv`);
+            toast(t.pluginsTab.active(review.name));
             setReview(null);
             changed();
           } catch (error: unknown) {

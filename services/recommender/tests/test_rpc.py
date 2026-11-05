@@ -114,3 +114,18 @@ def test_errors() -> None:
 
 def test_notifications_get_no_response() -> None:
     assert handle_line('{"jsonrpc":"2.0","method":"system.ping"}') is None
+
+
+def test_set_language_switches_the_reasons() -> None:
+    try:
+        assert call("system.setLanguage", {"language": "en"})["result"] == {"language": "en"}
+        reason = call(
+            "explain_recommendation", {"gameId": "igdb-2", "library": LIBRARY, "catalog": CATALOG}
+        )["result"]
+        assert reason == {"reason": "Because you played Hollow Knight for 40 h"}
+        discover = call("discover_new", {"library": LIBRARY, "catalog": CATALOG, "limit": 5})
+        assert discover["result"]["items"][0]["reason"].startswith("New for you: ")
+        bad = call("system.setLanguage", {"language": "fr"})
+        assert bad["error"]["code"] == INVALID_PARAMS
+    finally:
+        call("system.setLanguage", {"language": "de"})

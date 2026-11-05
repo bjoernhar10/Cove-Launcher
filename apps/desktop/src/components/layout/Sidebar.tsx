@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import { Download } from "lucide-react";
 import { NavLink } from "react-router";
 import { api } from "../../api/index.ts";
@@ -11,6 +12,7 @@ import { MAIN_NAV, SETTINGS_NAV, type NavItem } from "./nav.ts";
 import { PluginSidebarItems } from "./PluginSidebarItems.tsx";
 
 function SidebarLink({ item, collapsed, badge }: { item: NavItem; collapsed: boolean; badge?: number }) {
+  const t = useMessages();
   const Icon = item.icon;
   return (
     <NavLink
@@ -30,7 +32,7 @@ function SidebarLink({ item, collapsed, badge }: { item: NavItem; collapsed: boo
           <Icon aria-hidden className={cx("shrink-0", isActive ? "text-accent-text" : "text-fg-subtle group-hover:text-fg-muted")} />
           {!collapsed && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
           {!collapsed && badge !== undefined && badge > 0 && (
-            <span className="num text-xs text-fg-subtle" aria-label={`${String(badge)} aktiv`}>
+            <span className="num text-xs text-fg-subtle" aria-label={t.sidebar.activeCount(badge)}>
               {badge}
             </span>
           )}
@@ -49,16 +51,17 @@ function SidebarLink({ item, collapsed, badge }: { item: NavItem; collapsed: boo
 }
 
 function DownloadIndicator({ collapsed }: { collapsed: boolean }) {
+  const t = useMessages();
   const items = useDownloads((s) => s.items);
   const running = selectRunning(items);
   if (!running) return null;
   const { downloadedBytes, totalBytes, status } = running.download;
   const pct =
-    status === "verifying" ? "Prüfen" : status === "extracting" ? "Entpacken" : totalBytes > 0 ? formatPercent(downloadedBytes / totalBytes) : "…";
+    status === "verifying" ? t.sidebar.verifying : status === "extracting" ? t.sidebar.extracting : totalBytes > 0 ? formatPercent(downloadedBytes / totalBytes) : "…";
   return (
     <NavLink
       to="/downloads"
-      aria-label={`Download läuft: ${running.game.title}, ${pct}`}
+      aria-label={t.sidebar.downloadRunning(running.game.title, pct)}
       title={collapsed ? `${running.game.title} · ${pct}` : undefined}
       className={cx("mb-2 block rounded-md transition-colors duration-150 ease-out hover:bg-hover", collapsed ? "mx-auto w-10 px-2 py-2" : "mx-0 px-3 py-2")}
     >
@@ -70,12 +73,13 @@ function DownloadIndicator({ collapsed }: { collapsed: boolean }) {
           <span className="num shrink-0 text-fg-subtle">{pct}</span>
         </div>
       )}
-      <ProgressBar value={downloadedBytes} max={totalBytes} label="Download-Fortschritt" className="mt-2" />
+      <ProgressBar value={downloadedBytes} max={totalBytes} label={t.sidebar.downloadProgress} className="mt-2" />
     </NavLink>
   );
 }
 
 export function Sidebar() {
+  const t = useMessages();
   const collapsed = usePreferences((s) => s.sidebarCollapsed);
   const items = useDownloads((s) => s.items);
   const pending = selectActive(items).length + selectQueued(items).length;
@@ -83,7 +87,7 @@ export function Sidebar() {
 
   return (
     <aside
-      aria-label="Hauptnavigation"
+      aria-label={t.sidebar.mainNav}
       className={cx(
         "flex shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-200 ease-out",
         collapsed ? "w-16" : "w-60",
@@ -95,7 +99,7 @@ export function Sidebar() {
         </span>
       </div>
 
-      <nav aria-label="Bereiche" className={cx("flex flex-col gap-1 pt-3", collapsed ? "px-0" : "px-3")}>
+      <nav aria-label={t.sidebar.sections} className={cx("flex flex-col gap-1 pt-3", collapsed ? "px-0" : "px-3")}>
         {MAIN_NAV.map((item) => (
           <SidebarLink key={item.to} item={item} collapsed={collapsed} {...(item.to === "/downloads" ? { badge: pending } : {})} />
         ))}
@@ -117,7 +121,7 @@ export function Sidebar() {
             {!collapsed && (
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-fg">{profile.data.displayName}</p>
-                <p className="truncate text-xs text-fg-subtle">Lokales Profil</p>
+                <p className="truncate text-xs text-fg-subtle">{t.sidebar.localProfile}</p>
               </div>
             )}
           </>

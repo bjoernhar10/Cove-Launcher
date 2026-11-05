@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
 import { useHistoryNav } from "../../hooks/useHistoryNav.ts";
 import { useHotkey } from "../../hooks/useHotkey.ts";
@@ -10,6 +11,7 @@ import { WindowControls } from "./WindowControls.tsx";
 
 /** Top bar = custom title bar: drag region, history, global search, window buttons. */
 export function Topbar() {
+  const t = useMessages();
   const { canBack, canForward, back, forward } = useHistoryNav();
   const collapsed = usePreferences((s) => s.sidebarCollapsed);
   const toggleSidebar = usePreferences((s) => s.toggleSidebar);
@@ -27,11 +29,11 @@ export function Topbar() {
         size="sm"
         iconOnly
         icon={collapsed ? PanelLeftOpen : PanelLeftClose}
-        label={`${collapsed ? "Seitenleiste ausklappen" : "Seitenleiste einklappen"} (${modKeyLabel}+B)`}
+        label={`${collapsed ? t.topbar.expandSidebar : t.topbar.collapseSidebar} (${modKeyLabel}+B)`}
         onClick={toggleSidebar}
       />
-      <Button variant="ghost" size="sm" iconOnly icon={ArrowLeft} label="Zurück (Alt+←)" disabled={!canBack} onClick={back} />
-      <Button variant="ghost" size="sm" iconOnly icon={ArrowRight} label="Vor (Alt+→)" disabled={!canForward} onClick={forward} />
+      <Button variant="ghost" size="sm" iconOnly icon={ArrowLeft} label={`${t.topbar.back} (Alt+←)`} disabled={!canBack} onClick={back} />
+      <Button variant="ghost" size="sm" iconOnly icon={ArrowRight} label={`${t.topbar.forward} (Alt+→)`} disabled={!canForward} onClick={forward} />
 
       <button
         type="button"
@@ -42,7 +44,7 @@ export function Topbar() {
         className="ml-3 flex h-8 w-full max-w-sm items-center gap-2 rounded-md border border-border bg-sidebar px-3 text-sm text-fg-subtle transition-colors duration-150 ease-out hover:border-border-strong"
       >
         <Search aria-hidden />
-        <span className="flex-1 text-left">Spiele, Seiten, Aktionen suchen …</span>
+        <span className="flex-1 text-left">{t.topbar.searchPlaceholder}</span>
         <span className="flex gap-1">
           <Kbd>{modKeyLabel}</Kbd>
           <Kbd>K</Kbd>

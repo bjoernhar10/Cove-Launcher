@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import type { Game } from "@cove/shared";
 import { useState, type CSSProperties } from "react";
 import { cx, unlessSet } from "../../lib/cx.ts";
@@ -27,6 +28,8 @@ interface GameCoverProps {
   titleSize?: "sm" | "base" | "xl";
   /** Variation index, e.g. for screenshots of the same game. */
   variant?: number;
+  /** Alt text instead of the one derived from title and kind (screenshots). */
+  alt?: string;
   className?: string;
 }
 
@@ -42,8 +45,13 @@ export function GameCover({
   titleSize = "base",
   variant = 0,
   className,
+  alt,
 }: GameCoverProps) {
+  const t = useMessages();
   const image = kind === "cover" ? game.artwork.cover : game.artwork.header;
+  // Stored alt texts are in the language they were fetched in; only their
+  // presence counts, the text follows the UI language.
+  const label = image.alt ? (alt ?? (kind === "cover" ? t.cover.cover(game.title) : t.cover.header(game.title))) : "";
   const base = cx("relative overflow-hidden", unlessSet(className, ["rounded-"], "rounded-lg"), ASPECTS[aspect], className);
 
   // Remember the URL that failed (offline and not cached yet) and fall back to the placeholder.
@@ -53,7 +61,7 @@ export function GameCover({
     return (
       <img
         src={url}
-        alt={image.alt}
+        alt={label}
         // Full width unless the caller sets one (thumbnails, the detail-page cover).
         className={cx(base, unlessSet(className, ["w-"], "w-full"), "bg-skeleton object-cover")}
         loading="lazy"
@@ -76,7 +84,7 @@ export function GameCover({
   return (
     <div
       // Without alt text the placeholder is decoration (the title is next to it).
-      {...(image.alt ? { role: "img", "aria-label": image.alt } : { "aria-hidden": true })}
+      {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
       className={base}
       style={{ ...style, containerType: "size" }}
     >

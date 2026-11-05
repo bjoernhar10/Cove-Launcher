@@ -1,3 +1,4 @@
+import { messages } from "../../i18n/index.ts";
 import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router";
 import { AddGameDialog } from "../../features/AddGameDialog.tsx";
@@ -29,9 +30,7 @@ export function AppShell() {
         void api.library.getLibraryItem(event.gameId).then((item) => {
           if (!item) return;
           toast(
-            event.status === "matched"
-              ? `„${item.game.title}“ mit Katalogdaten ergänzt`
-              : `Für „${item.game.title}“ gibt es mehrere Treffer im Katalog. Prüfe die Zuordnung auf der Spielseite.`,
+            event.status === "matched" ? messages().shell.matched(item.game.title) : messages().shell.ambiguous(item.game.title),
           );
         });
       }),
@@ -42,7 +41,7 @@ export function AppShell() {
     () =>
       api.accounts.subscribeAchievementUnlocked((achievement) => {
         invalidateQueries();
-        toast(achievement.title, "neutral", { title: "Achievement freigeschaltet", kind: "achievement", durationMs: 5000 });
+        toast(achievement.title, "neutral", { title: messages().achievements.unlocked, kind: "achievement", durationMs: 5000 });
       }),
     [],
   );
@@ -55,9 +54,9 @@ export function AppShell() {
       api.system.checkForUpdates().then(
         (check) => {
           if (!check.available) return;
-          toast(`Cove ${check.available.version} ist verfügbar.`, "neutral", {
-            title: "Update",
-            action: { label: "Ansehen", to: "/settings/about" },
+          toast(messages().shell.updateAvailable(check.available.version), "neutral", {
+            title: messages().shell.updateTitle,
+            action: { label: messages().shell.updateView, to: "/settings/about" },
             durationMs: 8000,
           });
         },
@@ -87,7 +86,7 @@ export function AppShell() {
         href="#main"
         className="sr-only z-50 rounded-md bg-raised px-3 py-2 text-sm focus:not-sr-only focus:fixed focus:top-2 focus:left-2"
       >
-        Zum Inhalt springen
+        {messages().sidebar.skipToContent}
       </a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">

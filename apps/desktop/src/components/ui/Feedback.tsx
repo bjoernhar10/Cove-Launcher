@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import { CircleAlert, WifiOff, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cx, unlessSet } from "../../lib/cx.ts";
@@ -38,12 +39,13 @@ export function EmptyState({ icon: Icon, title, description, actions, compact = 
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const t = useMessages();
   return (
     <EmptyState
       icon={CircleAlert}
-      title="Das hat nicht geklappt"
+      title={t.common.errorTitle}
       description={message}
-      actions={<Button onClick={onRetry}>Erneut versuchen</Button>}
+      actions={<Button onClick={onRetry}>{t.common.retry}</Button>}
       compact
     />
   );
@@ -112,10 +114,11 @@ export function Avatar({ name, className }: { name: string; className?: string }
 
 /** Subtle hint that cached data is shown because the catalogue is unreachable. */
 export function OfflineBadge() {
+  const t = useMessages();
   return (
     <span
       role="status"
-      title="Der Katalog ist nicht erreichbar. Cove zeigt gespeicherte Daten."
+      title={t.common.offlineHint}
       className="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-xs text-fg-muted"
     >
       <WifiOff aria-hidden />

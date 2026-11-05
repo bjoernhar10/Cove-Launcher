@@ -19,6 +19,10 @@ use tokio::sync::Mutex;
 
 use crate::error::{AppError, AppResult};
 
+/// `CREATE_NO_WINDOW` from the Win32 process creation flags.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 const MAX_STARTS_PER_MINUTE: usize = 3;
 /// First line written by `build.rs` into the placeholder binary.
 pub const PLACEHOLDER_MARKER: &str = "cove-sidecar-placeholder";
@@ -179,6 +183,8 @@ struct Running {
     stdin: ChildStdin,
     stdout: Lines<BufReader<ChildStdout>>,
     next_id: u64,
+    /// UI language this process was last told (`system.setLanguage`).
+    language: Option<&'static str>,
 }
 
 pub struct Sidecar {
@@ -265,7 +271,10 @@ impl Sidecar {
         }
         if starts.len() >= MAX_STARTS_PER_MINUTE {
             return Err(self.unavailable(
-                "lässt sich gerade nicht starten; nächster Versuch in einer Minute",
+                &tr!(
+                    "lässt sich gerade nicht starten; nächster Versuch in einer Minute",
+                    "can't start right now; next try in a minute"
+                ),
                 None,
             ));
         }
@@ -282,18 +291,32 @@ impl Sidecar {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        // Both sidecars are console programs: without this flag Windows opens
+        // an empty console window for each (and closing it kills the sidecar,
+        // which Cove then restarts with a new window).
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
         if let Some(cwd) = &config.cwd {
             command.current_dir(cwd);
         }
         let mut child = command.spawn().map_err(|e| {
             let detail = format!("{}: {e}", config.program.display());
-            self.unavailable("konnte nicht gestartet werden", Some(&detail))
+            self.unavailable(
+                &tr!("konnte nicht gestartet werden", "could not be started"),
+                Some(&detail),
+            )
         })?;
         let stdin = child.stdin.take().ok_or_else(|| {
-            self.unavailable("konnte nicht gestartet werden", Some(&"kein stdin"))
+            self.unavailable(
+                &tr!("konnte nicht gestartet werden", "could not be started"),
+                Some(&"kein stdin"),
+            )
         })?;
         let stdout = child.stdout.take().ok_or_else(|| {
-            self.unavailable("konnte nicht gestartet werden", Some(&"kein stdout"))
+            self.unavailable(
+                &tr!("konnte nicht gestartet werden", "could not be started"),
+                Some(&"kein stdout"),
+            )
         })?;
         if let Some(stderr) = child.stderr.take() {
             let name = config.name.clone();
@@ -309,6 +332,7 @@ impl Sidecar {
             stdin,
             stdout: BufReader::new(stdout).lines(),
             next_id: 1,
+            language: None,
         };
         // Health check: the service must answer a ping before it is used.
         let ping = Self::exchange(
@@ -322,13 +346,41 @@ impl Sidecar {
             Ok(_) => Ok(running),
             Err(e) => {
                 let _ = running.child.kill().await;
-                Err(self.unavailable("startet nicht", Some(&e)))
+                Err(self.unavailable(&tr!("startet nicht", "doesn't start"), Some(&e)))
             }
         }
     }
 
     /// One request/response round trip. Errors other than a JSON-RPC error
     /// leave the process in an unknown state; the caller discards it.
+    /// Tells the process the current UI language before a request when it
+    /// changed (or the process is new). An older build without the method
+    /// answers with an RPC error; its texts then simply stay German.
+    async fn sync_language(running: &mut Running, timeout: Duration) -> Result<(), Exchange> {
+        let wanted = if crate::i18n::is_english() {
+            "en"
+        } else {
+            "de"
+        };
+        if running.language == Some(wanted) {
+            return Ok(());
+        }
+        match Self::exchange(
+            running,
+            "system.setLanguage",
+            json!({ "language": wanted }),
+            timeout,
+        )
+        .await
+        {
+            Ok(_) | Err(Exchange::Rpc(_)) => {
+                running.language = Some(wanted);
+                Ok(())
+            }
+            Err(other) => Err(other),
+        }
+    }
+
     async fn exchange(
         running: &mut Running,
         method: &str,
@@ -390,7 +442,13 @@ impl Sidecar {
     /// Calls `method`; starts or restarts the process as needed.
     pub async fn call(&self, method: &str, params: Value) -> AppResult<Value> {
         let Some(config) = &self.config else {
-            return Err(self.unavailable("ist in diesem Build nicht enthalten", None));
+            return Err(self.unavailable(
+                &tr!(
+                    "ist in diesem Build nicht enthalten",
+                    "isn't included in this build"
+                ),
+                None,
+            ));
         };
         let mut guard = self.running.lock().await;
         // A process that exited since the last call is replaced.
@@ -402,10 +460,17 @@ impl Sidecar {
         if guard.is_none() {
             *guard = Some(self.spawn(config).await?);
         }
-        let running = guard
-            .as_mut()
-            .ok_or_else(|| self.unavailable("konnte nicht gestartet werden", None))?;
-        match Self::exchange(running, method, params, config.request_timeout).await {
+        let running = guard.as_mut().ok_or_else(|| {
+            self.unavailable(
+                &tr!("konnte nicht gestartet werden", "could not be started"),
+                None,
+            )
+        })?;
+        let result = match Self::sync_language(running, config.request_timeout).await {
+            Ok(()) => Self::exchange(running, method, params, config.request_timeout).await,
+            Err(error) => Err(error),
+        };
+        match result {
             Ok(value) => {
                 self.failed
                     .store(false, std::sync::atomic::Ordering::Relaxed);
@@ -417,12 +482,16 @@ impl Sidecar {
                     let _ = dead.child.kill().await;
                 }
                 Err(match other {
-                    Exchange::Timeout => {
-                        self.unavailable("antwortet nicht", Some(&"Zeitüberschreitung"))
-                    }
+                    Exchange::Timeout => self.unavailable(
+                        &tr!("antwortet nicht", "isn't responding"),
+                        Some(&"Zeitüberschreitung"),
+                    ),
                     Exchange::Broken(e) | Exchange::Rpc(RpcError { message: e, .. }) => self
                         .unavailable(
-                            "ist abgestürzt und wird beim nächsten Versuch neu gestartet",
+                            &tr!(
+                                "ist abgestürzt und wird beim nächsten Versuch neu gestartet",
+                                "crashed and will restart on the next try"
+                            ),
                             Some(&e),
                         ),
                 })
@@ -463,9 +532,12 @@ import json, os, sys, time
 mode = sys.argv[1] if len(sys.argv) > 1 else "ok"
 if mode == "dead":
     sys.exit(3)
+language = None
 for line in sys.stdin:
     msg = json.loads(line)
     method, mid = msg["method"], msg["id"]
+    if method == "system.setLanguage":
+        language = msg["params"]["language"]
     if method == "system.ping" and mode == "noping":
         continue
     if method == "crash":
@@ -475,7 +547,7 @@ for line in sys.stdin:
     if method == "fail":
         out = {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "bad params"}}
     else:
-        out = {"jsonrpc": "2.0", "id": mid, "result": {"method": method, "pid": os.getpid()}}
+        out = {"jsonrpc": "2.0", "id": mid, "result": {"method": method, "pid": os.getpid(), "language": language}}
     print("noise that is not json", flush=True)
     print(json.dumps(out), flush=True)
 "#;
@@ -506,6 +578,19 @@ for line in sys.stdin:
         let second = sidecar.call("discover_new", json!({})).await.unwrap();
         assert_eq!(pid(&first), pid(&second), "same process");
         assert_eq!(sidecar.status(), SidecarStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn tells_the_process_the_ui_language() {
+        let dir = tempfile::tempdir().unwrap();
+        let sidecar = sidecar(&dir, "ok");
+        let first = sidecar.call("a", json!({})).await.unwrap();
+        assert_eq!(first["language"], "de", "sent before the first request");
+        crate::i18n::set_thread_english(Some(true));
+        let second = sidecar.call("a", json!({})).await.unwrap();
+        crate::i18n::set_thread_english(None);
+        assert_eq!(second["language"], "en", "sent again after a change");
+        assert_eq!(pid(&first), pid(&second), "no restart needed");
     }
 
     #[tokio::test]

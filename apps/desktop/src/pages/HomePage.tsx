@@ -1,3 +1,4 @@
+import { messages, useMessages } from "../i18n/index.ts";
 import type { LibraryItem } from "@cove/shared";
 import { Compass, Library, Medal, Plus, Trophy } from "lucide-react";
 import { Link } from "react-router";
@@ -15,16 +16,18 @@ import { useUi } from "../stores/ui.ts";
 
 function greeting(): string {
   const hour = new Date().getHours();
-  if (hour < 11) return "Guten Morgen";
-  if (hour < 18) return "Hallo";
-  return "Guten Abend";
+  const h = messages().home;
+  if (hour < 11) return h.morning;
+  if (hour < 18) return h.hello;
+  return h.evening;
 }
 
 function ContinueCard({ item }: { item: LibraryItem }) {
+  const t = useMessages();
   const { game, entry } = item;
   return (
     <article className="group overflow-hidden rounded-lg border border-border bg-surface transition-colors duration-150 ease-out hover:border-border-strong">
-      <Link to={`/library/${game.id}`} className="block focus-visible:-outline-offset-2" aria-label={`${game.title} öffnen`}>
+      <Link to={`/library/${game.id}`} className="block focus-visible:-outline-offset-2" aria-label={t.home.openGame(game.title)}>
         <GameCover game={game} kind="header" aspect="landscape" titleSize="xl" className="rounded-none" />
       </Link>
       <div className="flex items-center gap-4 p-4">
@@ -42,13 +45,14 @@ function ContinueCard({ item }: { item: LibraryItem }) {
 }
 
 function ContinuePlaying() {
+  const t = useMessages();
   const query = useQuery("home/continue", api.home.getContinuePlaying);
   const openAddGame = useUi((s) => s.openAddGame);
 
   return (
-    <Section title="Weiterspielen">
+    <Section title={t.home.continueTitle}>
       {query.status === "loading" && (
-        <LoadingRegion label="Lädt zuletzt gespielte Spiele" className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <LoadingRegion label={t.home.continueLoading} className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2].map((i) => (
             <div key={i} className="overflow-hidden rounded-lg border border-border">
               <Skeleton className="aspect-video rounded-none" />
@@ -68,11 +72,11 @@ function ContinuePlaying() {
         <div className="rounded-lg border border-border">
           <EmptyState
             icon={Library}
-            title="Willkommen bei Cove"
-            description="Hier erscheinen die Spiele, die du zuletzt gespielt hast. Verbinde einen Store oder füge ein Spiel hinzu, um loszulegen."
+            title={t.home.welcomeTitle}
+            description={t.home.welcomeText}
             actions={
               <>
-                <ButtonLink to="/settings/accounts">Store verbinden</ButtonLink>
+                <ButtonLink to="/settings/accounts">{t.home.connectStore}</ButtonLink>
                 <Button
                   variant="primary"
                   icon={Plus}
@@ -80,7 +84,7 @@ function ContinuePlaying() {
                     openAddGame();
                   }}
                 >
-                  Spiel hinzufügen
+                  {t.palette.addGame}
                 </Button>
               </>
             }
@@ -111,19 +115,20 @@ function RowSkeleton({ label }: { label: string }) {
 }
 
 function Recommended() {
+  const t = useMessages();
   const query = useQuery("home/recommended", api.home.getRecommendations);
   return (
-    <ScrollRow title="Für dich empfohlen" description="Basierend auf dem, was du gerne spielst.">
-      {query.status === "loading" && <RowSkeleton label="Lädt Empfehlungen" />}
+    <ScrollRow title={t.home.recommendedTitle} description={t.home.recommendedText}>
+      {query.status === "loading" && <RowSkeleton label={t.home.recommendedLoading} />}
       {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
       {query.status === "success" && query.data.length === 0 && (
         <div className="w-full rounded-lg border border-border">
           <EmptyState
             compact
             icon={Compass}
-            title="Noch keine Empfehlungen"
-            description="Sobald du ein paar Spiele gespielt hast, schlägt dir Cove hier passende Titel vor."
-            actions={<ButtonLink to="/catalogue">Katalog durchstöbern</ButtonLink>}
+            title={t.home.recommendedEmpty}
+            description={t.home.recommendedEmptyText}
+            actions={<ButtonLink to="/catalogue">{t.home.browseCatalogue}</ButtonLink>}
           />
         </div>
       )}
@@ -138,13 +143,14 @@ function Recommended() {
 }
 
 function Discover() {
+  const t = useMessages();
   const query = useQuery("home/discover", api.home.getDiscover);
   return (
-    <ScrollRow title="Neu entdecken" description="Genres, die du noch nicht gespielt hast, die aber zu dir passen.">
-      {query.status === "loading" && <RowSkeleton label="Lädt Vorschläge" />}
+    <ScrollRow title={t.home.discoverTitle} description={t.home.discoverText}>
+      {query.status === "loading" && <RowSkeleton label={t.home.discoverLoading} />}
       {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
       {query.status === "success" && query.data.length === 0 && (
-        <p className="py-6 text-sm text-fg-muted">Gerade gibt es nichts Neues für dich. Schau später wieder vorbei.</p>
+        <p className="py-6 text-sm text-fg-muted">{t.home.discoverEmpty}</p>
       )}
       {query.status === "success" &&
         query.data.map((rec) => (
@@ -157,11 +163,12 @@ function Discover() {
 }
 
 function RecentAchievements() {
+  const t = useMessages();
   const query = useQuery("home/achievements", api.home.getRecentAchievements);
   return (
-    <Section title="Letzte Achievements">
+    <Section title={t.home.achievementsTitle}>
       {query.status === "loading" && (
-        <LoadingRegion label="Lädt Achievements" className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
+        <LoadingRegion label={t.home.achievementsLoading} className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
           {Array.from({ length: 6 }, (_, i) => (
             <div key={i} className="flex items-center gap-3 border-b border-border py-3">
               <Skeleton className="size-10" />
@@ -176,7 +183,7 @@ function RecentAchievements() {
       {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
       {query.status === "success" && query.data.length === 0 && (
         <div className="rounded-lg border border-border">
-          <EmptyState compact icon={Trophy} title="Noch keine Achievements" description="Freigeschaltete Achievements aus all deinen Spielen landen hier." />
+          <EmptyState compact icon={Trophy} title={t.home.achievementsEmpty} description={t.home.achievementsEmptyText} />
         </div>
       )}
       {query.status === "success" && query.data.length > 0 && (
@@ -209,11 +216,12 @@ function RecentAchievements() {
 }
 
 function CoveAchievements() {
+  const t = useMessages();
   const query = useQuery("home/cove-achievements", api.accounts.listCoveAchievements);
   return (
-    <Section title="Cove-Achievements">
+    <Section title={t.home.coveTitle}>
       {query.status === "loading" && (
-        <LoadingRegion label="Lädt Cove-Achievements" className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <LoadingRegion label={t.home.coveLoading} className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-24" />
           ))}
@@ -222,7 +230,7 @@ function CoveAchievements() {
       {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
       {query.status === "success" && query.data.length === 0 && (
         <div className="rounded-lg border border-border">
-          <EmptyState compact icon={Medal} title="Keine Cove-Achievements" description="Plugins können eigene Achievements hinzufügen." />
+          <EmptyState compact icon={Medal} title={t.home.coveEmpty} description={t.home.coveEmptyText} />
         </div>
       )}
       {query.status === "success" && query.data.length > 0 && (
@@ -238,14 +246,14 @@ function CoveAchievements() {
               </div>
               {a.unlockedAt ? (
                 <p className="mt-3 text-xs text-fg-muted">
-                  Freigeschaltet <time dateTime={a.unlockedAt}>{formatRelative(a.unlockedAt)}</time>
+                  {t.home.unlocked} <time dateTime={a.unlockedAt}>{formatRelative(a.unlockedAt)}</time>
                 </p>
               ) : (
                 <div className="mt-3">
                   <p className="num text-xs text-fg-muted">
                     {a.current} / {a.target}
                   </p>
-                  <ProgressBar value={a.current} max={a.target} label={`Fortschritt ${a.title}`} className="mt-2" />
+                  <ProgressBar value={a.current} max={a.target} label={t.home.progressOf(a.title)} className="mt-2" />
                 </div>
               )}
             </li>
@@ -257,11 +265,12 @@ function CoveAchievements() {
 }
 
 export function HomePage() {
+  const t = useMessages();
   return (
     <Page>
       <header className="mb-8">
         <h1 className="text-xl font-semibold tracking-tight text-fg">{greeting()}</h1>
-        <p className="mt-1 text-sm text-fg-muted">Schön, dass du da bist. Hier geht es weiter, wo du aufgehört hast.</p>
+        <p className="mt-1 text-sm text-fg-muted">{t.home.subtitle}</p>
       </header>
       <ContinuePlaying />
       <Recommended />

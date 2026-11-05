@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import type { ReactNode } from "react";
 import { LoadingRegion, Skeleton } from "../../components/ui/Feedback.tsx";
 
@@ -16,8 +17,9 @@ export function Group({ children }: { children: ReactNode }) {
 }
 
 export function SettingsSkeleton() {
+  const t = useMessages();
   return (
-    <LoadingRegion label="Einstellungen werden geladen" className="flex flex-col gap-4">
+    <LoadingRegion label={t.settings.loading} className="flex flex-col gap-4">
       {[0, 1, 2].map((i) => (
         <Skeleton key={i} className="h-14" />
       ))}

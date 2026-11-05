@@ -175,8 +175,9 @@ impl Recommender {
 
     async fn items(&self, method: &str, params: Value) -> AppResult<Vec<Item>> {
         let value = self.sidecar.call(method, params).await?;
-        let items: Items = serde_json::from_value(value)
-            .map_err(|e| AppError::Recommender(format!("unerwartete Antwort: {e}")))?;
+        let items: Items = serde_json::from_value(value).map_err(|e| {
+            AppError::Recommender(tr!("unerwartete Antwort: {e}", "unexpected answer: {e}"))
+        })?;
         Ok(items.items)
     }
 
@@ -240,7 +241,9 @@ impl Recommender {
             .get("reason")
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .ok_or_else(|| AppError::Recommender("Antwort ohne Begründung".into()))
+            .ok_or_else(|| {
+                AppError::Recommender(tr!("Antwort ohne Begründung", "Answer without a reason"))
+            })
     }
 
     /// Catalogue sort "recommended": the first pages, re-ranked for this user.
@@ -461,6 +464,21 @@ mod sidecar_contract {
         assert!(
             items.items.iter().all(|i| i.game_id != "igdb-1"),
             "owned game excluded"
+        );
+
+        // The reasons follow the UI language (system.setLanguage before the request).
+        crate::i18n::set_thread_english(Some(true));
+        let english = sidecar
+            .call(
+                "recommend_for_user",
+                json!({ "library": library, "catalog": catalog, "limit": 1, "now": now_iso() }),
+            )
+            .await;
+        crate::i18n::set_thread_english(None);
+        let english: Items = serde_json::from_value(english.unwrap()).unwrap();
+        assert_eq!(
+            english.items[0].reason,
+            "Because you played Hollow Knight for 40 h"
         );
 
         let discover = sidecar

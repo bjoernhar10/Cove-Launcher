@@ -89,7 +89,7 @@ jobs:
           args: --bundles ${{ matrix.bundles }} --config src-tauri/tauri.release.conf.json
           tagName: ${{ github.ref_name }}
           releaseName: Cove ${{ github.ref_name }}
-          releaseBody: Was neu ist, steht in den Commits seit dem letzten Release.
+          releaseBody: See the commits since the previous release for what changed.
           releaseDraft: true
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true

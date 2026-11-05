@@ -36,7 +36,10 @@ pub fn archive_kind(file_name: &str) -> ArchiveKind {
 }
 
 fn extract_error(e: impl std::fmt::Display) -> AppError {
-    AppError::Download(format!("Das Archiv konnte nicht entpackt werden ({e})."))
+    AppError::Download(tr!(
+        "Das Archiv konnte nicht entpackt werden ({e}).",
+        "The archive could not be unpacked ({e})."
+    ))
 }
 
 /// Relative archive paths only: no `..`, no absolute paths (zip slip).

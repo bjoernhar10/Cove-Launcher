@@ -1,3 +1,4 @@
+import { messages } from "../../i18n/index.ts";
 import type { Game } from "@cove/shared";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
@@ -24,7 +25,7 @@ export function GameCard({ game, to, meta }: GameCardProps) {
         <p className="mt-1 truncate text-xs text-fg-muted">
           {meta ?? (
             <>
-              {genre ? GENRE_LABELS[genre] : "Spiel"}
+              {genre ? GENRE_LABELS[genre] : messages().library.colGame}
               {game.releaseDate && (
                 <>
                   {" · "}

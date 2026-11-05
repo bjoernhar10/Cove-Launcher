@@ -2,6 +2,7 @@
 
 Methods (params/results mirror `packages/shared`):
 - system.ping
+- system.setLanguage    {language: "de" | "en"}                       → {language}
 - recommend_for_user    {library, catalog, limit?, now?, candidateIds?} → {items}
 - discover_new          {library, catalog, limit?, now?}               → {items}
 - similar_games         {gameId, catalog, limit?}                       → {items}
@@ -14,7 +15,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import cast
 
-from cove_recommender import __version__, engine
+from cove_recommender import __version__, engine, texts
 from cove_recommender.data import (
     InvalidParamsError,
     parse_catalog,
@@ -54,6 +55,14 @@ def _game_id(params: Mapping[str, object]) -> str:
 def _ping(params: Mapping[str, object]) -> JsonObject:
     message = params.get("message", "")
     return {"service": "recommender", "version": __version__, "message": f"pong: {message}"}
+
+
+def _set_language(params: Mapping[str, object]) -> JsonObject:
+    language = params.get("language")
+    if language not in ("de", "en"):
+        raise InvalidParamsError("language must be 'de' or 'en'")
+    texts.set_language("en" if language == "en" else "de")
+    return {"language": texts.language()}
 
 
 def _recommend(params: Mapping[str, object]) -> JsonObject:
@@ -111,6 +120,7 @@ def _explain(params: Mapping[str, object]) -> JsonObject:
 
 HANDLERS: dict[str, Handler] = {
     "system.ping": _ping,
+    "system.setLanguage": _set_language,
     "recommend_for_user": _recommend,
     "discover_new": _discover,
     "similar_games": _similar,

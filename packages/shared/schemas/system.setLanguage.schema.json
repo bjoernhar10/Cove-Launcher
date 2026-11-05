@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cove.local/schemas/system.setLanguage.schema.json",
+  "title": "system.setLanguage",
+  "$defs": {
+    "params": {
+      "type": "object",
+      "required": ["language"],
+      "properties": {
+        "language": { "enum": ["de", "en"] }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": ["language"],
+      "properties": {
+        "language": { "enum": ["de", "en"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -39,6 +39,8 @@ playtime and achievements. No ads, no social feed, no accounts of its own.
   permissions. Guide: [docs/plugins.md](docs/plugins.md).
 - **Calm design:** light and dark mode, five muted accent colours, command palette (`Ctrl+K`),
   fully usable with the keyboard, WCAG 2.1 AA contrast.
+- **German and English:** the whole app, including error messages and recommendation reasons,
+  follows the language chosen in Settings (new installs start in the system language).
 - **Updates** through the signed Tauri updater (Windows and AppImage; `.deb`/`.rpm` installs are
   updated by the package manager).
 

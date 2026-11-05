@@ -51,31 +51,40 @@ pub async fn load(pool: &SqlitePool, defaults: &AppSettings) -> AppResult<AppSet
 }
 
 pub fn validate(settings: &AppSettings) -> AppResult<()> {
-    let invalid = |m: &str| Err(AppError::InvalidInput(m.to_owned()));
+    let invalid = |m: String| Err(AppError::InvalidInput(m));
     if !["system", "light", "dark"].contains(&settings.appearance.theme.as_str()) {
-        return invalid("Unbekanntes Design.");
+        return invalid(tr!("Unbekanntes Design.", "Unknown theme."));
     }
     if !["blue", "teal", "sage", "plum", "clay"].contains(&settings.appearance.accent.as_str()) {
-        return invalid("Unbekannte Akzentfarbe.");
+        return invalid(tr!("Unbekannte Akzentfarbe.", "Unknown accent colour."));
     }
     if !["de", "en"].contains(&settings.general.language.as_str()) {
-        return invalid("Unbekannte Sprache.");
+        return invalid(tr!("Unbekannte Sprache.", "Unknown language."));
     }
     if !["home", "library"].contains(&settings.general.start_page.as_str()) {
-        return invalid("Unbekannte Startseite.");
+        return invalid(tr!("Unbekannte Startseite.", "Unknown start page."));
     }
     if !(1..=3).contains(&settings.downloads.max_concurrent) {
-        return invalid("Gleichzeitige Downloads: 1 bis 3.");
+        return invalid(tr!(
+            "Gleichzeitige Downloads: 1 bis 3.",
+            "Parallel downloads: 1 to 3."
+        ));
     }
     if settings
         .downloads
         .bandwidth_limit_bytes_per_second
         .is_some_and(|b| b <= 0)
     {
-        return invalid("Das Bandbreitenlimit muss größer als 0 sein.");
+        return invalid(tr!(
+            "Das Bandbreitenlimit muss größer als 0 sein.",
+            "The bandwidth limit must be greater than 0."
+        ));
     }
     if settings.downloads.directory.trim().is_empty() {
-        return invalid("Bitte gib einen Zielordner an.");
+        return invalid(tr!(
+            "Bitte gib einen Zielordner an.",
+            "Please enter a target folder."
+        ));
     }
     if settings
         .library
@@ -83,7 +92,10 @@ pub fn validate(settings: &AppSettings) -> AppResult<()> {
         .iter()
         .any(|f| f.trim().is_empty())
     {
-        return invalid("Leere Scan-Ordner sind nicht erlaubt.");
+        return invalid(tr!(
+            "Leere Scan-Ordner sind nicht erlaubt.",
+            "Empty scan folders aren't allowed."
+        ));
     }
     Ok(())
 }

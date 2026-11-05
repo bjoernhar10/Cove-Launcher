@@ -201,9 +201,12 @@ impl FallbackProvider {
                 Err(e) => last = Some(e),
             }
         }
-        Err(network
-            .or(last)
-            .unwrap_or_else(|| ProviderError::Network("Keine Katalogquelle verfügbar".into())))
+        Err(network.or(last).unwrap_or_else(|| {
+            ProviderError::Network(tr!(
+                "Keine Katalogquelle verfügbar",
+                "No catalogue source available"
+            ))
+        }))
     }
 }
 

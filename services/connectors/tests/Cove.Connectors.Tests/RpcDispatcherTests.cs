@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Cove.Connectors.Tests;
 
+[Collection("Language")]
 public class RpcDispatcherTests
 {
     private static readonly RpcDispatcher Dispatcher = RpcDispatcher.CreateDefault(
@@ -19,6 +20,24 @@ public class RpcDispatcherTests
         Assert.Equal("connectors", ping["result"]!["service"]!.GetValue<string>());
         var list = await Handle("""{"jsonrpc":"2.0","id":2,"method":"store.list"}""");
         Assert.Equal(["steam", "gog", "epic"], list["result"]!.AsArray().Select(s => s!["id"]!.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task SetLanguageSwitchesErrorMessages()
+    {
+        try
+        {
+            var set = await Handle("""{"jsonrpc":"2.0","id":7,"method":"system.setLanguage","params":{"language":"en"}}""");
+            Assert.Equal("en", set["result"]!["language"]!.GetValue<string>());
+            var unknown = await Handle("""{"jsonrpc":"2.0","id":8,"method":"store.loginStart","params":{"store":"nope","redirectUri":"x","state":"y"}}""");
+            Assert.Equal("Unknown store: nope", unknown["error"]!["message"]!.GetValue<string>());
+            var bad = await Handle("""{"jsonrpc":"2.0","id":9,"method":"system.setLanguage","params":{"language":"fr"}}""");
+            Assert.Equal(-32602, bad["error"]!["code"]!.GetValue<int>());
+        }
+        finally
+        {
+            await Handle("""{"jsonrpc":"2.0","id":10,"method":"system.setLanguage","params":{"language":"de"}}""");
+        }
     }
 
     [Fact]

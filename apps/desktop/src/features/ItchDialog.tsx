@@ -1,3 +1,4 @@
+import { useMessages } from "../i18n/index.ts";
 import type { ItchGame, ItchUpload } from "@cove/shared";
 import { ChevronLeft, Download, Gamepad2 } from "lucide-react";
 import { useState, type SyntheticEvent } from "react";
@@ -13,8 +14,9 @@ import { useDownloads } from "../stores/downloads.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 
 function ListSkeleton() {
+  const t = useMessages();
   return (
-    <LoadingRegion label="Lädt" className="flex flex-col gap-2">
+    <LoadingRegion label={t.common.loading} className="flex flex-col gap-2">
       {[0, 1, 2, 3].map((i) => (
         <Skeleton key={i} className="h-12" />
       ))}
@@ -23,6 +25,7 @@ function ListSkeleton() {
 }
 
 function Uploads({ game, onBack, onDone }: { game: ItchGame; onBack: () => void; onDone: () => void }) {
+  const t = useMessages();
   const state = useQuery(`itch/uploads/${String(game.gameId)}`, () => api.downloads.itchUploads(game));
   const [busy, setBusy] = useState(false);
 
@@ -30,7 +33,7 @@ function Uploads({ game, onBack, onDone }: { game: ItchGame; onBack: () => void;
     setBusy(true);
     try {
       await api.downloads.addItchDownload(game, upload);
-      toast(`„${game.title}“ wird heruntergeladen`);
+      toast(t.itch.downloading(game.title));
       await useDownloads.getState().refresh();
       onDone();
     } catch (error: unknown) {
@@ -43,15 +46,15 @@ function Uploads({ game, onBack, onDone }: { game: ItchGame; onBack: () => void;
   return (
     <div>
       <Button variant="ghost" size="sm" icon={ChevronLeft} onClick={onBack} className="-ml-2">
-        Zurück
+        {t.topbar.back}
       </Button>
       <h3 className="mt-2 text-base font-medium text-fg">{game.title}</h3>
-      <p className="mt-1 text-sm text-fg-muted">Wähle die Datei für dein System.</p>
+      <p className="mt-1 text-sm text-fg-muted">{t.itch.pickFile}</p>
       <div className="mt-4">
         {state.status === "loading" && <ListSkeleton />}
         {state.status === "error" && <ErrorState message={state.error} onRetry={state.retry} />}
         {state.status === "success" && state.data.length === 0 && (
-          <EmptyState compact icon={Download} title="Keine Dateien" description="Für dieses Spiel gibt es keine herunterladbaren Dateien." />
+          <EmptyState compact icon={Download} title={t.itch.noFiles} description={t.itch.noFilesText} />
         )}
         {state.status === "success" && state.data.length > 0 && (
           <ul className="rounded-lg border border-border">
@@ -59,13 +62,13 @@ function Uploads({ game, onBack, onDone }: { game: ItchGame; onBack: () => void;
               <li key={upload.uploadId} className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-fg">{upload.fileName}</p>
-                  <p className="num text-xs text-fg-subtle">{upload.sizeBytes !== null ? formatBytes(upload.sizeBytes) : "Größe unbekannt"}</p>
+                  <p className="num text-xs text-fg-subtle">{upload.sizeBytes !== null ? formatBytes(upload.sizeBytes) : t.itch.sizeUnknown}</p>
                 </div>
                 {upload.platforms.map((p) => (
                   <Badge key={p}>{PLATFORM_LABELS[p]}</Badge>
                 ))}
                 <Button size="sm" variant="primary" disabled={busy} onClick={() => void download(upload)}>
-                  Herunterladen
+                  {t.itch.download}
                 </Button>
               </li>
             ))}
@@ -77,6 +80,7 @@ function Uploads({ game, onBack, onDone }: { game: ItchGame; onBack: () => void;
 }
 
 function FreeGameLookup({ onFound }: { onFound: (game: ItchGame) => void }) {
+  const t = useMessages();
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -96,12 +100,12 @@ function FreeGameLookup({ onFound }: { onFound: (game: ItchGame) => void }) {
   return (
     <form className="mt-6 flex items-end gap-2 border-t border-border pt-4" onSubmit={(e) => void submit(e)} noValidate>
       <div className="min-w-0 flex-1">
-        <Field label="Kostenloses Spiel per Link" error={error}>
+        <Field label={t.itch.freeByLink} error={error}>
           {(props) => (
             <Input
               {...props}
               type="url"
-              placeholder="https://entwickler.itch.io/spiel"
+              placeholder={t.itch.linkPlaceholder}
               value={url}
               onChange={(e) => {
                 setUrl(e.target.value);
@@ -112,23 +116,24 @@ function FreeGameLookup({ onFound }: { onFound: (game: ItchGame) => void }) {
         </Field>
       </div>
       <Button type="submit" disabled={busy || url.trim() === ""} className={error ? "mb-6" : undefined}>
-        Suchen
+        {t.itch.search}
       </Button>
     </form>
   );
 }
 
 function OwnedGames({ onSelect }: { onSelect: (game: ItchGame) => void }) {
+  const t = useMessages();
   const owned = useQuery("itch/owned", api.downloads.itchOwnedGames);
   return (
     <div>
       {owned.status === "loading" && <ListSkeleton />}
       {owned.status === "error" && <ErrorState message={owned.error} onRetry={owned.retry} />}
       {owned.status === "success" && owned.data.length === 0 && (
-        <EmptyState compact icon={Gamepad2} title="Noch keine Spiele" description="Gekaufte und beanspruchte Spiele aus deinem itch.io-Konto erscheinen hier." />
+        <EmptyState compact icon={Gamepad2} title={t.itch.noGames} description={t.itch.noGamesText} />
       )}
       {owned.status === "success" && owned.data.length > 0 && (
-        <ul className="max-h-80 overflow-y-auto rounded-lg border border-border" aria-label="Deine itch.io-Spiele">
+        <ul className="max-h-80 overflow-y-auto rounded-lg border border-border" aria-label={t.itch.yourGames}>
           {owned.data.map((game) => (
             <li key={game.gameId} className="border-b border-border last:border-b-0">
               <button
@@ -157,6 +162,7 @@ function OwnedGames({ onSelect }: { onSelect: (game: ItchGame) => void }) {
 }
 
 function ItchBrowser({ onDone }: { onDone: () => void }) {
+  const t = useMessages();
   const status = useQuery("itch/status", api.downloads.itchStatus);
   const [selected, setSelected] = useState<ItchGame | null>(null);
 
@@ -178,11 +184,11 @@ function ItchBrowser({ onDone }: { onDone: () => void }) {
       <EmptyState
         compact
         icon={Gamepad2}
-        title="itch.io ist nicht verbunden"
-        description="Trage deinen itch.io-API-Schlüssel in den Einstellungen ein, dann siehst du hier deine Spiele."
+        title={t.itch.notConnected}
+        description={t.itch.notConnectedText}
         actions={
           <ButtonLink to="/settings/accounts" onClick={onDone}>
-            Zu den Einstellungen
+            {t.catalogue.toSettings}
           </ButtonLink>
         }
       />
@@ -192,8 +198,9 @@ function ItchBrowser({ onDone }: { onDone: () => void }) {
 }
 
 export function ItchDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useMessages();
   return (
-    <Dialog open={open} onClose={onClose} title="Von itch.io herunterladen" description="Spiele, die du besitzt, und kostenlose Spiele.">
+    <Dialog open={open} onClose={onClose} title={t.itch.title} description={t.itch.description}>
       {open && <ItchBrowser onDone={onClose} />}
     </Dialog>
   );

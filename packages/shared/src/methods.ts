@@ -17,8 +17,18 @@ export interface PingResult {
   message: string;
 }
 
+/** UI language for the texts a service writes (errors, reasons). */
+export interface SetLanguageParams {
+  language: "de" | "en";
+}
+
+export interface SetLanguageResult {
+  language: "de" | "en";
+}
+
 export interface RpcMethods {
   "system.ping": { params: PingParams; result: PingResult };
+  "system.setLanguage": { params: SetLanguageParams; result: SetLanguageResult };
 }
 
 export type RpcMethod = keyof RpcMethods;

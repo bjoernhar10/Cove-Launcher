@@ -1,3 +1,4 @@
+import { messages } from "../i18n/index.ts";
 import type { AchievementUnlock, Game, LibraryItem, Recommendation } from "@cove/shared";
 import { browseCatalog, DEFAULT_CATALOG_FILTER } from "./catalog.ts";
 import { listLibrary } from "./library.ts";
@@ -47,7 +48,7 @@ async function simpleRecommendations(): Promise<Recommendation[]> {
     .map(({ game, shared }, index) => ({
       game,
       score: 1 - index / 10,
-      reason: shared ? "Passt zu deinen Genres" : "Hoch bewertet",
+      reason: shared ? messages().home.reasonGenres : messages().home.reasonRated,
     }));
 }
 
@@ -74,7 +75,7 @@ export async function getDiscover(): Promise<Recommendation[]> {
     return games
       .filter((g) => !played.has(g.id))
       .slice(0, 10)
-      .map((game, index) => ({ game, score: 1 - index / 10, reason: "Neu im Katalog" }));
+      .map((game, index) => ({ game, score: 1 - index / 10, reason: messages().home.reasonNew }));
   }
 }
 

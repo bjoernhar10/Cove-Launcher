@@ -170,9 +170,10 @@ pub fn validate(credentials: &CatalogCredentials) -> AppResult<()> {
         CatalogCredentials::Rawg { api_key } => api_key.trim().is_empty(),
     };
     if empty {
-        return Err(AppError::InvalidInput(
-            "Bitte fülle alle Felder aus.".into(),
-        ));
+        return Err(AppError::InvalidInput(tr!(
+            "Bitte fülle alle Felder aus.",
+            "Please fill in all fields."
+        )));
     }
     Ok(())
 }

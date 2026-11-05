@@ -1,3 +1,4 @@
+import { useMessages } from "../i18n/index.ts";
 import type { Game } from "@cove/shared";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Layers, Plus, SearchX } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
@@ -27,6 +28,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Screenshots({ game }: { game: Game }) {
+  const t = useMessages();
   const [index, setIndex] = useState<number | null>(null);
   const shots = game.artwork.screenshots;
   if (shots.length === 0) return null;
@@ -37,11 +39,11 @@ function Screenshots({ game }: { game: Game }) {
       <h2 className="mb-4 text-base font-semibold text-fg">Screenshots</h2>
       <ul className="grid grid-cols-2 gap-3 xl:grid-cols-3">
         {shots.map((shot, i) => (
-          <li key={shot.alt}>
+          <li key={shot.url ?? i}>
             <button
               type="button"
               className="block w-full rounded-lg"
-              aria-label={`${shot.alt} vergrößern`}
+              aria-label={t.detail.enlarge(t.cover.screenshot(i + 1, game.title))}
               onClick={() => {
                 setIndex(i);
               }}
@@ -52,6 +54,7 @@ function Screenshots({ game }: { game: Game }) {
                 aspect="landscape"
                 showTitle={false}
                 variant={i + 1}
+                alt={t.cover.screenshot(i + 1, game.title)}
                 className="border border-border transition-colors duration-150 ease-out hover:border-border-strong"
               />
             </button>
@@ -63,7 +66,7 @@ function Screenshots({ game }: { game: Game }) {
         onClose={() => {
           setIndex(null);
         }}
-        title={current?.alt ?? "Screenshot"}
+        title={index === null ? "Screenshot" : t.cover.screenshot(index + 1, game.title)}
         className="w-[960px]"
         footer={
           <>
@@ -74,7 +77,7 @@ function Screenshots({ game }: { game: Game }) {
                 setIndex((i) => (i === null ? i : Math.max(0, i - 1)));
               }}
             >
-              Zurück
+              {t.topbar.back}
             </Button>
             <Button
               icon={ChevronRight}
@@ -83,7 +86,7 @@ function Screenshots({ game }: { game: Game }) {
                 setIndex((i) => (i === null ? i : Math.min(shots.length - 1, i + 1)));
               }}
             >
-              Weiter
+              {t.detail.next}
             </Button>
           </>
         }
@@ -95,6 +98,7 @@ function Screenshots({ game }: { game: Game }) {
             aspect="landscape"
             showTitle={false}
             variant={index + 1}
+            alt={t.cover.screenshot(index + 1, game.title)}
           />
         )}
       </Dialog>
@@ -103,8 +107,9 @@ function Screenshots({ game }: { game: Game }) {
 }
 
 function DetailSkeleton() {
+  const t = useMessages();
   return (
-    <LoadingRegion label="Spiel wird geladen">
+    <LoadingRegion label={t.detail.loading}>
       <Skeleton className="aspect-[3/1] rounded-lg" />
       <div className="mt-8 grid grid-cols-1 gap-12 lg:grid-cols-[1fr_280px]">
         <div>
@@ -121,6 +126,7 @@ function DetailSkeleton() {
 }
 
 export function CatalogueDetailPage() {
+  const t = useMessages();
   const { gameId = "" } = useParams();
   const details = useCatalogGame(gameId);
   const similar = useSimilarGames(gameId);
@@ -134,7 +140,7 @@ export function CatalogueDetailPage() {
     setAdding(true);
     try {
       await api.library.addGameFromCatalog(game);
-      toast(`„${game.title}“ wurde zur Bibliothek hinzugefügt`);
+      toast(t.detail.added(game.title));
       invalidateQueries();
     } catch (error: unknown) {
       toast(errorMessage(error), "danger");
@@ -162,12 +168,12 @@ export function CatalogueDetailPage() {
       {details.isError && !notConfigured && (
         <EmptyState
           icon={SearchX}
-          title="Spiel nicht verfügbar"
+          title={t.detail.unavailable}
           description={errorMessage(details.error)}
           actions={
             <>
-              <Button onClick={() => void details.refetch()}>Erneut versuchen</Button>
-              <ButtonLink to="/catalogue">Zum Katalog</ButtonLink>
+              <Button onClick={() => void details.refetch()}>{t.common.retry}</Button>
+              <ButtonLink to="/catalogue">{t.detail.toCatalogue}</ButtonLink>
             </>
           }
         />
@@ -183,21 +189,21 @@ export function CatalogueDetailPage() {
                 {details.data?.offline && <OfflineBadge />}
               </div>
               <p className="mt-1 text-sm text-fg-muted">
-                {[game.developer, game.releaseDate?.slice(0, 4)].filter(Boolean).join(" · ") || "Keine weiteren Angaben"}
+                {[game.developer, game.releaseDate?.slice(0, 4)].filter(Boolean).join(" · ") || t.detail.noDetails}
               </p>
 
               <div className="mt-6 flex flex-wrap gap-2">
                 {libraryGameId ? (
                   <ButtonLink to={`/library/${libraryGameId}`} variant="secondary" icon={Check}>
-                    In deiner Bibliothek
+                    {t.palette.inLibrary}
                   </ButtonLink>
                 ) : (
                   <Button variant="primary" icon={Plus} disabled={adding} onClick={() => void addToLibrary()}>
-                    Zur Bibliothek hinzufügen
+                    {t.detail.addToLibrary}
                   </Button>
                 )}
                 <Button icon={Layers} onClick={showSimilar}>
-                  Ähnliche Spiele
+                  {t.detail.similar}
                 </Button>
               </div>
 
@@ -205,14 +211,14 @@ export function CatalogueDetailPage() {
                 {game.description ? (
                   game.description.split(/\n\s*\n/).map((paragraph) => <p key={paragraph}>{paragraph}</p>)
                 ) : (
-                  <p className="text-fg-muted">Für dieses Spiel gibt es noch keine Beschreibung.</p>
+                  <p className="text-fg-muted">{t.detail.noDescription}</p>
                 )}
               </div>
 
               <Screenshots game={game} />
             </div>
 
-            <aside aria-label="Details">
+            <aside aria-label={t.detail.details}>
               <dl className="m-0 rounded-lg border border-border px-4">
                 <Fact label="Genres">
                   {game.genres.length > 0 ? (
@@ -222,24 +228,24 @@ export function CatalogueDetailPage() {
                       ))}
                     </span>
                   ) : (
-                    <span className="text-fg-muted">Keine Angabe</span>
+                    <span className="text-fg-muted">{t.detail.notSpecified}</span>
                   )}
                 </Fact>
                 <Fact label="Release">
                   {game.releaseDate ? (
                     <time dateTime={game.releaseDate}>{formatDate(game.releaseDate)}</time>
                   ) : (
-                    <span className="text-fg-muted">Unbekannt</span>
+                    <span className="text-fg-muted">{t.detail.unknown}</span>
                   )}
                 </Fact>
-                <Fact label="Entwickler">{game.developer || <span className="text-fg-muted">Unbekannt</span>}</Fact>
-                <Fact label="Publisher">{game.publisher || <span className="text-fg-muted">Unbekannt</span>}</Fact>
-                <Fact label="Plattformen">
-                  {game.platforms.length > 0 ? game.platforms.map((p) => PLATFORM_LABELS[p]).join(", ") : "Keine Angabe"}
+                <Fact label={t.detail.developer}>{game.developer || <span className="text-fg-muted">{t.detail.unknown}</span>}</Fact>
+                <Fact label="Publisher">{game.publisher || <span className="text-fg-muted">{t.detail.unknown}</span>}</Fact>
+                <Fact label={t.detail.platforms}>
+                  {game.platforms.length > 0 ? game.platforms.map((p) => PLATFORM_LABELS[p]).join(", ") : t.detail.notSpecified}
                 </Fact>
-                <Fact label="Bewertung">
+                <Fact label={t.catalogue.rating}>
                   {game.rating === null ? (
-                    <span className="text-fg-muted">Noch keine Bewertung</span>
+                    <span className="text-fg-muted">{t.detail.noRating}</span>
                   ) : (
                     <span className="num">{game.rating} / 100</span>
                   )}
@@ -249,7 +255,7 @@ export function CatalogueDetailPage() {
           </div>
 
           <div ref={similarRef} className="scroll-mt-4">
-            <ScrollRow title="Ähnliche Spiele">
+            <ScrollRow title={t.detail.similar}>
               {similar.isPending &&
                 Array.from({ length: 6 }, (_, i) => (
                   <ScrollItem key={i}>
@@ -260,7 +266,7 @@ export function CatalogueDetailPage() {
                 <ErrorState message={errorMessage(similar.error)} onRetry={() => void similar.refetch()} />
               )}
               {similar.isSuccess && similar.data.items.length === 0 && (
-                <p className="py-6 text-sm text-fg-muted">Keine ähnlichen Spiele gefunden.</p>
+                <p className="py-6 text-sm text-fg-muted">{t.detail.noSimilar}</p>
               )}
               {similar.data?.items.map((g) => (
                 <ScrollItem key={g.id}>

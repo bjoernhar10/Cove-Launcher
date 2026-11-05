@@ -1,3 +1,4 @@
+import { messages } from "../i18n/index.ts";
 import type { PluginFile } from "@cove/shared";
 import { create } from "zustand";
 import { api } from "../api/index.ts";
@@ -36,12 +37,12 @@ export const usePlugins = create<PluginsState>()((set, get) => ({
       notify: (pluginName, message, gameId) => {
         toast(message, "neutral", {
           title: pluginName,
-          ...(gameId ? { action: { label: "Öffnen", to: `/library/${encodeURIComponent(gameId)}` } } : {}),
+          ...(gameId ? { action: { label: messages().common.open, to: `/library/${encodeURIComponent(gameId)}` } } : {}),
           durationMs: 6000,
         });
       },
       failed: (pluginName, message) => {
-        toast(`${pluginName}: ${message}`, "danger", { title: "Plugin-Fehler" });
+        toast(`${pluginName}: ${message}`, "danger", { title: messages().plugins.errorTitle });
       },
     });
     set({ host });
@@ -68,7 +69,7 @@ export const usePlugins = create<PluginsState>()((set, get) => ({
 /** Reads a picked file for a plugin (text, size-limited). */
 export async function readPickedFile(file: File, maxBytes: number): Promise<PluginFile> {
   if (file.size > Math.min(maxBytes, MAX_FILE_BYTES)) {
-    throw new UserFacingError(`Die Datei ist zu groß (höchstens ${String(Math.round(maxBytes / 1024))} KB).`);
+    throw new UserFacingError(messages().plugins.fileTooLarge(Math.round(maxBytes / 1024)));
   }
   return { name: file.name, text: await file.text() };
 }

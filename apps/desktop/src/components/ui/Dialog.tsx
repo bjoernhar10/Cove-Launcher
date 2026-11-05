@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { cx } from "../../lib/cx.ts";
@@ -20,6 +21,7 @@ interface DialogProps {
  * for free). Backdrop is a flat overlay — no blur.
  */
 export function Dialog({ open, onClose, title, description, children, footer, bare = false, className }: DialogProps) {
+  const t = useMessages();
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descId = useId();
@@ -68,7 +70,7 @@ export function Dialog({ open, onClose, title, description, children, footer, ba
                   </p>
                 )}
               </div>
-              <Button variant="ghost" size="sm" iconOnly icon={X} label="Schließen" onClick={onClose} className="-mt-1 -mr-2" />
+              <Button variant="ghost" size="sm" iconOnly icon={X} label={t.common.close} onClick={onClose} className="-mt-1 -mr-2" />
             </header>
           )}
           <div className={cx("min-h-0 flex-1 overflow-y-auto", !bare && "px-6 pb-6")}>{children}</div>

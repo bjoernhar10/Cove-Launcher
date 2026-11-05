@@ -1,3 +1,4 @@
+import { useMessages } from "../i18n/index.ts";
 import type { Game, LibraryItem } from "@cove/shared";
 import { Search } from "lucide-react";
 import { useState } from "react";
@@ -22,17 +23,18 @@ interface MatchDialogProps {
 }
 
 function Candidate({ game, score, busy, onPick }: { game: Game; score?: number; busy: boolean; onPick: () => void }) {
+  const t = useMessages();
   const facts = [game.releaseDate?.slice(0, 4), game.developer].filter(Boolean).join(" · ");
   return (
     <li className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
       <GameCover game={game} aspect="portrait" showTitle={false} className="w-10 shrink-0 rounded-md" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-fg">{game.title}</p>
-        <p className="truncate text-xs text-fg-muted">{facts || "Keine weiteren Angaben"}</p>
+        <p className="truncate text-xs text-fg-muted">{facts || t.detail.noDetails}</p>
       </div>
       {score !== undefined && <Badge className="num">{formatPercent(score)}</Badge>}
       <Button size="sm" disabled={busy} onClick={onPick}>
-        Zuordnen
+        {t.match.pick}
       </Button>
     </li>
   );
@@ -43,6 +45,7 @@ function Candidate({ game, score, busy, onPick }: { game: Game; score?: number; 
  * Shows stored suggestions (if matching was unsure) plus a free catalogue search.
  */
 export function MatchDialog({ item, open, onClose }: MatchDialogProps) {
+  const t = useMessages();
   const gameId = item.game.id;
   const [query, setQuery] = useState(item.game.title);
   const [busy, setBusy] = useState(false);
@@ -71,31 +74,31 @@ export function MatchDialog({ item, open, onClose }: MatchDialogProps) {
   }
 
   const link = (catalog: Game) => {
-    void run(() => api.library.linkCatalog(gameId, catalog.id), `„${catalog.title}“ zugeordnet, Metadaten und Cover übernommen`);
+    void run(() => api.library.linkCatalog(gameId, catalog.id), t.match.linked(catalog.title));
   };
 
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      title="Katalog-Zuordnung"
-      description={`Welcher Katalog-Eintrag gehört zu „${item.game.title}“? Cove übernimmt dann Beschreibung, Genres und Cover. Startdatei und Spielzeit bleiben unverändert.`}
+      title={t.match.title}
+      description={t.match.description(item.game.title)}
       className="w-[640px]"
       footer={
         <>
           {item.entry.matchStatus === "pending" && (
-            <Button disabled={busy} onClick={() => void run(() => api.library.rejectMatch(gameId), "Vorschläge verworfen, keine Zuordnung")}>
-              Keins davon
+            <Button disabled={busy} onClick={() => void run(() => api.library.rejectMatch(gameId), t.match.rejected)}>
+              {t.match.none}
             </Button>
           )}
-          <Button onClick={onClose}>Abbrechen</Button>
+          <Button onClick={onClose}>{t.common.cancel}</Button>
         </>
       }
     >
       <div className="relative mb-4">
         <Search aria-hidden className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-subtle" />
         <Input
-          aria-label="Im Katalog suchen"
+          aria-label={t.catalogue.search}
           className="pl-9"
           value={query}
           onChange={(e) => {
@@ -107,11 +110,11 @@ export function MatchDialog({ item, open, onClose }: MatchDialogProps) {
       {notConfigured ? (
         <CatalogSetupState />
       ) : searching ? (
-        <section aria-label="Suchergebnisse">
+        <section aria-label={t.match.results}>
           {search.isPending && <ListSkeleton />}
           {search.isError && <ErrorState message={errorMessage(search.error)} onRetry={() => void search.refetch()} />}
           {search.isSuccess && search.data.items.length === 0 && (
-            <p className="py-8 text-center text-sm text-fg-muted">Keine Treffer für „{debounced}“.</p>
+            <p className="py-8 text-center text-sm text-fg-muted">{t.palette.noResults(debounced)}</p>
           )}
           {search.isSuccess && search.data.items.length > 0 && (
             <ul className="rounded-lg border border-border">
@@ -122,14 +125,14 @@ export function MatchDialog({ item, open, onClose }: MatchDialogProps) {
           )}
         </section>
       ) : (
-        <section aria-label="Vorschläge">
+        <section aria-label={t.match.suggestions}>
           {candidates.isPending && <ListSkeleton />}
           {candidates.isError && (
             <ErrorState message={errorMessage(candidates.error)} onRetry={() => void candidates.refetch()} />
           )}
           {candidates.isSuccess && candidates.data.length === 0 && (
             <p className="py-8 text-center text-sm text-fg-muted">
-              Keine gespeicherten Vorschläge. Such oben nach dem passenden Spiel.
+              {t.match.noSuggestions}
             </p>
           )}
           {candidates.isSuccess && candidates.data.length > 0 && (
@@ -146,8 +149,9 @@ export function MatchDialog({ item, open, onClose }: MatchDialogProps) {
 }
 
 function ListSkeleton() {
+  const t = useMessages();
   return (
-    <LoadingRegion label="Lädt" className="flex flex-col gap-2">
+    <LoadingRegion label={t.common.loading} className="flex flex-col gap-2">
       {[0, 1, 2].map((i) => (
         <Skeleton key={i} className="h-16" />
       ))}

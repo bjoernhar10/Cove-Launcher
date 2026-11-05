@@ -1,3 +1,4 @@
+import { localized, messages, useMessages } from "../i18n/index.ts";
 import type { ExecutableKind, ScanCandidate } from "@cove/shared";
 import { FolderSearch } from "lucide-react";
 import { useEffect, useRef, useState, type SyntheticEvent } from "react";
@@ -14,18 +15,13 @@ import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 import { useUi } from "../stores/ui.ts";
 
-const EXAMPLE_PATH = detectPlatform() === "windows" ? "C:\\Games\\Spiel\\spiel.exe" : "/home/du/Games/spiel/spiel.x86_64";
-const EXAMPLE_FOLDER = detectPlatform() === "windows" ? "D:\\Games" : "/home/du/Games";
+const examplePath = () => (detectPlatform() === "windows" ? messages().game.windowsPathExample : messages().game.linuxPathExample);
+const exampleFolder = () => (detectPlatform() === "windows" ? "D:\\Games" : messages().addGame.linuxFolderExample);
 
-export const KIND_LABELS: Record<ExecutableKind, string> = {
-  "windows-exe": "Windows",
-  "linux-binary": "Linux",
-  appimage: "AppImage",
-  "desktop-entry": "Desktop-Eintrag",
-  script: "Skript",
-};
+export const KIND_LABELS: Record<ExecutableKind, string> = localized((m) => m.addGame.kinds);
 
 function ManualForm({ onDone }: { onDone: () => void }) {
+  const t = useMessages();
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [path, setPath] = useState("");
@@ -33,8 +29,8 @@ function ManualForm({ onDone }: { onDone: () => void }) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const titleError = submitted && !title.trim() ? "Bitte gib einen Namen ein." : null;
-  const pathError = submitted && !path.trim() ? "Bitte gib den Pfad zur ausführbaren Datei an." : serverError;
+  const titleError = submitted && !title.trim() ? t.addGame.nameMissing : null;
+  const pathError = submitted && !path.trim() ? t.addGame.pathMissing : serverError;
 
   async function submit(event: SyntheticEvent): Promise<void> {
     event.preventDefault();
@@ -44,7 +40,7 @@ function ManualForm({ onDone }: { onDone: () => void }) {
     setBusy(true);
     try {
       const item = await api.library.addManualGame({ title: title.trim(), executablePath: path.trim(), sizeBytes: null });
-      toast(`„${item.game.title}“ wurde zur Bibliothek hinzugefügt`);
+      toast(t.detail.added(item.game.title));
       invalidateQueries();
       onDone();
       void navigate(`/library/${item.game.id}`);
@@ -57,12 +53,12 @@ function ManualForm({ onDone }: { onDone: () => void }) {
 
   return (
     <form className="flex flex-col gap-5" onSubmit={(e) => void submit(e)} noValidate>
-      <Field label="Name" error={titleError}>
+      <Field label={t.addGame.name} error={titleError}>
         {(props) => (
           <Input
             {...props}
             autoFocus
-            placeholder="z. B. Mein Lieblingsspiel"
+            placeholder={t.addGame.namePlaceholder}
             value={title}
             onChange={(e) => {
               setTitle(e.target.value);
@@ -71,14 +67,14 @@ function ManualForm({ onDone }: { onDone: () => void }) {
         )}
       </Field>
       <Field
-        label="Pfad zur .exe / Binary"
-        description="Die Datei, mit der das Spiel startet: .exe, Linux-Binary, AppImage, .desktop oder Skript."
+        label={t.addGame.path}
+        description={t.addGame.pathHint}
         error={pathError}
       >
         {(props) => (
           <Input
             {...props}
-            placeholder={EXAMPLE_PATH}
+            placeholder={examplePath()}
             spellCheck={false}
             value={path}
             onChange={(e) => {
@@ -89,9 +85,9 @@ function ManualForm({ onDone }: { onDone: () => void }) {
         )}
       </Field>
       <div className="flex justify-end gap-2 pt-1">
-        <Button onClick={onDone}>Abbrechen</Button>
+        <Button onClick={onDone}>{t.common.cancel}</Button>
         <Button type="submit" variant="primary" disabled={busy}>
-          Hinzufügen
+          {t.addGame.add}
         </Button>
       </div>
     </form>
@@ -101,6 +97,7 @@ function ManualForm({ onDone }: { onDone: () => void }) {
 type ScanPhase = { phase: "idle" } | { phase: "scanning" } | { phase: "error"; message: string } | { phase: "done"; candidates: ScanCandidate[] };
 
 function ScanForm({ onDone, initialFolder }: { onDone: () => void; initialFolder: string | undefined }) {
+  const t = useMessages();
   const [folder, setFolder] = useState(initialFolder ?? "");
   const [state, setState] = useState<ScanPhase>({ phase: "idle" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -132,7 +129,7 @@ function ScanForm({ onDone, initialFolder }: { onDone: () => void; initialFolder
     const { added, failed } = await api.library.addScannedGames(chosen);
     setBusy(false);
     invalidateQueries();
-    if (added.length > 0) toast(added.length === 1 ? "1 Spiel hinzugefügt" : `${String(added.length)} Spiele hinzugefügt`);
+    if (added.length > 0) toast(t.addGame.added(added.length));
     for (const f of failed) toast(`${f.title}: ${f.message}`, "danger");
     if (failed.length === 0) onDone();
   }
@@ -148,15 +145,15 @@ function ScanForm({ onDone, initialFolder }: { onDone: () => void; initialFolder
       >
         <div className="flex-1">
           <Field
-            label="Ordner"
-            description="Cove schlägt pro Spiel eine Startdatei vor. Installer, Uninstaller und Crash-Reporter werden übersprungen."
+            label={t.addGame.folder}
+            description={t.addGame.folderHint}
             error={state.phase === "error" ? state.message : null}
           >
             {(props) => (
               <Input
                 {...props}
                 autoFocus
-                placeholder={EXAMPLE_FOLDER}
+                placeholder={exampleFolder()}
                 spellCheck={false}
                 value={folder}
                 onChange={(e) => {
@@ -167,12 +164,12 @@ function ScanForm({ onDone, initialFolder }: { onDone: () => void; initialFolder
           </Field>
         </div>
         <Button type="submit" icon={FolderSearch} disabled={!folder.trim() || state.phase === "scanning"} className="mt-7">
-          Scannen
+          {t.addGame.scan}
         </Button>
       </form>
 
       {state.phase === "scanning" && (
-        <div role="status" aria-label="Ordner wird durchsucht" className="flex flex-col gap-2">
+        <div role="status" aria-label={t.addGame.scanning} className="flex flex-col gap-2">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-12" />
           ))}
@@ -180,13 +177,13 @@ function ScanForm({ onDone, initialFolder }: { onDone: () => void; initialFolder
       )}
 
       {state.phase === "done" && state.candidates.length === 0 && (
-        <EmptyState compact icon={FolderSearch} title="Keine Spiele gefunden" description="In diesem Ordner hat Cove nichts Startbares entdeckt." />
+        <EmptyState compact icon={FolderSearch} title={t.catalogue.emptyTitle} description={t.addGame.nothingFound} />
       )}
 
       {state.phase === "done" && state.candidates.length > 0 && (
         <>
           <fieldset className="rounded-lg border border-border">
-            <legend className="sr-only">Gefundene Spiele</legend>
+            <legend className="sr-only">{t.addGame.found}</legend>
             {state.candidates.map((c) => (
               <label
                 key={c.executablePath}
@@ -211,7 +208,7 @@ function ScanForm({ onDone, initialFolder }: { onDone: () => void; initialFolder
                   <span className="flex items-center gap-2">
                     <span className="truncate text-sm font-medium text-fg">{c.title}</span>
                     <Badge>{KIND_LABELS[c.kind]}</Badge>
-                    {c.alreadyInLibrary && <span className="text-xs text-fg-subtle">Bereits in der Bibliothek</span>}
+                    {c.alreadyInLibrary && <span className="text-xs text-fg-subtle">{t.addGame.alreadyInLibrary}</span>}
                   </span>
                   <span className="block truncate text-xs text-fg-subtle" title={c.executablePath}>
                     {c.executablePath}
@@ -222,9 +219,9 @@ function ScanForm({ onDone, initialFolder }: { onDone: () => void; initialFolder
             ))}
           </fieldset>
           <div className="flex justify-end gap-2">
-            <Button onClick={onDone}>Abbrechen</Button>
+            <Button onClick={onDone}>{t.common.cancel}</Button>
             <Button variant="primary" disabled={selected.size === 0 || busy} onClick={() => void addSelected(state.candidates)}>
-              {selected.size === 1 ? "1 Spiel hinzufügen" : `${String(selected.size)} Spiele hinzufügen`}
+              {t.addGame.addCount(selected.size)}
             </Button>
           </div>
         </>
@@ -234,6 +231,7 @@ function ScanForm({ onDone, initialFolder }: { onDone: () => void; initialFolder
 }
 
 export function AddGameDialog() {
+  const t = useMessages();
   const options = useUi((s) => s.addGame);
   const close = useUi((s) => s.closeAddGame);
   const [mode, setMode] = useState<"manual" | "scan">("manual");
@@ -249,18 +247,18 @@ export function AddGameDialog() {
     <Dialog
       open={options !== null}
       onClose={close}
-      title="Spiel hinzufügen"
-      description="Füge ein Spiel hinzu, das nicht aus einem verbundenen Store stammt."
+      title={t.palette.addGame}
+      description={t.addGame.description}
       className="w-[600px]"
     >
       <Segmented
-        label="Art"
+        label={t.addGame.mode}
         value={mode}
         onChange={setMode}
         className="mb-6"
         options={[
-          { value: "manual", label: "Manuell" },
-          { value: "scan", label: "Ordner scannen" },
+          { value: "manual", label: t.labels.source.manual },
+          { value: "scan", label: t.addGame.scanFolder },
         ]}
       />
       {mode === "manual" ? <ManualForm onDone={close} /> : <ScanForm onDone={close} initialFolder={options?.folder} />}

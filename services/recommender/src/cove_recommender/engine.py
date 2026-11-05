@@ -16,6 +16,7 @@ import numpy as np
 
 from cove_recommender.data import CatalogGame, LibraryGame
 from cove_recommender.features import FeatureSpace, Matrix
+from cove_recommender.texts import genre_label, hours, t
 
 #: Half-life of the recency decay.
 RECENCY_HALF_LIFE_DAYS = 120.0
@@ -38,21 +39,6 @@ REDUNDANCY_EXPONENT = 4
 EXPLAIN_MIN_SIMILARITY = 0.3
 #: "Discover" only suggests games at least this close to the profile (if any are).
 DISCOVER_MIN_SIMILARITY = 0.12
-
-GENRE_LABELS: dict[str, str] = {
-    "action": "Action",
-    "adventure": "Adventure",
-    "rpg": "Rollenspiel",
-    "strategy": "Strategie",
-    "simulation": "Simulation",
-    "puzzle": "Puzzle",
-    "platformer": "Platformer",
-    "shooter": "Shooter",
-    "racing": "Rennspiel",
-    "sports": "Sport",
-    "horror": "Horror",
-    "indie": "Indie",
-}
 
 
 @dataclass(frozen=True)
@@ -152,16 +138,13 @@ def mmr(
     return selected
 
 
-def _hours(minutes: int) -> str:
-    hours = minutes / 60
-    if hours < 10:
-        text = f"{hours:.1f}".replace(".", ",")
-        return text.removesuffix(",0")
-    return str(round(hours))
-
-
 def explain(target: int, profile: Profile, space: FeatureSpace) -> str:
-    """Short German reason naming the library game that contributes most."""
+    """Short reason (in the UI language) naming the library game that contributes most."""
+    return explain_anchor(target, profile, space)[0]
+
+
+def explain_anchor(target: int, profile: Profile, space: FeatureSpace) -> tuple[str, bool]:
+    """The reason and whether it names a game from the library."""
     target_vector = space.matrix[target]
     best: tuple[float, LibraryGame] | None = None
     for game, weight, vector in profile.contributions:
@@ -176,14 +159,21 @@ def explain(target: int, profile: Profile, space: FeatureSpace) -> str:
     if best is not None:
         game = best[1]
         if game.playtime_minutes >= 60:
-            return f"Weil du {_hours(game.playtime_minutes)} Std. {game.title} gespielt hast"
+            played = hours(game.playtime_minutes)
+            return t(
+                f"Weil du {played} Std. {game.title} gespielt hast",
+                f"Because you played {game.title} for {played} h",
+            ), True
         if game.favorite:
-            return f"Weil {game.title} zu deinen Favoriten gehört"
-        return f"Ähnlich wie {game.title}"
+            return t(
+                f"Weil {game.title} zu deinen Favoriten gehört",
+                f"Because {game.title} is one of your favourites",
+            ), True
+        return t(f"Ähnlich wie {game.title}", f"Similar to {game.title}"), True
     candidate = space.games[target]
     if (candidate.rating or 0) >= 80:
-        return "Sehr gut bewertet"
-    return "Beliebt bei vielen Spielern"
+        return t("Sehr gut bewertet", "Highly rated"), False
+    return t("Beliebt bei vielen Spielern", "Popular with many players"), False
 
 
 def _owned(library: Sequence[LibraryGame]) -> set[str]:
@@ -258,10 +248,10 @@ def discover_new(
     chosen = mmr(ranked, relevance, space, limit, lam=0.6)
     results = []
     for i in chosen:
-        genre = GENRE_LABELS.get(space.games[i].genres[0], space.games[i].genres[0])
-        anchor = explain(i, profile, space)
-        reason = f"Neu für dich: {genre}"
-        if anchor.startswith(("Weil du", "Ähnlich wie", "Weil ")) and not profile.is_empty:
+        genre = genre_label(space.games[i].genres[0])
+        anchor, names_a_game = explain_anchor(i, profile, space)
+        reason = t(f"Neu für dich: {genre}", f"New for you: {genre}")
+        if names_a_game and not profile.is_empty:
             reason += f". {anchor}"
         results.append(Recommendation(space.games[i].id, round(float(relevance[i]), 4), reason))
     return results
@@ -280,7 +270,11 @@ def similar_games(game_id: str, catalog: Sequence[CatalogGame], limit: int) -> l
     chosen = mmr(ranked, relevance, space, limit, lam=0.8)
     title = space.games[target].title
     return [
-        Recommendation(space.games[i].id, round(float(relevance[i]), 4), f"Ähnlich wie {title}")
+        Recommendation(
+            space.games[i].id,
+            round(float(relevance[i]), 4),
+            t(f"Ähnlich wie {title}", f"Similar to {title}"),
+        )
         for i in chosen
     ]
 

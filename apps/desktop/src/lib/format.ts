@@ -1,22 +1,47 @@
-const LOCALE = "de-DE";
+import { locale, messages } from "../i18n/index.ts";
 
-const integer = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 0 });
-const oneDecimal = new Intl.NumberFormat(LOCALE, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-const relative = new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" });
-const dateLong = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "long", year: "numeric" });
-const dateShort = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short" });
-const weekday = new Intl.DateTimeFormat(LOCALE, { weekday: "short" });
+interface Formatters {
+  integer: Intl.NumberFormat;
+  oneDecimal: Intl.NumberFormat;
+  relative: Intl.RelativeTimeFormat;
+  dateLong: Intl.DateTimeFormat;
+  dateShort: Intl.DateTimeFormat;
+  weekday: Intl.DateTimeFormat;
+}
 
-/** 0 → "Noch nie gespielt", 45 → "45 Min.", 754 → "12,6 Std." */
+const cache = new Map<string, Formatters>();
+
+/** `Intl` formatters for the current UI language (built once per language). */
+function fmt(): Formatters {
+  const tag = locale();
+  let f = cache.get(tag);
+  if (!f) {
+    f = {
+      integer: new Intl.NumberFormat(tag, { maximumFractionDigits: 0 }),
+      oneDecimal: new Intl.NumberFormat(tag, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+      relative: new Intl.RelativeTimeFormat(tag, { numeric: "auto" }),
+      dateLong: new Intl.DateTimeFormat(tag, { day: "numeric", month: "long", year: "numeric" }),
+      dateShort: new Intl.DateTimeFormat(tag, { day: "numeric", month: "short" }),
+      weekday: new Intl.DateTimeFormat(tag, { weekday: "short" }),
+    };
+    cache.set(tag, f);
+  }
+  return f;
+}
+
+/** 0 → "Noch nie gespielt", 45 → "45 Min.", 450 → "7,5 Std." (German UI) */
 export function formatPlaytime(minutes: number): string {
-  if (minutes <= 0) return "Noch nie gespielt";
-  if (minutes < 60) return `${integer.format(minutes)} Min.`;
+  const { integer, oneDecimal } = fmt();
+  const u = messages().units;
+  if (minutes <= 0) return u.neverPlayed;
+  if (minutes < 60) return `${integer.format(minutes)} ${u.minutes}`;
   const hours = minutes / 60;
-  return `${hours < 10 ? oneDecimal.format(hours) : integer.format(hours)} Std.`;
+  return `${hours < 10 ? oneDecimal.format(hours) : integer.format(hours)} ${u.hours}`;
 }
 
 /** Compact form for charts: 90 → "1,5 h", 30 → "30 min" */
 export function formatMinutesShort(minutes: number): string {
+  const { integer, oneDecimal } = fmt();
   if (minutes < 60) return `${integer.format(minutes)} min`;
   return `${oneDecimal.format(minutes / 60)} h`;
 }
@@ -34,21 +59,21 @@ const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
 export function formatRelative(iso: string, now: Date = new Date()): string {
   const seconds = (new Date(iso).getTime() - now.getTime()) / 1000;
   for (const [unit, size] of UNITS) {
-    if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
+    if (Math.abs(seconds) >= size) return fmt().relative.format(Math.round(seconds / size), unit);
   }
-  return "gerade eben";
+  return messages().units.justNow;
 }
 
 export function formatDate(iso: string): string {
-  return dateLong.format(new Date(iso));
+  return fmt().dateLong.format(new Date(iso));
 }
 
 export function formatDateShort(iso: string): string {
-  return dateShort.format(new Date(iso));
+  return fmt().dateShort.format(new Date(iso));
 }
 
 export function formatWeekday(iso: string): string {
-  return weekday.format(new Date(iso));
+  return fmt().weekday.format(new Date(iso));
 }
 
 export function formatYear(iso: string): string {
@@ -59,6 +84,7 @@ const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 /** 1536 → "1,5 KB" (decimal units, like stores display them) */
 export function formatBytes(bytes: number): string {
+  const { integer, oneDecimal } = fmt();
   let value = bytes;
   let unit = 0;
   while (value >= 1000 && unit < BYTE_UNITS.length - 1) {
@@ -76,18 +102,20 @@ export function formatSpeed(bytesPerSecond: number): string {
 /** Remaining time: "45 Sek.", "12 Min.", "1 Std. 5 Min." */
 export function formatEta(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "—";
-  if (seconds < 60) return `${integer.format(Math.ceil(seconds))} Sek.`;
+  const { integer } = fmt();
+  const u = messages().units;
+  if (seconds < 60) return `${integer.format(Math.ceil(seconds))} ${u.seconds}`;
   const minutes = Math.ceil(seconds / 60);
-  if (minutes < 60) return `${integer.format(minutes)} Min.`;
+  if (minutes < 60) return `${integer.format(minutes)} ${u.minutes}`;
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return m === 0 ? `${integer.format(h)} Std.` : `${integer.format(h)} Std. ${integer.format(m)} Min.`;
+  return m === 0 ? `${integer.format(h)} ${u.hours}` : `${integer.format(h)} ${u.hours} ${integer.format(m)} ${u.minutes}`;
 }
 
 export function formatPercent(fraction: number): string {
-  return `${integer.format(Math.round(fraction * 100))} %`;
+  return messages().units.percent(fmt().integer.format(Math.round(fraction * 100)));
 }
 
 export function formatNumber(value: number): string {
-  return integer.format(value);
+  return fmt().integer.format(value);
 }

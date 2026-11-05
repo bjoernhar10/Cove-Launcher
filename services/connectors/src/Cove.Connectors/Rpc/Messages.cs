@@ -9,6 +9,10 @@ public sealed record PingParams(string? Message);
 
 public sealed record PingResult(string Service, string Version, string Message);
 
+public sealed record SetLanguageParams(string Language);
+
+public sealed record SetLanguageResult(string Language);
+
 public sealed record StoreInfo(string Id, string Name);
 
 public sealed record LoginStartParams(string Store, string RedirectUri, string State);
@@ -33,6 +37,8 @@ public sealed record LocalResult(IReadOnlyList<LocalGame> Games);
     DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
 [JsonSerializable(typeof(PingParams))]
 [JsonSerializable(typeof(PingResult))]
+[JsonSerializable(typeof(SetLanguageParams))]
+[JsonSerializable(typeof(SetLanguageResult))]
 [JsonSerializable(typeof(List<StoreInfo>))]
 [JsonSerializable(typeof(LoginStartParams))]
 [JsonSerializable(typeof(LoginStart))]

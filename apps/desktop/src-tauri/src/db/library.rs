@@ -214,12 +214,16 @@ pub async fn add_manual(pool: &SqlitePool, input: &ManualGameInput) -> AppResult
     let title = input.title.trim();
     let executable = input.executable_path.trim();
     if title.is_empty() {
-        return Err(AppError::InvalidInput("Bitte gib einen Namen ein.".into()));
+        return Err(AppError::InvalidInput(tr!(
+            "Bitte gib einen Namen ein.",
+            "Please enter a name."
+        )));
     }
     if executable.is_empty() {
-        return Err(AppError::InvalidInput(
-            "Bitte gib den Pfad zur ausführbaren Datei an.".into(),
-        ));
+        return Err(AppError::InvalidInput(tr!(
+            "Bitte gib den Pfad zur ausführbaren Datei an.",
+            "Please enter the path to the executable."
+        )));
     }
     if executable_paths(pool).await?.contains(executable) {
         return Err(AppError::AlreadyInLibrary(title.to_owned()));
@@ -239,7 +243,10 @@ pub async fn add_manual(pool: &SqlitePool, input: &ManualGameInput) -> AppResult
     )
     .bind(&id)
     .bind(title)
-    .bind(format!("Manuell hinzugefügt.\n\nPfad: {executable}"))
+    .bind(tr!(
+        "Manuell hinzugefügt.\n\nPfad: {executable}",
+        "Added manually.\n\nPath: {executable}"
+    ))
     .bind(platforms)
     .bind(&now[..10])
     .bind(&now)
@@ -265,9 +272,10 @@ pub async fn add_manual(pool: &SqlitePool, input: &ManualGameInput) -> AppResult
 pub async fn add_not_installed(pool: &SqlitePool, title: &str) -> AppResult<LibraryItem> {
     let title = title.trim();
     if title.is_empty() || title.chars().count() > 200 {
-        return Err(AppError::InvalidInput(
-            "Der Name fehlt oder ist zu lang.".into(),
-        ));
+        return Err(AppError::InvalidInput(tr!(
+            "Der Name fehlt oder ist zu lang.",
+            "The name is missing or too long."
+        )));
     }
     let exists: Option<i64> = sqlx::query_scalar(
         "SELECT 1 FROM library_entries e JOIN games g ON g.id = e.game_id WHERE LOWER(g.title) = LOWER(?)",
@@ -300,7 +308,10 @@ pub async fn add_not_installed(pool: &SqlitePool, title: &str) -> AppResult<Libr
 /// Stores catalogue metadata and adds the game as a (not yet set up) library entry.
 pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<LibraryItem> {
     if game.id.trim().is_empty() || game.title.trim().is_empty() {
-        return Err(AppError::InvalidInput("Ungültiges Spiel.".into()));
+        return Err(AppError::InvalidInput(tr!(
+            "Ungültiges Spiel.",
+            "Invalid game."
+        )));
     }
     if get(pool, &game.id).await?.is_some() {
         return Err(AppError::AlreadyInLibrary(game.title.clone()));
@@ -378,9 +389,10 @@ pub async fn update(
     if let Some(title) = &patch.title {
         let title = title.trim();
         if title.is_empty() {
-            return Err(AppError::InvalidInput(
-                "Der Name darf nicht leer sein.".into(),
-            ));
+            return Err(AppError::InvalidInput(tr!(
+                "Der Name darf nicht leer sein.",
+                "The name can't be empty."
+            )));
         }
         sqlx::query("UPDATE games SET title = ? WHERE id = ?")
             .bind(title)
@@ -398,9 +410,10 @@ pub async fn update(
     if let Some(raw_path) = &patch.executable_path {
         let exe_path = raw_path.trim();
         if exe_path.is_empty() {
-            return Err(AppError::InvalidInput(
-                "Bitte gib den Pfad zur ausführbaren Datei an.".into(),
-            ));
+            return Err(AppError::InvalidInput(tr!(
+                "Bitte gib den Pfad zur ausführbaren Datei an.",
+                "Please enter the path to the executable."
+            )));
         }
         let install_dir = Path::new(exe_path)
             .parent()
@@ -425,9 +438,10 @@ pub async fn update(
             .iter()
             .any(|e| e.key.contains('=') || e.key.chars().any(char::is_whitespace))
         {
-            return Err(AppError::InvalidInput(
-                "Variablennamen dürfen weder „=“ noch Leerzeichen enthalten.".into(),
-            ));
+            return Err(AppError::InvalidInput(tr!(
+                "Variablennamen dürfen weder „=“ noch Leerzeichen enthalten.",
+                "Variable names can't contain “=” or spaces."
+            )));
         }
         sqlx::query(
             "UPDATE library_entries SET launch_arguments = ?, compatibility_tool = ?, env = ? WHERE game_id = ?",

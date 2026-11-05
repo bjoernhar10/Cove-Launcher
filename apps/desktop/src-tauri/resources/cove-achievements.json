@@ -4,37 +4,80 @@
       "id": "first-hour",
       "title": "Erste Stunde",
       "description": "Spiele insgesamt eine Stunde über Cove.",
-      "rule": { "type": "playtimeHours", "hours": 1 }
+      "en": {
+        "title": "First hour",
+        "description": "Play for one hour in total through Cove."
+      },
+      "rule": {
+        "type": "playtimeHours",
+        "hours": 1
+      }
     },
     {
       "id": "ten-hours",
       "title": "10 Stunden",
       "description": "Spiele insgesamt 10 Stunden über Cove.",
-      "rule": { "type": "playtimeHours", "hours": 10 }
+      "en": {
+        "title": "10 hours",
+        "description": "Play for 10 hours in total through Cove."
+      },
+      "rule": {
+        "type": "playtimeHours",
+        "hours": 10
+      }
     },
     {
       "id": "fifty-hours",
       "title": "50 Stunden",
       "description": "Spiele insgesamt 50 Stunden über Cove.",
-      "rule": { "type": "playtimeHours", "hours": 50 }
+      "en": {
+        "title": "50 hours",
+        "description": "Play for 50 hours in total through Cove."
+      },
+      "rule": {
+        "type": "playtimeHours",
+        "hours": 50
+      }
     },
     {
       "id": "night-owl",
       "title": "Nachteule",
       "description": "Spiele nach 2 Uhr nachts.",
-      "rule": { "type": "playedBetween", "fromHour": 2, "toHour": 5 }
+      "en": {
+        "title": "Night owl",
+        "description": "Play after 2 a.m."
+      },
+      "rule": {
+        "type": "playedBetween",
+        "fromHour": 2,
+        "toHour": 5
+      }
     },
     {
       "id": "collector",
       "title": "Sammler",
       "description": "Habe 50 Spiele in deiner Bibliothek.",
-      "rule": { "type": "libraryGames", "count": 50 }
+      "en": {
+        "title": "Collector",
+        "description": "Have 50 games in your library."
+      },
+      "rule": {
+        "type": "libraryGames",
+        "count": 50
+      }
     },
     {
       "id": "explorer",
       "title": "Entdecker",
       "description": "Probiere 5 Spiele aus, die Cove dir empfohlen hat.",
-      "rule": { "type": "recommendedPlayed", "count": 5 }
+      "en": {
+        "title": "Explorer",
+        "description": "Try 5 games that Cove recommended to you."
+      },
+      "rule": {
+        "type": "recommendedPlayed",
+        "count": 5
+      }
     }
   ]
 }

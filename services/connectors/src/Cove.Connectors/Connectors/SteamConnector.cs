@@ -59,13 +59,13 @@ public sealed partial class SteamConnector(HttpClient http, SteamConfig config) 
         // The assertion must be for our own loopback URL.
         if (request.ExpectedReturnTo is not null && query["openid.return_to"] != request.ExpectedReturnTo)
         {
-            throw new ConnectorException(ConnectorErrorKind.AuthFailed, "Die Steam-Antwort gehört nicht zu dieser Anmeldung.");
+            throw new ConnectorException(ConnectorErrorKind.AuthFailed, Texts.T("Die Steam-Antwort gehört nicht zu dieser Anmeldung.", "The Steam response doesn't belong to this sign-in."));
         }
 
         var match = ClaimedId().Match(query["openid.claimed_id"] ?? string.Empty);
         if (!match.Success)
         {
-            throw new ConnectorException(ConnectorErrorKind.AuthFailed, "Steam hat keine gültige Steam-ID geliefert.");
+            throw new ConnectorException(ConnectorErrorKind.AuthFailed, Texts.T("Steam hat keine gültige Steam-ID geliefert.", "Steam didn't return a valid Steam ID."));
         }
 
         // Ask Steam whether it really issued this assertion.
@@ -76,7 +76,7 @@ public sealed partial class SteamConnector(HttpClient http, SteamConfig config) 
         var answer = await StoreHttp.SendTextAsync(http, verify, Name, ct).ConfigureAwait(false);
         if (!answer.Split('\n').Any(line => line.Trim() == "is_valid:true"))
         {
-            throw new ConnectorException(ConnectorErrorKind.AuthFailed, "Steam hat die Anmeldung nicht bestätigt.");
+            throw new ConnectorException(ConnectorErrorKind.AuthFailed, Texts.T("Steam hat die Anmeldung nicht bestätigt.", "Steam didn't confirm the sign-in."));
         }
 
         var steamId = match.Groups[1].Value;
@@ -101,7 +101,7 @@ public sealed partial class SteamConnector(HttpClient http, SteamConfig config) 
     public Task<StoreSession> RefreshAsync(StoreSession session, CancellationToken ct) => Task.FromResult(session);
 
     private static string Proxy(StoreContext context) =>
-        context.ProxyUrl ?? throw new ConnectorException(ConnectorErrorKind.Unavailable, "Für Steam-Daten wird der Cove-Katalogdienst benötigt.");
+        context.ProxyUrl ?? throw new ConnectorException(ConnectorErrorKind.Unavailable, Texts.T("Für Steam-Daten wird der Cove-Katalogdienst benötigt.", "Steam data needs the Cove catalogue service."));
 
     private void ThrowIfPrivate(JsonNode node)
     {
@@ -109,7 +109,9 @@ public sealed partial class SteamConnector(HttpClient http, SteamConfig config) 
         {
             throw new ConnectorException(
                 ConnectorErrorKind.PrivateProfile,
-                "Dein Steam-Profil oder deine Spieldetails sind privat. Stelle „Spieldetails“ in den Steam-Privatsphäre-Einstellungen auf „Öffentlich“.")
+                Texts.T(
+                    "Dein Steam-Profil oder deine Spieldetails sind privat. Stelle „Spieldetails“ in den Steam-Privatsphäre-Einstellungen auf „Öffentlich“.",
+                    "Your Steam profile or game details are private. Set “Game details” to “Public” in your Steam privacy settings."))
             {
                 HelpUrl = config.PrivacySettingsUrl,
             };
@@ -140,7 +142,7 @@ public sealed partial class SteamConnector(HttpClient http, SteamConfig config) 
     {
         if (!storeGameId.All(char.IsAsciiDigit))
         {
-            throw new ConnectorException(ConnectorErrorKind.InvalidRequest, $"Ungültige Steam-App-ID: {storeGameId}");
+            throw new ConnectorException(ConnectorErrorKind.InvalidRequest, Texts.T($"Ungültige Steam-App-ID: {storeGameId}", $"Invalid Steam app ID: {storeGameId}"));
         }
 
         var body = await StoreHttp.GetJsonAsync(

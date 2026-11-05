@@ -1,3 +1,4 @@
+import { locale, useMessages } from "../i18n/index.ts";
 import type { Achievement, CompatibilityTool, EnvVar, LaunchOptions, LibraryItem } from "@cove/shared";
 import { ArrowLeft, Compass, Library, Link2, Lock, Plus, Star, Trash2, Trophy } from "lucide-react";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
@@ -35,15 +36,16 @@ function Stat({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function Overview({ item }: { item: LibraryItem }) {
+  const t = useMessages();
   const stats = useQuery(`playtime/${item.game.id}`, () => api.library.getPlaytimeStats(item.game.id));
   const { entry, game } = item;
 
   return (
     <div className="grid grid-cols-1 gap-10 xl:grid-cols-[1fr_320px]">
-      <section aria-label="Spielzeit">
-        <h2 className="text-base font-semibold text-fg">Spielzeit der letzten 14 Tage</h2>
+      <section aria-label={t.library.colPlaytime}>
+        <h2 className="text-base font-semibold text-fg">{t.game.last14Days}</h2>
         {stats.status === "loading" && (
-          <LoadingRegion label="Lädt Spielzeit">
+          <LoadingRegion label={t.game.loadingPlaytime}>
             <Skeleton className="mt-4 h-40" />
           </LoadingRegion>
         )}
@@ -51,24 +53,24 @@ function Overview({ item }: { item: LibraryItem }) {
         {stats.status === "success" && (
           <>
             <p className="num mt-1 text-sm text-fg-muted">
-              {formatPlaytime(stats.data.last14DaysMinutes)} · {stats.data.sessionCount} Sitzungen insgesamt
+              {formatPlaytime(stats.data.last14DaysMinutes)} · {t.game.sessions(stats.data.sessionCount)}
             </p>
             <div className="mt-4">
-              <PlaytimeChart days={stats.data.days} title={`Spielzeit pro Tag für ${game.title}`} />
+              <PlaytimeChart days={stats.data.days} title={t.game.perDay(game.title)} />
             </div>
           </>
         )}
       </section>
-      <section aria-label="Informationen">
-        <h2 className="mb-3 text-base font-semibold text-fg">Informationen</h2>
+      <section aria-label={t.game.info}>
+        <h2 className="mb-3 text-base font-semibold text-fg">{t.game.info}</h2>
         <dl className="m-0 rounded-lg border border-border px-4 text-sm">
           {[
-            ["Quelle", SOURCE_LABELS[entry.source]],
-            ["Status", entry.installed ? "Installiert" : "Nicht installiert"],
-            ["Speicherort", entry.installPath ?? "—"],
-            ["Größe", entry.installSizeBytes === null ? "—" : formatBytes(entry.installSizeBytes)],
-            ["Hinzugefügt", formatDate(entry.addedAt)],
-            ["Entwickler", game.developer],
+            [t.library.colSource, SOURCE_LABELS[entry.source]],
+            [t.game.status, entry.installed ? t.library.installed : t.library.notInstalled],
+            [t.game.location, entry.installPath ?? "—"],
+            [t.game.size, entry.installSizeBytes === null ? "—" : formatBytes(entry.installSizeBytes)],
+            [t.game.added, formatDate(entry.addedAt)],
+            [t.detail.developer, game.developer],
           ].map(([label, value]) => (
             <div key={label} className="flex justify-between gap-4 border-b border-border py-3 last:border-b-0">
               <dt className="text-fg-subtle">{label}</dt>
@@ -115,6 +117,7 @@ function AchievementIcon({ achievement, unlocked }: { achievement: Achievement; 
 }
 
 function AchievementRow({ achievement }: { achievement: Achievement }) {
+  const t = useMessages();
   const unlocked = achievement.unlockedAt !== null;
   const secret = achievement.hidden && !unlocked;
   return (
@@ -122,20 +125,20 @@ function AchievementRow({ achievement }: { achievement: Achievement }) {
       <AchievementIcon achievement={achievement} unlocked={unlocked} />
       <div className="min-w-0 flex-1">
         <p className={cx("truncate text-sm font-medium", unlocked ? "text-fg" : "text-fg-muted")}>
-          {secret ? "Verstecktes Achievement" : achievement.title}
+          {secret ? t.game.hiddenAchievement : achievement.title}
         </p>
-        <p className="truncate text-xs text-fg-subtle">{secret ? "Wird nach dem Freischalten angezeigt." : achievement.description}</p>
+        <p className="truncate text-xs text-fg-subtle">{secret ? t.game.hiddenText : achievement.description}</p>
       </div>
       {achievement.rarityPercent !== null && (
         <span className="num hidden shrink-0 text-xs text-fg-subtle md:inline">
-          {achievement.rarityPercent.toLocaleString("de-DE")} % der Spieler
+          {t.game.rarity(achievement.rarityPercent.toLocaleString(locale()))}
         </span>
       )}
       <span className="w-32 shrink-0 text-right text-xs text-fg-muted">
         {achievement.unlockedAt ? (
           <time dateTime={achievement.unlockedAt}>{formatRelative(achievement.unlockedAt)}</time>
         ) : (
-          <span className="sr-only">Gesperrt</span>
+          <span className="sr-only">{t.game.locked}</span>
         )}
       </span>
     </li>
@@ -143,12 +146,13 @@ function AchievementRow({ achievement }: { achievement: Achievement }) {
 }
 
 function Achievements({ item }: { item: LibraryItem }) {
+  const t = useMessages();
   const query = useQuery(`achievements/${item.game.id}`, () => api.library.getAchievements(item.game.id));
   const [filter, setFilter] = useState<AchievementFilter>("all");
 
   if (query.status === "loading") {
     return (
-      <LoadingRegion label="Lädt Achievements">
+      <LoadingRegion label={t.home.achievementsLoading}>
         {Array.from({ length: 6 }, (_, i) => (
           <div key={i} className="flex items-center gap-4 border-b border-border py-3">
             <Skeleton className="size-10" />
@@ -167,8 +171,8 @@ function Achievements({ item }: { item: LibraryItem }) {
       <EmptyState
         compact
         icon={Trophy}
-        title="Keine Achievements"
-        description="Für dieses Spiel gibt es keine Achievements – oder die Quelle stellt keine bereit."
+        title={t.achievements.none}
+        description={t.game.noAchievementsText}
       />
     );
   }
@@ -182,24 +186,24 @@ function Achievements({ item }: { item: LibraryItem }) {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="w-64">
           <p className="num text-sm text-fg-muted">
-            <span className="font-medium text-fg">{unlocked.length}</span> von {query.data.length} freigeschaltet
+            {t.game.unlockedOf(unlocked.length, query.data.length)}
           </p>
           <ProgressBar value={unlocked.length} max={query.data.length} label="Achievement-Fortschritt" className="mt-2" />
         </div>
         <Segmented
-          label="Achievements filtern"
+          label={t.game.filterAchievements}
           value={filter}
           onChange={setFilter}
           options={[
-            { value: "all", label: "Alle" },
-            { value: "unlocked", label: "Freigeschaltet" },
-            { value: "locked", label: "Gesperrt" },
+            { value: "all", label: t.library.groups.all },
+            { value: "unlocked", label: t.home.unlocked },
+            { value: "locked", label: t.game.locked },
           ]}
         />
       </div>
       {shown.length === 0 ? (
         <p className="py-8 text-center text-sm text-fg-muted">
-          {filter === "locked" ? "Alles freigeschaltet. Glückwunsch!" : "Noch nichts freigeschaltet."}
+          {filter === "locked" ? t.game.allUnlocked : t.game.noneUnlocked}
         </p>
       ) : (
         <ul className="rounded-lg border border-border px-4">
@@ -215,6 +219,7 @@ function Achievements({ item }: { item: LibraryItem }) {
 const COMPAT_TOOLS = Object.keys(COMPAT_LABELS) as CompatibilityTool[];
 
 function RemoveFromLibrary({ item }: { item: LibraryItem }) {
+  const t = useMessages();
   const navigate = useNavigate();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -223,7 +228,7 @@ function RemoveFromLibrary({ item }: { item: LibraryItem }) {
     setBusy(true);
     try {
       await api.library.removeGame(item.game.id);
-      toast(`„${item.game.title}“ wurde aus der Bibliothek entfernt`);
+      toast(t.game.removed(item.game.title));
       invalidateQueries();
       void navigate("/library");
     } catch (error: unknown) {
@@ -235,9 +240,9 @@ function RemoveFromLibrary({ item }: { item: LibraryItem }) {
 
   return (
     <section aria-label="Entfernen" className="max-w-2xl border-t border-border pt-6">
-      <h3 className="text-sm font-medium text-fg">Aus Bibliothek entfernen</h3>
+      <h3 className="text-sm font-medium text-fg">{t.game.removeTitle}</h3>
       <p className="mt-1 text-sm text-fg-muted">
-        Entfernt den Eintrag aus Cove. Dateien auf der Festplatte bleiben unberührt, deine Spielzeit bleibt gespeichert.
+        {t.game.removeText}
       </p>
       <Button
         variant="danger"
@@ -247,15 +252,15 @@ function RemoveFromLibrary({ item }: { item: LibraryItem }) {
           setConfirming(true);
         }}
       >
-        Entfernen
+        {t.game.remove}
       </Button>
       <Dialog
         open={confirming}
         onClose={() => {
           setConfirming(false);
         }}
-        title={`„${item.game.title}“ entfernen?`}
-        description="Das Spiel verschwindet aus deiner Bibliothek. Installierte Dateien werden nicht gelöscht."
+        title={t.game.removeConfirm(item.game.title)}
+        description={t.game.removeConfirmText}
         footer={
           <>
             <Button
@@ -263,10 +268,10 @@ function RemoveFromLibrary({ item }: { item: LibraryItem }) {
                 setConfirming(false);
               }}
             >
-              Abbrechen
+              {t.common.cancel}
             </Button>
             <Button variant="danger" disabled={busy} onClick={() => void remove()}>
-              Entfernen
+              {t.game.remove}
             </Button>
           </>
         }
@@ -278,6 +283,7 @@ function RemoveFromLibrary({ item }: { item: LibraryItem }) {
 }
 
 function LaunchSettings({ item }: { item: LibraryItem }) {
+  const t = useMessages();
   const [draft, setDraft] = useState<LaunchOptions>(item.entry.launchOptions);
   const [executable, setExecutable] = useState(item.entry.executablePath ?? "");
   const [saving, setSaving] = useState(false);
@@ -302,7 +308,7 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
         ...(executableChanged && executable.trim() ? { executablePath: executable.trim() } : {}),
       });
       setDraft(cleaned);
-      toast("Starteinstellungen gespeichert");
+      toast(t.game.launchSaved);
       invalidateQueries();
     } catch (error: unknown) {
       if (error instanceof CoveError && error.kind === "invalidInput") setPathError(error.message);
@@ -317,11 +323,11 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
     <form className="flex max-w-2xl flex-col gap-8" onSubmit={(e) => void save(e)}>
       {usesExecutable && (
         <Field
-          label="Startdatei"
+          label={t.game.executable}
           description={
             item.entry.executablePath
-              ? "Die Datei, die Cove startet."
-              : "Noch nicht festgelegt – trage die .exe, das Binary, AppImage oder die .desktop-Datei ein."
+              ? t.game.executableHint
+              : t.game.executableMissing
           }
           error={pathError}
         >
@@ -329,7 +335,7 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
             <Input
               {...props}
               spellCheck={false}
-              placeholder={isLinux ? "/home/du/Games/spiel/spiel.x86_64" : "C:\\Games\\Spiel\\spiel.exe"}
+              placeholder={isLinux ? t.game.linuxPathExample : t.game.windowsPathExample}
               value={executable}
               onChange={(e) => {
                 setExecutable(e.target.value);
@@ -340,7 +346,7 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
         </Field>
       )}
 
-      <Field label="Startparameter" description="Werden beim Start an das Spiel übergeben, z. B. -fullscreen -novid.">
+      <Field label={t.game.arguments} description={t.game.argumentsHint}>
         {(props) => (
           <Input
             {...props}
@@ -355,7 +361,7 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
       </Field>
 
       {isLinux && (
-        <Field label="Kompatibilität (Linux)" description="Wie Windows-Spiele unter Linux ausgeführt werden.">
+        <Field label={t.game.compat} description={t.game.compatHint}>
           {(props) => (
             <Select
               {...props}
@@ -370,14 +376,14 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
       )}
 
       <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
-        <legend className="text-sm font-medium text-fg">Umgebungsvariablen</legend>
-        <p className="text-xs text-fg-muted">Zum Beispiel DXVK_HUD=fps oder PROTON_ENABLE_NVAPI=1.</p>
+        <legend className="text-sm font-medium text-fg">{t.game.env}</legend>
+        <p className="text-xs text-fg-muted">{t.game.envHint}</p>
         {draft.env.length > 0 && (
           <ul className="mt-1 flex flex-col gap-2">
             {draft.env.map((env, index) => (
               <li key={index} className="flex items-center gap-2">
                 <Input
-                  aria-label={`Name der Variable ${String(index + 1)}`}
+                  aria-label={t.game.envName(index + 1)}
                   placeholder="NAME"
                   spellCheck={false}
                   className="w-56 font-medium"
@@ -390,8 +396,8 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
                   =
                 </span>
                 <Input
-                  aria-label={`Wert der Variable ${String(index + 1)}`}
-                  placeholder="Wert"
+                  aria-label={t.game.envValue(index + 1)}
+                  placeholder={t.game.value}
                   spellCheck={false}
                   value={env.value}
                   onChange={(e) => {
@@ -402,7 +408,7 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
                   variant="ghost"
                   iconOnly
                   icon={Trash2}
-                  label={`Variable ${env.key || String(index + 1)} entfernen`}
+                  label={t.game.envRemove(env.key || String(index + 1))}
                   onClick={() => {
                     setDraft((d) => ({ ...d, env: d.env.filter((_, i) => i !== index) }));
                   }}
@@ -419,14 +425,14 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
               setDraft((d) => ({ ...d, env: [...d.env, { key: "", value: "" }] }));
             }}
           >
-            Variable hinzufügen
+            {t.game.envAdd}
           </Button>
         </div>
       </fieldset>
 
       <div className="flex gap-2 border-t border-border pt-6">
         <Button type="submit" variant="primary" disabled={!dirty || saving}>
-          Speichern
+          {t.common.save}
         </Button>
         <Button
           disabled={!dirty || saving}
@@ -436,7 +442,7 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
             setPathError(null);
           }}
         >
-          Verwerfen
+          {t.game.discard}
         </Button>
       </div>
     </form>
@@ -446,8 +452,9 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
 }
 
 function HeaderSkeleton() {
+  const t = useMessages();
   return (
-    <LoadingRegion label="Spiel wird geladen" className="flex gap-8">
+    <LoadingRegion label={t.detail.loading} className="flex gap-8">
       <Skeleton className="aspect-[3/4] w-44 rounded-lg" />
       <div className="flex-1 pt-2">
         <Skeleton className="h-9 w-1/3" />
@@ -459,11 +466,12 @@ function HeaderSkeleton() {
 }
 
 export function LibraryDetailPage() {
+  const t = useMessages();
   const { gameId = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const query = useQuery(`library/${gameId}`, () => api.library.getLibraryItem(gameId));
   const tabParam = params.get("tab");
-  const tab: Tab = TABS.find((t) => t === tabParam) ?? "overview";
+  const tab: Tab = TABS.find((x) => x === tabParam) ?? "overview";
   const [matchOpen, setMatchOpen] = useState(false);
 
   async function toggleFavorite(item: LibraryItem): Promise<void> {
@@ -488,13 +496,13 @@ export function LibraryDetailPage() {
       {query.status === "success" && query.data === null && (
         <EmptyState
           icon={Library}
-          title="Nicht in deiner Bibliothek"
-          description="Dieses Spiel gehört (noch) nicht zu deiner Bibliothek."
+          title={t.game.notInLibrary}
+          description={t.game.notInLibraryText}
           actions={
             <>
-              <ButtonLink to="/library">Zur Bibliothek</ButtonLink>
+              <ButtonLink to="/library">{t.downloads.toLibrary}</ButtonLink>
               <ButtonLink to={`/catalogue/${gameId}`} icon={Compass}>
-                Im Katalog ansehen
+                {t.game.viewInCatalogue}
               </ButtonLink>
             </>
           }
@@ -507,7 +515,7 @@ export function LibraryDetailPage() {
             <div className="flex min-w-0 flex-1 flex-col justify-end pb-1">
               <div className="flex items-center gap-2">
                 <Badge>{SOURCE_LABELS[query.data.entry.source]}</Badge>
-                {!query.data.entry.installed && <Badge>Nicht installiert</Badge>}
+                {!query.data.entry.installed && <Badge>{t.library.notInstalled}</Badge>}
               </div>
               <h1 className="mt-3 text-xl font-semibold tracking-tight text-fg">{query.data.game.title}</h1>
               <p className="mt-1 text-sm text-fg-muted">{query.data.game.summary}</p>
@@ -521,11 +529,11 @@ export function LibraryDetailPage() {
                   }}
                   className={query.data.entry.favorite ? "[&_svg]:fill-current [&_svg]:text-accent-text" : undefined}
                 >
-                  {query.data.entry.favorite ? "Favorit" : "Zu Favoriten"}
+                  {query.data.entry.favorite ? t.game.favorite : t.library.favorite}
                 </Button>
                 {query.data.entry.catalogId && (
                   <ButtonLink to={`/catalogue/${query.data.entry.catalogId}`} variant="ghost">
-                    Katalog-Seite
+                    {t.game.cataloguePage}
                   </ButtonLink>
                 )}
                 <Button
@@ -535,7 +543,7 @@ export function LibraryDetailPage() {
                     setMatchOpen(true);
                   }}
                 >
-                  {query.data.entry.catalogId ? "Zuordnung ändern" : "Im Katalog zuordnen"}
+                  {query.data.entry.catalogId ? t.game.changeMatch : t.game.matchInCatalogue}
                 </Button>
               </div>
             </div>
@@ -547,7 +555,7 @@ export function LibraryDetailPage() {
               className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-accent-subtle px-4 py-3"
             >
               <p className="text-sm text-fg">
-                Cove hat mehrere mögliche Treffer im Katalog gefunden. Welcher passt zu deinem Spiel?
+                {t.game.pendingMatch}
               </p>
               <Button
                 size="sm"
@@ -556,7 +564,7 @@ export function LibraryDetailPage() {
                   setMatchOpen(true);
                 }}
               >
-                Zuordnung prüfen
+                {t.library.checkMatch}
               </Button>
             </div>
           )}
@@ -570,25 +578,25 @@ export function LibraryDetailPage() {
           />
 
           <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Gesamtspielzeit">{formatPlaytime(query.data.entry.playtimeMinutes)}</Stat>
-            <Stat label="Zuletzt gespielt">{query.data.entry.lastPlayedAt ? formatRelative(query.data.entry.lastPlayedAt) : "Noch nie"}</Stat>
+            <Stat label={t.game.totalPlaytime}>{formatPlaytime(query.data.entry.playtimeMinutes)}</Stat>
+            <Stat label={t.library.colLastPlayed}>{query.data.entry.lastPlayedAt ? formatRelative(query.data.entry.lastPlayedAt) : t.game.never}</Stat>
             <Stat label="Achievements">
               {query.data.entry.achievements.total > 0
                 ? `${String(query.data.entry.achievements.unlocked)} / ${String(query.data.entry.achievements.total)}`
                 : "—"}
             </Stat>
-            <Stat label="Größe">{query.data.entry.installSizeBytes === null ? "—" : formatBytes(query.data.entry.installSizeBytes)}</Stat>
+            <Stat label={t.game.size}>{query.data.entry.installSizeBytes === null ? "—" : formatBytes(query.data.entry.installSizeBytes)}</Stat>
           </div>
 
           <div className="mt-10">
             <Tabs
-              label="Spielbereiche"
+              label={t.game.sections}
               value={tab}
               onChange={(next) => {
                 setParams(next === "overview" ? {} : { tab: next }, { replace: true });
               }}
               items={[
-                { value: "overview", label: "Übersicht" },
+                { value: "overview", label: t.game.overview },
                 {
                   value: "achievements",
                   label: "Achievements",
@@ -596,7 +604,7 @@ export function LibraryDetailPage() {
                     ? { meta: `${String(query.data.entry.achievements.unlocked)}/${String(query.data.entry.achievements.total)}` }
                     : {}),
                 },
-                { value: "settings", label: "Einstellungen" },
+                { value: "settings", label: t.game.settings },
               ]}
             >
               {tab === "overview" && <Overview item={query.data} />}

@@ -2,6 +2,7 @@ import type { AccentColor, StoreSource, ThemePreference } from "@cove/shared";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "../api/index.ts";
+import { isLanguage, setLanguage } from "../i18n/index.ts";
 
 export type LibraryView = "grid" | "list";
 export type LibraryGroup = "all" | "installed" | "favorites" | StoreSource;
@@ -65,7 +66,7 @@ const THEMES: readonly ThemePreference[] = ["system", "light", "dark"];
 const ACCENTS: readonly AccentColor[] = ["blue", "teal", "sage", "plum", "clay"];
 
 /**
- * Keeps theme + accent in sync with the core's settings: the stored values win
+ * Keeps theme, accent and language in sync with the core's settings: the stored values win
  * at startup (localStorage only avoids a flash), every later change is saved.
  * Returns the unsubscribe function.
  */
@@ -76,6 +77,7 @@ export function syncAppearanceWithCore(): () => void {
       const theme = THEMES.find((t) => t === settings.appearance.theme);
       const accent = ACCENTS.find((a) => a === settings.appearance.accent);
       usePreferences.setState({ ...(theme ? { theme } : {}), ...(accent ? { accent } : {}) });
+      if (isLanguage(settings.general.language)) setLanguage(settings.general.language);
       ready = true;
     },
     () => undefined, // no core (browser preview): keep local values

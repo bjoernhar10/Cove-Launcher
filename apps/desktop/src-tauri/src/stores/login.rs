@@ -105,14 +105,15 @@ pub async fn start<R: Runtime>(
         ConnectorLoginMode::Webview => {
             let begin = stores.login_start(store, "", &state).await?;
             let prefix = begin.callback_prefix.clone().ok_or_else(|| {
-                AppError::StoreUnavailable(format!(
+                AppError::StoreUnavailable(tr!(
                     "{}-Login ist falsch konfiguriert.",
+                    "The {} sign-in is configured incorrectly.",
                     store.display_name()
                 ))
             })?;
             let cancel = flows.register(store);
             let label = window_label(store);
-            let title = format!("Bei {} anmelden", store.display_name());
+            let title = tr!("Bei {} anmelden", "Sign in to {}", store.display_name());
             let url = begin.url.clone();
             tauri::async_runtime::spawn(async move {
                 let outcome = tokio::select! {

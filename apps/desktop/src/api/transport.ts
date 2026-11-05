@@ -1,3 +1,4 @@
+import { messages } from "../i18n/index.ts";
 /**
  * The ONLY bridge between UI and backend.
  *
@@ -27,10 +28,8 @@ function hasCore(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-const UNAVAILABLE = "Das geht nur in der Desktop-App (npm run dev).";
-
 export async function call<C extends CoveCommand>(command: C, args: CoveCommands[C]["args"]): Promise<CoveCommands[C]["result"]> {
-  if (!hasCore()) throw new CoveError("unavailable", UNAVAILABLE);
+  if (!hasCore()) throw new CoveError("unavailable", messages().common.desktopOnly);
   try {
     return await invoke<CoveCommands[C]["result"]>(command, args);
   } catch (error: unknown) {

@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
 import { cx } from "../../lib/cx.ts";
@@ -19,16 +20,17 @@ const BUTTON = "inline-flex h-8 w-10 items-center justify-center rounded-md text
 
 /** Minimal window buttons for the custom title bar (decorations: false). */
 export function WindowControls() {
-  const hint = inTauri ? undefined : "Nur in der Desktop-App";
+  const t = useMessages();
+  const hint = inTauri ? undefined : t.window.desktopOnly;
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Fenster">
-      <button type="button" aria-label="Minimieren" title={hint ?? "Minimieren"} className={cx(BUTTON, "hover:bg-hover hover:text-fg")} onClick={() => { run("minimize"); }}>
+    <div className="flex items-center gap-1" role="group" aria-label={t.window.group}>
+      <button type="button" aria-label={t.window.minimize} title={hint ?? t.window.minimize} className={cx(BUTTON, "hover:bg-hover hover:text-fg")} onClick={() => { run("minimize"); }}>
         <Minus aria-hidden />
       </button>
-      <button type="button" aria-label="Maximieren" title={hint ?? "Maximieren"} className={cx(BUTTON, "hover:bg-hover hover:text-fg")} onClick={() => { run("toggleMaximize"); }}>
+      <button type="button" aria-label={t.window.maximize} title={hint ?? t.window.maximize} className={cx(BUTTON, "hover:bg-hover hover:text-fg")} onClick={() => { run("toggleMaximize"); }}>
         <Square aria-hidden className="scale-75" />
       </button>
-      <button type="button" aria-label="Schließen" title={hint ?? "Schließen"} className={cx(BUTTON, "hover:bg-danger-subtle hover:text-danger")} onClick={() => { run("close"); }}>
+      <button type="button" aria-label={t.window.close} title={hint ?? t.window.close} className={cx(BUTTON, "hover:bg-danger-subtle hover:text-danger")} onClick={() => { run("close"); }}>
         <X aria-hidden />
       </button>
     </div>

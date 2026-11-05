@@ -96,7 +96,8 @@ cove.storage.get(key) / set(key, value) / remove(key) / keys()
   `{ type: "playtimeHours", hours }`, `{ type: "libraryGames", count }`,
   `{ type: "playedBetween", fromHour, toHour }` (local time) and `{ type: "recommendedPlayed", count }`.
   Ids are prefixed with the plugin id. At most 50 per plugin. Define them in `activate` on every
-  start; it replaces the previous list.
+  start; it replaces the previous list. Optional `en: { title, description }` adds English texts,
+  shown when Cove runs in English.
 - **Sidebar items**: `icon` is one of `puzzle`, `dice`, `trophy`, `upload`, `sparkles`, `list`,
   `star`, `clock`. With `pickFile: { accept: ".csv" }` Cove opens a file dialog when the item is
   clicked and passes `{ file: { name, text } }` to `onClick` (text files up to 5 MB).

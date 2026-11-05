@@ -1,3 +1,4 @@
+import { useMessages } from "../../i18n/index.ts";
 import type { Game } from "@cove/shared";
 import { CornerDownLeft, Moon, Plus, Search, Sun, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -14,7 +15,8 @@ import { MAIN_NAV, SETTINGS_NAV } from "./nav.ts";
 
 interface Command {
   id: string;
-  group: "Spiele" | "Navigation" | "Aktionen";
+  /** Heading the command is listed under (consecutive commands share it). */
+  group: string;
   label: string;
   hint?: string;
   icon?: LucideIcon;
@@ -23,6 +25,7 @@ interface Command {
 }
 
 function PaletteBody({ onClose }: { onClose: () => void }) {
+  const t = useMessages();
   const navigate = useNavigate();
   const openAddGame = useUi((s) => s.openAddGame);
   const setTheme = usePreferences((s) => s.setTheme);
@@ -70,37 +73,37 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
     const gameCommands: Command[] = q
       ? games.map((game) => ({
           id: `game-${game.id}`,
-          group: "Spiele",
+          group: t.palette.games,
           label: game.title,
-          hint: owned.has(game.id) ? "In deiner Bibliothek" : "Katalog",
+          hint: owned.has(game.id) ? t.palette.inLibrary : t.palette.catalogue,
           game,
           run: go(owned.has(game.id) ? `/library/${owned.get(game.id) ?? game.id}` : `/catalogue/${game.id}`),
         }))
       : [];
     const nav: Command[] = [...MAIN_NAV, SETTINGS_NAV].map((item) => ({
       id: `nav-${item.to}`,
-      group: "Navigation",
-      label: `Gehe zu ${item.label}`,
+      group: t.palette.navigation,
+      label: t.palette.goTo(item.label),
       icon: item.icon,
       run: go(item.to),
     }));
     const actions: Command[] = [
       {
         id: "add-game",
-        group: "Aktionen",
-        label: "Spiel hinzufügen",
+        group: t.palette.actions,
+        label: t.palette.addGame,
         icon: Plus,
         run: () => {
           onClose();
           openAddGame();
         },
       },
-      { id: "theme-light", group: "Aktionen", label: "Helles Design verwenden", icon: Sun, run: () => { setTheme("light"); onClose(); } },
-      { id: "theme-dark", group: "Aktionen", label: "Dunkles Design verwenden", icon: Moon, run: () => { setTheme("dark"); onClose(); } },
+      { id: "theme-light", group: t.palette.actions, label: t.palette.lightTheme, icon: Sun, run: () => { setTheme("light"); onClose(); } },
+      { id: "theme-dark", group: t.palette.actions, label: t.palette.darkTheme, icon: Moon, run: () => { setTheme("dark"); onClose(); } },
     ];
     const matches = (c: Command) => !q || c.label.toLowerCase().includes(q);
     return [...gameCommands, ...nav.filter(matches), ...actions.filter(matches)];
-  }, [games, owned, query, navigate, onClose, openAddGame, setTheme]);
+  }, [games, owned, query, navigate, onClose, openAddGame, setTheme, t]);
 
   const safeIndex = Math.min(activeIndex, Math.max(0, commands.length - 1));
   const active = commands[safeIndex];
@@ -119,8 +122,8 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
           aria-expanded
           aria-controls={listId}
           aria-activedescendant={active ? `${listId}-${active.id}` : undefined}
-          aria-label="Suche"
-          placeholder="Spiele, Seiten, Aktionen suchen …"
+          aria-label={t.palette.search}
+          placeholder={t.topbar.searchPlaceholder}
           className="h-full flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg-subtle"
           value={query}
           onChange={(e) => {
@@ -142,8 +145,8 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
         />
         <Kbd>Esc</Kbd>
       </div>
-      <ul ref={listRef} id={listId} role="listbox" aria-label="Ergebnisse" className="max-h-96 overflow-y-auto p-2">
-        {commands.length === 0 && <li className="px-3 py-8 text-center text-sm text-fg-muted">Keine Treffer für „{query}“.</li>}
+      <ul ref={listRef} id={listId} role="listbox" aria-label={t.palette.results} className="max-h-96 overflow-y-auto p-2">
+        {commands.length === 0 && <li className="px-3 py-8 text-center text-sm text-fg-muted">{t.palette.noResults(query)}</li>}
         {commands.map((command, index) => {
           const showGroup = index === 0 || commands[index - 1]?.group !== command.group;
           const Icon = command.icon;
@@ -181,11 +184,12 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
 }
 
 export function CommandPalette() {
+  const t = useMessages();
   const open = useUi((s) => s.paletteOpen);
   const setOpen = useUi((s) => s.setPaletteOpen);
   const close = useMemo(() => () => { setOpen(false); }, [setOpen]);
   return (
-    <Dialog open={open} onClose={close} title="Befehlspalette" bare className="mt-[12vh] mb-auto w-[600px]">
+    <Dialog open={open} onClose={close} title={t.palette.title} bare className="mt-[12vh] mb-auto w-[600px]">
       {open && <PaletteBody onClose={close} />}
     </Dialog>
   );

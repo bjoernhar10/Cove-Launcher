@@ -34,7 +34,26 @@ pub struct Definition {
     pub id: String,
     pub title: String,
     pub description: String,
+    /// Optional English texts; without them the texts above are used in every language.
+    #[serde(default)]
+    pub en: Option<Texts>,
     pub rule: Rule,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Texts {
+    pub title: String,
+    pub description: String,
+}
+
+impl Definition {
+    /// Title and description in the UI language.
+    fn texts(&self) -> (String, String) {
+        match &self.en {
+            Some(en) if crate::i18n::is_english() => (en.title.clone(), en.description.clone()),
+            _ => (self.title.clone(), self.description.clone()),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -166,10 +185,11 @@ pub async fn list(
         .map(|d| {
             let (current, target) = progress(&d.rule, &facts);
             let unlocked_at = unlocked.get(&d.id).cloned();
+            let (title, description) = d.texts();
             CoveAchievement {
                 id: d.id.clone(),
-                title: d.title.clone(),
-                description: d.description.clone(),
+                title,
+                description,
                 current: if unlocked_at.is_some() {
                     target
                 } else {
@@ -205,10 +225,11 @@ pub async fn evaluate(
                 .execute(pool)
                 .await?;
         if inserted.rows_affected() > 0 {
+            let (title, description) = definition.texts();
             fresh.push(CoveAchievement {
                 id: definition.id.clone(),
-                title: definition.title.clone(),
-                description: definition.description.clone(),
+                title,
+                description,
                 unlocked_at: Some(now.clone()),
                 current: target,
                 target,
@@ -295,6 +316,16 @@ mod tests {
 
     fn utc(s: &str) -> DateTime<Utc> {
         DateTime::parse_from_rfc3339(s).unwrap().to_utc()
+    }
+
+    #[test]
+    fn bundled_definitions_have_english_texts() {
+        for d in parse(BUNDLED).unwrap() {
+            assert!(d.en.is_some(), "{} has no English texts", d.id);
+            let german = d.texts();
+            let english = crate::i18n::in_english(|| d.texts());
+            assert_ne!(german.0, english.0, "{}", d.id);
+        }
     }
 
     #[test]
@@ -420,6 +451,7 @@ mod tests {
             id: "explorer".into(),
             title: "Entdecker".into(),
             description: String::new(),
+            en: None,
             rule: Rule::RecommendedPlayed { count: 2 },
         }];
         for id in ["a", "b", "c"] {

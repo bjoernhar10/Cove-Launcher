@@ -258,7 +258,7 @@ impl CatalogService {
                 AppError::Offline(msg)
             }
             ProviderError::Auth(msg) => AppError::CatalogAuth(msg),
-            other => AppError::CatalogProvider(other.to_string()),
+            other => AppError::CatalogProvider(other.user_text()),
         }
     }
 
@@ -397,7 +397,10 @@ impl CatalogService {
     /// Provider + native id for a namespaced catalogue id (`igdb-1942`).
     async fn provider_of(&self, catalog_id: &str) -> AppResult<(Arc<dyn CatalogProvider>, String)> {
         let (id, native) = CatalogProviderId::parse_catalog_id(catalog_id).ok_or_else(|| {
-            AppError::InvalidInput(format!("Unbekannte Katalog-ID: {catalog_id}"))
+            AppError::InvalidInput(tr!(
+                "Unbekannte Katalog-ID: {catalog_id}",
+                "Unknown catalogue ID: {catalog_id}"
+            ))
         })?;
         let provider = match id {
             CatalogProviderId::Igdb => self.igdb_chain().await?,

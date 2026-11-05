@@ -49,17 +49,32 @@ fn http_error(error: reqwest::Error) -> AppError {
     // Signed download links (itch.io) must not end up in messages or logs.
     let error = error.without_url();
     if error.is_timeout() || error.is_connect() {
-        AppError::Offline("Der Server ist nicht erreichbar.".into())
+        AppError::Offline(tr!(
+            "Der Server ist nicht erreichbar.",
+            "The server can't be reached."
+        ))
     } else {
-        AppError::Download(format!("Verbindung unterbrochen ({error})"))
+        AppError::Download(tr!(
+            "Verbindung unterbrochen ({error})",
+            "Connection interrupted ({error})"
+        ))
     }
 }
 
 fn status_error(status: StatusCode) -> AppError {
     match status.as_u16() {
-        404 | 410 => AppError::Download("Die Datei gibt es unter diesem Link nicht (mehr).".into()),
-        401 | 403 => AppError::Download("Der Server verweigert den Zugriff auf die Datei.".into()),
-        code => AppError::Download(format!("Der Server antwortet mit HTTP {code}.")),
+        404 | 410 => AppError::Download(tr!(
+            "Die Datei gibt es unter diesem Link nicht (mehr).",
+            "The file is not (or no longer) available at this link."
+        )),
+        401 | 403 => AppError::Download(tr!(
+            "Der Server verweigert den Zugriff auf die Datei.",
+            "The server refuses access to the file."
+        )),
+        code => AppError::Download(tr!(
+            "Der Server antwortet mit HTTP {code}.",
+            "The server answers with HTTP {code}."
+        )),
     }
 }
 
@@ -262,7 +277,10 @@ impl Job<'_> {
         };
         if response.status() != StatusCode::PARTIAL_CONTENT {
             return Err(if response.status().is_success() {
-                AppError::Download("Der Server unterstützt das Fortsetzen nicht mehr.".into())
+                AppError::Download(tr!(
+                    "Der Server unterstützt das Fortsetzen nicht mehr.",
+                    "The server no longer supports resuming."
+                ))
             } else {
                 status_error(response.status())
             });
@@ -286,9 +304,10 @@ impl Job<'_> {
                 let bytes = bytes.map_err(http_error)?;
                 let len = bytes.len() as u64;
                 if written + len > end - start + 1 {
-                    return Err(AppError::Download(
-                        "Der Server hat zu viele Daten geschickt.".into(),
-                    ));
+                    return Err(AppError::Download(tr!(
+                        "Der Server hat zu viele Daten geschickt.",
+                        "The server sent too much data."
+                    )));
                 }
                 self.limiter.acquire(len).await;
                 file.write_all(&bytes).await?;
@@ -312,9 +331,10 @@ impl Job<'_> {
                 // An unfinished chunk is fetched again later.
                 self.progress.bytes.fetch_sub(written, Ordering::Relaxed);
                 match other {
-                    Ok(None) => Err(AppError::Download(
-                        "Die Verbindung wurde vorzeitig beendet.".into(),
-                    )),
+                    Ok(None) => Err(AppError::Download(tr!(
+                        "Die Verbindung wurde vorzeitig beendet.",
+                        "The connection ended early."
+                    ))),
                     rest => rest,
                 }
             }
@@ -359,9 +379,10 @@ impl Job<'_> {
         file.flush().await?;
         if let Some(total) = self.remote.total {
             if self.progress.bytes.load(Ordering::Relaxed) != total {
-                return Err(AppError::Download(
-                    "Die Verbindung wurde vorzeitig beendet.".into(),
-                ));
+                return Err(AppError::Download(tr!(
+                    "Die Verbindung wurde vorzeitig beendet.",
+                    "The connection ended early."
+                )));
             }
         }
         Ok(Outcome::Completed)

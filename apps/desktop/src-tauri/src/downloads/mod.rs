@@ -58,14 +58,17 @@ pub struct DownloadManager {
 }
 
 fn validate_url(raw: &str) -> AppResult<String> {
-    let url: reqwest::Url = raw
-        .trim()
-        .parse()
-        .map_err(|_| AppError::InvalidInput("Das ist kein gültiger Link.".into()))?;
+    let url: reqwest::Url = raw.trim().parse().map_err(|_| {
+        AppError::InvalidInput(tr!(
+            "Das ist kein gültiger Link.",
+            "That's not a valid link."
+        ))
+    })?;
     if !matches!(url.scheme(), "https" | "http") {
-        return Err(AppError::InvalidInput(
-            "Nur http- und https-Links werden unterstützt.".into(),
-        ));
+        return Err(AppError::InvalidInput(tr!(
+            "Nur http- und https-Links werden unterstützt.",
+            "Only http and https links are supported."
+        )));
     }
     Ok(url.to_string())
 }
@@ -75,9 +78,10 @@ fn validate_sha256(raw: Option<&str>) -> AppResult<Option<String>> {
         return Ok(None);
     };
     if value.len() != 64 || !value.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(AppError::InvalidInput(
-            "Eine SHA-256-Prüfsumme hat 64 Hex-Zeichen.".into(),
-        ));
+        return Err(AppError::InvalidInput(tr!(
+            "Eine SHA-256-Prüfsumme hat 64 Hex-Zeichen.",
+            "A SHA-256 checksum has 64 hex characters."
+        )));
     }
     Ok(Some(value.to_lowercase()))
 }
@@ -252,14 +256,38 @@ impl DownloadManager {
         Ok(())
     }
 
+    /// Checks the SHA-256 sum when the user gave one; a mismatch deletes the file.
+    async fn verify(&self, id: &str, expected: Option<&str>, part: &Path) -> AppResult<()> {
+        let Some(expected) = expected else {
+            return Ok(());
+        };
+        let path = part.to_path_buf();
+        let actual = tokio::task::spawn_blocking(move || transfer::sha256_file(&path))
+            .await
+            .map_err(background_failed(tr!(
+                "Die Datei konnte nicht geprüft werden.",
+                "The file could not be verified."
+            )))??;
+        if actual != expected {
+            let _ = tokio::fs::remove_file(part).await;
+            db::downloads::save_progress(&self.pool, id, 0, &[]).await?;
+            return Err(AppError::Download(tr!(
+                "Die Prüfsumme stimmt nicht. Die Datei ist beschädigt oder wurde verändert und wurde gelöscht.",
+                "The checksum doesn't match. The file is damaged or was changed, and has been deleted."
+            )));
+        }
+        db::downloads::set_checksum_verified(&self.pool, id).await
+    }
+
     async fn transfer(
         &self,
         id: &str,
         mut control: watch::Receiver<Control>,
     ) -> AppResult<Outcome> {
         let record = db::downloads::record(&self.pool, id).await?;
-        let work_dir = Self::work_dir(&record)
-            .ok_or_else(|| AppError::Download("Kein Zielordner festgelegt.".into()))?;
+        let work_dir = Self::work_dir(&record).ok_or_else(|| {
+            AppError::Download(tr!("Kein Zielordner festgelegt.", "No target folder set."))
+        })?;
         tokio::fs::create_dir_all(&work_dir).await?;
         let part = work_dir.join(format!("{id}.part"));
         self.set_status(id, DownloadStatus::Downloading).await?;
@@ -268,7 +296,7 @@ impl DownloadManager {
             DownloadOrigin::Itch => {
                 let upload = record
                     .itch_upload_id
-                    .ok_or_else(|| AppError::Itch("Unbekannte Datei.".into()))?;
+                    .ok_or_else(|| AppError::Itch(tr!("Unbekannte Datei.", "Unknown file.")))?;
                 self.itch
                     .resolve_download(upload, record.itch_download_key_id)
                     .await?
@@ -276,7 +304,7 @@ impl DownloadManager {
             _ => record
                 .url
                 .clone()
-                .ok_or_else(|| AppError::Download("Kein Link vorhanden.".into()))?,
+                .ok_or_else(|| AppError::Download(tr!("Kein Link vorhanden.", "No link given.")))?,
         };
         let remote = tokio::select! {
             remote = transfer::probe(&self.client, &url) => remote?,
@@ -339,20 +367,8 @@ impl DownloadManager {
 
         // Verify.
         self.set_status(id, DownloadStatus::Verifying).await?;
-        if let Some(expected) = &record.checksum_sha256 {
-            let path = part.clone();
-            let actual = tokio::task::spawn_blocking(move || transfer::sha256_file(&path))
-                .await
-                .map_err(background_failed("Die Datei konnte nicht geprüft werden."))??;
-            if &actual != expected {
-                let _ = tokio::fs::remove_file(&part).await;
-                db::downloads::save_progress(&self.pool, id, 0, &[]).await?;
-                return Err(AppError::Download(
-                    "Die Prüfsumme stimmt nicht. Die Datei ist beschädigt oder wurde verändert und wurde gelöscht.".into(),
-                ));
-            }
-            db::downloads::set_checksum_verified(&self.pool, id).await?;
-        }
+        self.verify(id, record.checksum_sha256.as_deref(), &part)
+            .await?;
         if *control.borrow_and_update() == Control::Cancel {
             return Ok(Outcome::Cancelled);
         }
@@ -385,7 +401,10 @@ impl DownloadManager {
                 Ok((dir.clone(), executable, extract::dir_size(&dir)))
             })
             .await
-            .map_err(background_failed("Das Spiel konnte nicht entpackt werden."))??;
+            .map_err(background_failed(tr!(
+                "Das Spiel konnte nicht entpackt werden.",
+                "The game could not be unpacked."
+            )))??;
         let (exe, compat) = executable.map_or(
             (None, crate::models::CompatibilityTool::Native),
             |(e, c)| (Some(e), c),
@@ -502,7 +521,12 @@ impl DownloadManager {
             .await?
             .into_iter()
             .find(|u| u.upload_id == upload_id)
-            .ok_or_else(|| AppError::Itch("Diese Datei gehört nicht zu dem Spiel.".into()))?;
+            .ok_or_else(|| {
+                AppError::Itch(tr!(
+                    "Diese Datei gehört nicht zu dem Spiel.",
+                    "This file doesn't belong to the game."
+                ))
+            })?;
         let settings = self.settings().await?;
         let id = db::downloads::enqueue_transfer(
             &self.pool,
@@ -527,11 +551,15 @@ impl DownloadManager {
     pub async fn hand_off(&self, game_id: &str) -> AppResult<()> {
         let (_, store, store_game_id) = db::downloads::enqueue_handoff(&self.pool, game_id).await?;
         let url = handoff::install_url(store, &store_game_id, cfg!(windows)).ok_or_else(|| {
-            AppError::InvalidInput("Dieses Spiel stammt aus keinem Store.".into())
+            AppError::InvalidInput(tr!(
+                "Dieses Spiel stammt aus keinem Store.",
+                "This game doesn't come from a store."
+            ))
         })?;
         (self.hooks.open_url)(&url).map_err(|_| {
-            AppError::Launch(format!(
+            AppError::Launch(tr!(
                 "{} konnte nicht geöffnet werden. Ist der Client installiert?",
+                "{} could not be opened. Is the client installed?",
                 match store {
                     StoreSource::Steam => "Steam",
                     _ if cfg!(windows) => store.display_name(),
@@ -566,9 +594,10 @@ impl DownloadManager {
             DownloadStatus::Queued => {
                 let record = db::downloads::record(&self.pool, id).await?;
                 if record.origin != "direct" && record.origin != "itch" {
-                    return Err(AppError::InvalidInput(
-                        "Store-Installationen laufen im Store-Client.".into(),
-                    ));
+                    return Err(AppError::InvalidInput(tr!(
+                        "Store-Installationen laufen im Store-Client.",
+                        "Store installs run in the store client."
+                    )));
                 }
                 self.set_status(id, DownloadStatus::Queued).await?;
                 self.wake();
@@ -583,9 +612,10 @@ impl DownloadManager {
                 self.set_status(id, DownloadStatus::Cancelled).await?;
             }
             _ => {
-                return Err(AppError::InvalidInput(
-                    "Dieser Status kann nicht gesetzt werden.".into(),
-                ))
+                return Err(AppError::InvalidInput(tr!(
+                    "Dieser Status kann nicht gesetzt werden.",
+                    "This status can't be set."
+                )))
             }
         }
         Ok(())
@@ -635,10 +665,10 @@ impl DownloadManager {
 }
 
 /// A blocking task that died (panic): log it, show `message`.
-fn background_failed(message: &'static str) -> impl FnOnce(tokio::task::JoinError) -> AppError {
+fn background_failed(message: String) -> impl FnOnce(tokio::task::JoinError) -> AppError {
     move |error| {
         eprintln!("[cove] Hintergrundaufgabe: {error}");
-        AppError::Download(message.into())
+        AppError::Download(message)
     }
 }
 

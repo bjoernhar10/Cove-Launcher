@@ -1,6 +1,9 @@
 //! Cove core: owns the game library, launches games and supervises the
 //! sidecar services (connectors, recommender) over JSON-RPC/stdio.
 
+// First, so `tr!` is in scope for every other module.
+#[macro_use]
+mod i18n;
 mod auth;
 mod catalog;
 mod commands;
@@ -115,6 +118,8 @@ pub(crate) use cove_handlers;
 pub const GAME_STATE_CHANGED: &str = "game-state-changed";
 
 fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> {
+    // Until the saved settings are read (or if they can't be), follow the system.
+    i18n::set_language(i18n::system_default());
     let data_dir = app.path().app_data_dir()?;
     let pool = tauri::async_runtime::block_on(db::open(&data_dir.join("cove.db")))?;
     let closed = tauri::async_runtime::block_on(db::sessions::close_dangling(&pool))?;
@@ -168,7 +173,10 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
     if pruned > 0 {
         eprintln!("[cove] {pruned} veraltete Katalog-Einträge entfernt");
     }
-    let defaults = default_settings(host.home.as_ref());
+    let mut defaults = default_settings(host.home.as_ref());
+    defaults.general.language = i18n::system_default().into();
+    let saved = tauri::async_runtime::block_on(db::settings::load(&pool, &defaults))?;
+    i18n::set_language(&saved.general.language);
     let catalog = Arc::new(catalog::CatalogService::new(
         pool.clone(),
         Arc::new(catalog::secrets::KeyringStore::app()),
@@ -338,13 +346,17 @@ fn report_startup_failure(app: &tauri::App, error: &dyn std::error::Error) {
         .unwrap_or_default();
     let handle = app.handle().clone();
     app.dialog()
-        .message(format!(
+        .message(tr!(
             "Cove konnte seine Daten nicht laden und wird beendet.\n\n\
              Deine Spiele und Einstellungen liegen unverändert in:\n{data_dir}\n\n\
              Starte Cove noch einmal. Wenn der Fehler bleibt, melde ihn bitte auf GitHub \
-             und füge diese Meldung bei:\n{error}"
+             und füge diese Meldung bei:\n{error}",
+            "Cove couldn't load its data and will close.\n\n\
+             Your games and settings are unchanged in:\n{data_dir}\n\n\
+             Start Cove again. If the error stays, please report it on GitHub \
+             and include this message:\n{error}"
         ))
-        .title("Cove konnte nicht starten")
+        .title(tr!("Cove konnte nicht starten", "Cove couldn't start"))
         .kind(MessageDialogKind::Error)
         .show(move |_| handle.exit(1));
 }
