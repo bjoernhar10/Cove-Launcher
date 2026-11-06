@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace Cove.Connectors.Config;
 
-public sealed record SteamConfig(string OpenIdEndpoint, string PrivacySettingsUrl);
+/// <param name="CoverUrl">Portrait library artwork; <c>{appId}</c> is replaced. The game icon is the fallback.</param>
+public sealed record SteamConfig(string OpenIdEndpoint, string PrivacySettingsUrl, string? CoverUrl = null);
 
 public sealed record GogConfig(
     string ClientId,

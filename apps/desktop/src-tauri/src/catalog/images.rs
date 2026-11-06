@@ -72,6 +72,18 @@ pub fn unproxied(url: Option<String>) -> Option<String> {
     })
 }
 
+/// Steam's portrait library artwork (`library_600x900_2x.jpg`) is missing for some games,
+/// and newer games keep all their artwork under hashed paths. Fallbacks, best first:
+/// the 1x portrait, the landscape header, then the header URL the store API names.
+const STEAM_PORTRAIT: &str = "/library_600x900_2x.jpg";
+const STEAM_API: &str = "https://store.steampowered.com";
+
+fn steam_app(remote: &str) -> Option<(&str, &str)> {
+    let base = remote.strip_suffix(STEAM_PORTRAIT)?;
+    let (_, app_id) = base.rsplit_once("/steam/apps/")?;
+    (!app_id.is_empty() && app_id.bytes().all(|b| b.is_ascii_digit())).then_some((base, app_id))
+}
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ImageError {
     #[error("ungültige Bild-URL")]
@@ -88,6 +100,7 @@ pub struct ImageCache {
     dir: PathBuf,
     client: reqwest::Client,
     allowed_hosts: Vec<String>,
+    steam_api: String,
 }
 
 fn mime_for(path: &Path) -> &'static str {
@@ -110,6 +123,7 @@ impl ImageCache {
             dir,
             client,
             allowed_hosts: ALLOWED_HOSTS.iter().map(|h| (*h).to_owned()).collect(),
+            steam_api: STEAM_API.to_owned(),
         }
     }
 
@@ -119,6 +133,7 @@ impl ImageCache {
             dir,
             client,
             allowed_hosts: hosts.iter().map(|h| (*h).to_owned()).collect(),
+            steam_api: STEAM_API.to_owned(),
         }
     }
 
@@ -164,6 +179,46 @@ impl ImageCache {
         if let Ok(bytes) = tokio::fs::read(&path).await {
             return Ok((bytes, mime_for(&path)));
         }
+        let bytes = match (self.download(url).await, steam_app(remote)) {
+            (Err(ImageError::Unavailable), Some((base, app_id))) => {
+                self.steam_fallback(base, app_id).await?
+            }
+            (result, _) => result?,
+        };
+        // Write atomically so a crash never leaves a truncated image behind.
+        if tokio::fs::create_dir_all(&self.dir).await.is_ok() {
+            let tmp = path.with_extension("part");
+            if tokio::fs::write(&tmp, &bytes).await.is_ok() {
+                let _ = tokio::fs::rename(&tmp, &path).await;
+            }
+        }
+        Ok((bytes, mime_for(&path)))
+    }
+
+    async fn steam_fallback(&self, base: &str, app_id: &str) -> Result<Vec<u8>, ImageError> {
+        for file in ["library_600x900.jpg", "header.jpg"] {
+            if let Ok(bytes) = self.download(self.check(&format!("{base}/{file}"))?).await {
+                return Ok(bytes);
+            }
+        }
+        let details = self
+            .client
+            .get(format!("{}/api/appdetails", self.steam_api))
+            .query(&[("appids", app_id), ("filters", "basic")])
+            .timeout(Duration::from_secs(20))
+            .send()
+            .await
+            .map_err(|_| ImageError::Unavailable)?
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|_| ImageError::Unavailable)?;
+        let header = details[app_id]["data"]["header_image"]
+            .as_str()
+            .ok_or(ImageError::Unavailable)?;
+        self.download(self.check(header)?).await
+    }
+
+    async fn download(&self, url: reqwest::Url) -> Result<Vec<u8>, ImageError> {
         let response = self
             .client
             .get(url)
@@ -181,14 +236,7 @@ impl ImageCache {
         if bytes.len() > MAX_BYTES {
             return Err(ImageError::TooLarge);
         }
-        // Write atomically so a crash never leaves a truncated image behind.
-        if tokio::fs::create_dir_all(&self.dir).await.is_ok() {
-            let tmp = path.with_extension("part");
-            if tokio::fs::write(&tmp, &bytes).await.is_ok() {
-                let _ = tokio::fs::rename(&tmp, &path).await;
-            }
-        }
-        Ok((bytes.to_vec(), mime_for(&path)))
+        Ok(bytes.to_vec())
     }
 
     /// Downloads images in the background so they are available offline.
@@ -272,6 +320,54 @@ mod tests {
         drop(server); // offline now
         let (again, _) = cache.get(&url).await.unwrap();
         assert_eq!(again, b"PNGDATA");
+    }
+
+    #[tokio::test]
+    async fn steam_portrait_falls_back_step_by_step() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/steam/apps/10/header.jpg"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"HEADER".to_vec()))
+            .mount(&server)
+            .await;
+        // A newer game: only the store API knows its hashed header path.
+        Mock::given(method("GET"))
+            .and(path("/api/appdetails"))
+            .and(wiremock::matchers::query_param("appids", "20"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "20": { "data": { "header_image": format!("{}/steam/apps/20/ab12/header.jpg?t=1", server.uri()) } }
+            })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/steam/apps/20/ab12/header.jpg"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"HASHED".to_vec()))
+            .mount(&server)
+            .await;
+        let tmp = tempfile::tempdir().unwrap();
+        let mut cache = ImageCache::with_hosts(
+            tmp.path().join("img"),
+            reqwest::Client::new(),
+            &["127.0.0.1"],
+        );
+        cache.steam_api = server.uri();
+        let portrait =
+            |id: &str| format!("{}/steam/apps/{id}/library_600x900_2x.jpg", server.uri());
+        assert_eq!(cache.get(&portrait("10")).await.unwrap().0, b"HEADER");
+        assert_eq!(cache.get(&portrait("20")).await.unwrap().0, b"HASHED");
+        assert!(
+            cache.path_for(&portrait("20")).is_file(),
+            "cached under the portrait URL"
+        );
+        assert_eq!(
+            cache.get(&portrait("30")).await.unwrap_err(),
+            ImageError::Unavailable
+        );
+        let other = format!("{}/steam/apps/10/other.jpg", server.uri());
+        assert_eq!(
+            cache.get(&other).await.unwrap_err(),
+            ImageError::Unavailable
+        );
     }
 
     #[tokio::test]

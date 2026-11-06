@@ -103,6 +103,12 @@ public sealed partial class SteamConnector(HttpClient http, SteamConfig config) 
     private static string Proxy(StoreContext context) =>
         context.ProxyUrl ?? throw new ConnectorException(ConnectorErrorKind.Unavailable, Texts.T("Für Steam-Daten wird der Cove-Katalogdienst benötigt.", "Steam data needs the Cove catalogue service."));
 
+    /// <summary>Portrait library artwork (600×900); the 32×32 icon is far too small for a cover.</summary>
+    private string? CoverUrl(string appId) =>
+        config.CoverUrl is { } template && appId.All(char.IsAsciiDigit)
+            ? template.Replace("{appId}", appId, StringComparison.Ordinal)
+            : null;
+
     private void ThrowIfPrivate(JsonNode node)
     {
         if (node["private"]?.GetValue<bool>() == true)
@@ -126,12 +132,13 @@ public sealed partial class SteamConnector(HttpClient http, SteamConfig config) 
         foreach (var game in body["games"]?.AsArray() ?? [])
         {
             var lastPlayed = StoreHttp.Optional(game, "lastPlayedAt");
+            var appId = StoreHttp.Required(game, "appId", Name);
             games.Add(new OwnedGame(
-                StoreHttp.Required(game, "appId", Name),
+                appId,
                 StoreHttp.Optional(game, "name") ?? "Unbekanntes Spiel",
                 StoreHttp.OptionalLong(game, "playtimeMinutes"),
                 lastPlayed is null ? null : DateTimeOffset.Parse(lastPlayed, System.Globalization.CultureInfo.InvariantCulture),
-                StoreHttp.Optional(game, "iconUrl")));
+                CoverUrl(appId) ?? StoreHttp.Optional(game, "iconUrl")));
         }
 
         return games;

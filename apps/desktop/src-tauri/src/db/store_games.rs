@@ -68,6 +68,14 @@ pub async fn find(
     .await?)
 }
 
+/// Steam's portrait library artwork, for games found only on disk (the account
+/// library brings the same URL from the connectors). Keep in sync with
+/// `migrations/0007_steam_covers.sql` and `connectors.json`.
+fn steam_cover(store: StoreSource, app_id: &str) -> Option<String> {
+    (store == StoreSource::Steam && !app_id.is_empty() && app_id.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| format!("https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{app_id}/library_600x900_2x.jpg"))
+}
+
 /// Adds the game or refreshes playtime/install data of the existing entry.
 /// User settings (favourite, launch options, catalogue link) are kept.
 pub async fn upsert(
@@ -120,7 +128,12 @@ pub async fn upsert(
     .bind(&id)
     .bind(input.title.trim())
     .bind(serde_json::to_string(&[Platform::current()])?)
-    .bind(&input.image_url)
+    .bind(
+        input
+            .image_url
+            .clone()
+            .or_else(|| steam_cover(store, &input.store_game_id)),
+    )
     .bind(&now)
     .execute(&mut *tx)
     .await?;
@@ -205,8 +218,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn steam_icon_covers_are_replaced_by_the_portrait_artwork() {
+        let pool = open_in_memory().await.unwrap();
+        let icon = "https://media.steampowered.com/steamcommunity/public/images/apps/620/abc.jpg";
+        let mut with_icon = portal(None);
+        with_icon.image_url = Some(icon.into());
+        let mut gog = portal(None);
+        gog.image_url = Some("https://images.gog.com/x.jpg".into());
+        upsert(&pool, StoreSource::Steam, &with_icon).await.unwrap();
+        upsert(&pool, StoreSource::Gog, &gog).await.unwrap();
+
+        sqlx::raw_sql(include_str!("../../migrations/0007_steam_covers.sql"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let covers: Vec<(String, Option<String>)> =
+            sqlx::query_as("SELECT id, cover_url FROM games ORDER BY id")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            covers,
+            [
+                ("gog-620".into(), Some("https://images.gog.com/x.jpg".into())),
+                (
+                    "steam-620".into(),
+                    Some("https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/620/library_600x900_2x.jpg".into())
+                ),
+            ]
+        );
+    }
+
+    #[tokio::test]
     async fn adds_then_updates_without_duplicates() {
         let pool = open_in_memory().await.unwrap();
+        assert_eq!(steam_cover(StoreSource::Gog, "620"), None);
+        assert_eq!(steam_cover(StoreSource::Steam, "../x"), None);
         let Upsert::Added(id) = upsert(&pool, StoreSource::Steam, &portal(Some(754)))
             .await
             .unwrap()
@@ -223,6 +270,13 @@ mod tests {
             Some("2026-10-01T10:00:00Z")
         );
         assert!(!item.entry.installed);
+        assert!(item
+            .game
+            .artwork
+            .cover
+            .url
+            .unwrap()
+            .ends_with("/apps/620/library_600x900_2x.jpg"));
 
         // The user favourites it; a later import must keep that and only refresh store data.
         sqlx::query("UPDATE library_entries SET favorite = 1 WHERE game_id = ?")

@@ -2,7 +2,8 @@
   "_comment": "Store endpoints and client ids. GOG and Epic use the same public launcher clients as Heroic/gogdl/Legendary; update here when the stores change something. Override at runtime with COVE_CONNECTORS_CONFIG=/path/to/connectors.json.",
   "steam": {
     "openIdEndpoint": "https://steamcommunity.com/openid/login",
-    "privacySettingsUrl": "https://steamcommunity.com/my/edit/settings"
+    "privacySettingsUrl": "https://steamcommunity.com/my/edit/settings",
+    "coverUrl": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appId}/library_600x900_2x.jpg"
   },
   "gog": {
     "clientId": "46899977096215655",

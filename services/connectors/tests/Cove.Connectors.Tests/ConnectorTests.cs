@@ -96,6 +96,7 @@ public class SteamConnectorTests
         var games = await steam.GetLibraryAsync(session, new StoreContext(Proxy), TestContext.Current.CancellationToken);
         Assert.Equal(["620", "400"], games.Select(g => g.StoreGameId));
         Assert.Equal(754, games[0].PlaytimeMinutes);
+        Assert.Equal("https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/620/library_600x900_2x.jpg", games[0].ImageUrl);
 
         var achievements = await steam.GetAchievementsAsync(session, "620", new StoreContext(Proxy), TestContext.Current.CancellationToken);
         Assert.Equal(81.5, achievements[0].RarityPercent);

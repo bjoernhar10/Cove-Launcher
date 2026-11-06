@@ -817,7 +817,8 @@ pub async fn apply_catalog(
     let mut tx = pool.begin().await?;
     sqlx::query(
         "UPDATE games SET title = ?, summary = ?, description = ?, genres = ?, platforms = ?, release_date = ?, \
-           developer = ?, publisher = ?, rating = ?, popularity = ?, cover_url = ?, header_url = ?, screenshots = ?, \
+           developer = ?, publisher = ?, rating = ?, popularity = ?, \
+           cover_url = COALESCE(?, cover_url), header_url = COALESCE(?, header_url), screenshots = ?, \
            features = ? \
          WHERE id = ?",
     )
@@ -924,6 +925,15 @@ mod match_tests {
 
         // The catalogue id now finds the library game.
         assert_eq!(get(&pool, "igdb-77").await.unwrap().unwrap().game.id, id);
+
+        // A catalogue entry without artwork keeps the cover the game already has.
+        let mut bare = sample_game("igdb-79", "Tidewater");
+        bare.artwork.cover.url = None;
+        let relinked = apply_catalog(&pool, &id, &bare).await.unwrap();
+        assert_eq!(
+            relinked.game.artwork.cover.url.as_deref(),
+            Some("https://images.igdb.com/c.jpg")
+        );
     }
 
     #[tokio::test]
