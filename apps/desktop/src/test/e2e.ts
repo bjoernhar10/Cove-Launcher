@@ -10,7 +10,6 @@
  */
 import type { CoveEvents, DownloadItem, Game, Genre, LibraryItem, Recommendation, StoreSource } from "@cove/shared";
 import { GENRE_LABELS } from "../lib/labels.ts";
-import { usePreferences } from "../stores/preferences.ts";
 import { emitCoreEvent, fakeDownload, fakeGame, fakeItem, installFakeCore, FAKE_CATALOG } from "./fakeCore.ts";
 
 const TITLES = [
@@ -107,11 +106,6 @@ if (demo) {
 }
 else FAKE_CATALOG.push(...Array.from({ length: 21 }, (_, i) => ({ ...demoItem(i + 3).game, id: `igdb-${String(i + 10)}` })));
 
-const theme = params.get("theme");
-if (theme === "dark" || theme === "light") {
-  usePreferences.setState({ theme });
-  core.settings.appearance.theme = theme;
-}
 
 // ── live behaviour of the Rust core ──
 

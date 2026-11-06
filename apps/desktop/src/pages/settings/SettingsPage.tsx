@@ -7,11 +7,10 @@ import type {
   CatalogSource,
   ComponentVersion,
   ServiceStatus,
-  ThemePreference,
   UpdateCheck,
   UpdateProgress,
 } from "@cove/shared";
-import { Check, ChevronRight, Download, ExternalLink, FolderOpen, FolderSearch, Monitor, Moon, Plus, RefreshCw, Sun, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Download, ExternalLink, FolderOpen, FolderSearch, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { Navigate, NavLink, useParams } from "react-router";
 import { api } from "../../api/index.ts";
@@ -28,7 +27,7 @@ import { queryClient } from "../../lib/queryClient.ts";
 import { cx } from "../../lib/cx.ts";
 import { modKeyLabel } from "../../lib/env.ts";
 import { formatPercent } from "../../lib/format.ts";
-import { ACCENT_LABELS, PLATFORM_LABELS, THEME_LABELS } from "../../lib/labels.ts";
+import { ACCENT_LABELS, PLATFORM_LABELS } from "../../lib/labels.ts";
 import { usePreferences } from "../../stores/preferences.ts";
 import { invalidateQueries } from "../../stores/query.ts";
 import { errorMessage, toast } from "../../stores/toasts.ts";
@@ -50,8 +49,8 @@ function useSettings(): {
   const query = useQuery("settings", api.settings.getSettings);
   const save = (fn: (s: AppSettings) => AppSettings): void => {
     if (query.status !== "success") return;
-    const { theme, accent } = usePreferences.getState();
-    const next = { ...fn(query.data), appearance: { theme, accent } };
+    const { accent } = usePreferences.getState();
+    const next = { ...fn(query.data), appearance: { theme: "dark" as const, accent } };
     query.update(() => next);
     const languageChanged = next.general.language !== query.data.general.language;
     api.settings.saveSettings(next).then(
@@ -139,7 +138,6 @@ function GeneralTab() {
   );
 }
 
-const THEME_ICONS = { light: Sun, dark: Moon, system: Monitor } as const;
 const ACCENTS = Object.keys(ACCENT_LABELS) as AccentColor[];
 
 /** Swatch colors are the accent tokens themselves, applied via data-accent on a preview element. */
@@ -168,40 +166,9 @@ function AccentSwatch({ accent, selected, onSelect }: { accent: AccentColor; sel
   );
 }
 
-function ThemeCard({ theme, selected, onSelect }: { theme: ThemePreference; selected: boolean; onSelect: () => void }) {
-  const Icon = THEME_ICONS[theme];
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      onClick={onSelect}
-      className={cx(
-        "flex w-36 flex-col overflow-hidden rounded-lg border text-left transition-colors duration-150 ease-out",
-        selected ? "border-accent" : "border-border hover:border-border-strong",
-      )}
-    >
-      <span data-preview={theme} className="flex h-20 gap-2 border-b border-border bg-(--pv-bg) p-2">
-        <span className="w-6 rounded-md bg-(--pv-side)" />
-        <span className="flex flex-1 flex-col gap-2">
-          <span className="h-2 w-3/4 rounded-full bg-(--pv-line)" />
-          <span className="h-2 w-1/2 rounded-full bg-(--pv-line)" />
-          <span className="mt-auto h-3 w-8 rounded-md bg-accent" />
-        </span>
-      </span>
-      <span className="flex items-center gap-2 px-3 py-2 text-sm">
-        <Icon aria-hidden className={selected ? "text-accent-text" : "text-fg-subtle"} />
-        <span className={selected ? "font-medium text-fg" : "text-fg-muted"}>{THEME_LABELS[theme]}</span>
-      </span>
-    </button>
-  );
-}
-
 function AppearanceTab() {
   const t = useMessages();
-  const theme = usePreferences((s) => s.theme);
   const accent = usePreferences((s) => s.accent);
-  const setTheme = usePreferences((s) => s.setTheme);
   const setAccent = usePreferences((s) => s.setAccent);
   const collapsed = usePreferences((s) => s.sidebarCollapsed);
   const toggleSidebar = usePreferences((s) => s.toggleSidebar);
@@ -209,21 +176,6 @@ function AppearanceTab() {
   return (
     <Panel title={t.settings.tabs.appearance} description={t.settings.appearanceHint}>
       <div className="flex flex-col gap-10">
-        <div>
-          <h3 className="mb-3 text-sm font-medium text-fg">{t.settings.theme}</h3>
-          <div role="radiogroup" aria-label={t.settings.theme} className="flex flex-wrap gap-3">
-            {(["light", "dark", "system"] as const).map((option) => (
-              <ThemeCard
-                key={option}
-                theme={option}
-                selected={theme === option}
-                onSelect={() => {
-                  setTheme(option);
-                }}
-              />
-            ))}
-          </div>
-        </div>
         <div>
           <h3 className="text-sm font-medium text-fg">{t.settings.accent}</h3>
           <p className="mt-1 mb-3 text-sm text-fg-muted">{t.settings.accentHint}</p>

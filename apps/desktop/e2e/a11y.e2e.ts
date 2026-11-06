@@ -20,22 +20,20 @@ const PAGES = [
   "/settings/about",
 ];
 
-for (const theme of ["light", "dark"] as const) {
-  test.describe(`WCAG 2.1 AA (${theme})`, () => {
-    for (const route of PAGES) {
-      test(route, async ({ page }) => {
-        await openCove(page, route, { theme });
-        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-        await expect(page.locator("[aria-busy=true]")).toHaveCount(0);
-        // Let fade-ins (150 to 200 ms) finish so colours are final.
-        await page.waitForTimeout(300);
-        const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
-        const report = results.violations.map((v) => `${v.id}: ${v.help}\n  ${v.nodes.map((n) => n.target.join(" ")).slice(0, 5).join("\n  ")}`);
-        expect(report, report.join("\n")).toEqual([]);
-      });
-    }
-  });
-}
+test.describe("WCAG 2.1 AA", () => {
+  for (const route of PAGES) {
+    test(route, async ({ page }) => {
+      await openCove(page, route);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+      await expect(page.locator("[aria-busy=true]")).toHaveCount(0);
+      // Let fade-ins (150 to 200 ms) finish so colours are final.
+      await page.waitForTimeout(300);
+      const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+      const report = results.violations.map((v) => `${v.id}: ${v.help}\n  ${v.nodes.map((n) => n.target.join(" ")).slice(0, 5).join("\n  ")}`);
+      expect(report, report.join("\n")).toEqual([]);
+    });
+  }
+});
 
 test("Fokus ist bei Tastaturbedienung immer sichtbar", async ({ page }) => {
   await openCove(page, "/library");

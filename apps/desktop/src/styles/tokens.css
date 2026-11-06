@@ -4,9 +4,10 @@
  * Tailwind utilities defined in `theme.css` (bg-surface, text-fg-muted, …).
  *
  * Rules (CLAUDE.md → Design-Regeln): neutral grays + ONE calm accent,
- * no gradients, no shadows, no glow, no blur. Light + dark always.
+ * no gradients, no shadows, no glow, no blur. Cove is dark only.
  *
- * Theme is selected via <html data-theme="light|dark" data-accent="…">.
+ * `:root` holds the base set, `[data-theme="dark"]` (always set, also in index.html)
+ * the values in use. Accent via <html data-accent="…">.
  */
 
 :root {
@@ -62,25 +63,6 @@
   color-scheme: light;
 }
 
-/* Before JS has applied a theme, follow the OS. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --cove-bg: #161618;
-    --cove-bg-sidebar: #1b1b1e;
-    --cove-surface: #1e1e21;
-    --cove-surface-raised: #232327;
-    --cove-hover: #26262a;
-    --cove-active: #2c2c31;
-    --cove-skeleton: #27272b;
-    --cove-border: #2c2c31;
-    --cove-border-strong: #3a3a41;
-    --cove-border-input: #6c6c72;
-    --cove-fg: #ededef;
-    --cove-fg-muted: #b0b0b9;
-    --cove-fg-subtle: #93939b;
-    color-scheme: dark;
-  }
-}
 
 :root[data-theme="dark"] {
   --cove-bg: #161618;
@@ -182,7 +164,7 @@
   }
 }
 
-/* Settings → Aussehen: swatches and theme previews (fixed values, independent of the active theme). */
+/* Settings → Aussehen: accent swatches (fixed values, independent of the active theme). */
 [data-swatch="blue"] {
   --swatch: #3b6fd8;
 }
@@ -197,19 +179,4 @@
 }
 [data-swatch="clay"] {
   --swatch: #a95b39;
-}
-[data-preview="light"] {
-  --pv-bg: #ffffff;
-  --pv-side: #f2f2f4;
-  --pv-line: #e3e3e6;
-}
-[data-preview="dark"] {
-  --pv-bg: #161618;
-  --pv-side: #232327;
-  --pv-line: #34343a;
-}
-[data-preview="system"] {
-  --pv-bg: var(--cove-bg);
-  --pv-side: var(--cove-hover);
-  --pv-line: var(--cove-border);
 }

@@ -11,7 +11,7 @@ beforeEach(() => {
     fakeItem("tidewater", "Tidewater"),
     fakeItem("orbit", "Orbit", { installed: false, executablePath: null, installPath: null, lastPlayedAt: null, playtimeMinutes: 0 }),
   ]);
-  usePreferences.setState({ theme: "system", accent: "blue", sidebarCollapsed: false, libraryView: "grid", libraryGroup: "all" });
+  usePreferences.setState({ accent: "blue", sidebarCollapsed: false, libraryView: "grid", libraryGroup: "all" });
 });
 
 function renderAt(path: string) {
@@ -103,15 +103,17 @@ describe("Library", () => {
 });
 
 describe("Settings", () => {
-  it("persists the theme in the core", async () => {
+  it("is always dark and persists the accent in the core", async () => {
     renderAt("/settings/appearance");
     await waitFor(() => {
       expect(core.calls.some((c) => c.command === "settings_get")).toBe(true);
     });
-    fireEvent.click(await screen.findByRole("radio", { name: /Dunkel/ }));
+    expect(screen.queryByRole("radiogroup", { name: "Design" })).toBeNull();
+    fireEvent.click(await screen.findByRole("radio", { name: /Petrol/ }));
     expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.documentElement.dataset.accent).toBe("teal");
     await waitFor(() => {
-      expect(core.settings.appearance.theme).toBe("dark");
+      expect(core.settings.appearance).toEqual({ theme: "dark", accent: "teal" });
     });
   });
 

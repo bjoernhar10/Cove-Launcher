@@ -5,12 +5,12 @@ Cove brings your games from Steam, GOG, Epic, itch.io and your own folders toget
 tidy library, launches them (on Linux optionally through Proton or Wine) and keeps track of
 playtime and achievements. No ads, no social feed, no accounts of its own.
 
-![Cove: Home in light mode](docs/screenshots/home-light.png)
+![Cove: Home](docs/screenshots/home-dark.png)
 
 | | |
 |---|---|
-| ![Library (dark)](docs/screenshots/library-dark.png) | ![Game page (light)](docs/screenshots/game-light.png) |
-| ![Catalogue (dark)](docs/screenshots/catalogue-dark.png) | ![Downloads (light)](docs/screenshots/downloads-light.png) |
+| ![Library](docs/screenshots/library-dark.png) | ![Game page](docs/screenshots/game-dark.png) |
+| ![Catalogue](docs/screenshots/catalogue-dark.png) | ![Downloads](docs/screenshots/downloads-dark.png) |
 
 > Status: early development (0.1). Everything below works; expect rough edges.
 > The screenshots show the real app with game data from IGDB and an example profile.
@@ -37,7 +37,7 @@ playtime and achievements. No ads, no social feed, no accounts of its own.
 - **Achievements** from the stores plus Cove's own (and plugin) achievements.
 - **Plugins** in plain JavaScript, isolated in a Web Worker with browser-extension-style
   permissions. Guide: [docs/plugins.md](docs/plugins.md).
-- **Calm design:** light and dark mode, five muted accent colours, command palette (`Ctrl+K`),
+- **Calm design:** dark interface, five muted accent colours, command palette (`Ctrl+K`),
   fully usable with the keyboard, WCAG 2.1 AA contrast.
 - **German and English:** the whole app, including error messages and recommendation reasons,
   follows the language chosen in Settings (new installs start in the system language).

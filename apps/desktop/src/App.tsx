@@ -7,22 +7,12 @@ import { useLanguage } from "./i18n/index.ts";
 import { createAppRouter } from "./router.tsx";
 import { applyAppearance, usePreferences } from "./stores/preferences.ts";
 
-/** Keeps <html data-theme/data-accent> in sync with preferences and the OS. */
+/** Keeps <html data-theme/data-accent> in sync with the preferences. */
 function useAppearance(): void {
-  const theme = usePreferences((s) => s.theme);
   const accent = usePreferences((s) => s.accent);
   useEffect(() => {
-    applyAppearance(theme, accent);
-    if (theme !== "system") return;
-    const media = globalThis.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      applyAppearance(theme, accent);
-    };
-    media.addEventListener("change", onChange);
-    return () => {
-      media.removeEventListener("change", onChange);
-    };
-  }, [theme, accent]);
+    applyAppearance(accent);
+  }, [accent]);
 }
 
 export function App() {

@@ -6,7 +6,6 @@ import type {
   Genre,
   Platform,
   StoreSource,
-  ThemePreference,
 } from "@cove/shared";
 import { localized } from "../i18n/index.ts";
 
@@ -24,7 +23,6 @@ export const SOURCE_LABELS: Record<StoreSource, string> = localized((m) => m.lab
 
 export const SORT_LABELS: Record<CatalogSort, string> = localized((m) => m.labels.sort);
 
-export const THEME_LABELS: Record<ThemePreference, string> = localized((m) => m.labels.theme);
 
 export const ACCENT_LABELS: Record<AccentColor, string> = localized((m) => m.labels.accent);
 

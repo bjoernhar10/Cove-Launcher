@@ -3,6 +3,7 @@ import { Download } from "lucide-react";
 import { NavLink } from "react-router";
 import { api } from "../../api/index.ts";
 import { useQuery } from "../../hooks/useQuery.ts";
+import { CoveLogo } from "../ui/CoveLogo.tsx";
 import { cx } from "../../lib/cx.ts";
 import { formatPercent } from "../../lib/format.ts";
 import { selectActive, selectQueued, selectRunning, useDownloads } from "../../stores/downloads.ts";
@@ -94,8 +95,9 @@ export function Sidebar() {
       )}
     >
       <div data-tauri-drag-region className={cx("flex h-12 shrink-0 items-center", collapsed ? "justify-center" : "px-5")}>
-        <span data-tauri-drag-region className="text-lg font-semibold tracking-tight text-fg select-none">
-          {collapsed ? "C" : "Cove"}
+        <span data-tauri-drag-region className="flex items-center gap-2 text-lg font-semibold tracking-tight text-fg select-none">
+          <CoveLogo />
+          {collapsed ? <span className="sr-only">Cove</span> : "Cove"}
         </span>
       </div>
 

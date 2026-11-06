@@ -79,28 +79,27 @@ test.beforeAll(async () => {
   demo = await loadDemo();
 });
 
-for (const theme of ["light", "dark"] as const) {
-  test(`screenshots (${theme})`, async ({ page }) => {
-    await page.addInitScript((data) => {
-      (window as unknown as { __coveDemo: unknown }).__coveDemo = data;
-    }, demo);
-    await openCove(page, "/", { theme });
-    await seedDownloads(page, demo);
-    await settle(page);
-    await page.screenshot({ path: `${OUT}/home-${theme}.png` });
+const theme = "dark";
+test("screenshots", async ({ page }) => {
+  await page.addInitScript((data) => {
+    (window as unknown as { __coveDemo: unknown }).__coveDemo = data;
+  }, demo);
+  await openCove(page, "/");
+  await seedDownloads(page, demo);
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/home-${theme}.png` });
 
-    for (const [route, name] of [
-      ["/library", "library"],
-      [`/library/${demo.library[0]?.id ?? ""}`, "game"],
-      ["/catalogue", "catalogue"],
-      ["/downloads", "downloads"],
-      ["/settings/accounts", "settings"],
-    ] as const) {
-      await page.evaluate((r) => {
-        window.location.hash = `#${r}`;
-      }, route);
-      await settle(page);
-      await page.screenshot({ path: `${OUT}/${name}-${theme}.png` });
-    }
-  });
-}
+  for (const [route, name] of [
+    ["/library", "library"],
+    [`/library/${demo.library[0]?.id ?? ""}`, "game"],
+    ["/catalogue", "catalogue"],
+    ["/downloads", "downloads"],
+    ["/settings/accounts", "settings"],
+  ] as const) {
+    await page.evaluate((r) => {
+      window.location.hash = `#${r}`;
+    }, route);
+    await settle(page);
+    await page.screenshot({ path: `${OUT}/${name}-${theme}.png` });
+  }
+});

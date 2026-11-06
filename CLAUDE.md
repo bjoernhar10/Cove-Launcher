@@ -26,22 +26,23 @@ the TS types (`packages/shared/src/methods.ts`), the JSON schema (`packages/shar
 - It should feel like Linear, Notion or Apple Music: lots of white space and clear typography.
 - **Font:** Inter (`@fontsource-variable/inter`, bundled locally, no CDN). Numbers are always tabular (`font-variant-numeric: tabular-nums`, class `.num`).
 - **Font sizes:** only 12 / 14 / 16 / 20 / 28 px (`text-xs` … `text-xl`).
-- **Colours:** neutral greys and **exactly one** calm accent colour (muted blue `#3B6FD8`). Light and dark mode are always both supported.
+- **Colours:** neutral greys and **exactly one** calm accent colour (muted blue `#3B6FD8`). Cove is **dark only** (no light mode, no theme switch); `data-theme="dark"` is always set, also in `index.html`.
 - **Spacing** on a 4px grid. **Radius** 8px, cards 12px.
 - **Separation** through subtle 1px borders (`border-border`), **no shadows**.
 - **Icons:** `lucide-react`, 18px, stroke width 1.75.
 - **Animations** only subtle: 150 to 200 ms ease-out. Always respect `prefers-reduced-motion`.
-- All raw values live in `apps/desktop/src/styles/tokens.css` (`--cove-*`, light/dark via `data-theme`, accent via `data-accent`). `styles/theme.css` maps them to Tailwind utilities (`bg-surface`, `text-fg-muted`, `border-border`, `bg-accent` …).
+- All raw values live in `apps/desktop/src/styles/tokens.css` (`--cove-*`, the dark values under `[data-theme="dark"]`, accent via `data-accent`). `styles/theme.css` maps them to Tailwind utilities (`bg-surface`, `text-fg-muted`, `border-border`, `bg-accent` …).
 - In `theme.css`, Tailwind's default palette, shadows, blur and every font size except the five allowed ones are **switched off**. Classes like `bg-pink-500`, `shadow-lg` or `text-4xl` generate no CSS. Do not switch them back on. If a token is missing, add it to `tokens.css` and `theme.css`.
 - **No hard-coded colours in components.** ESLint forbids hex, `rgb()` and `hsl()` literals in `apps/desktop/src`.
 - Icon size and stroke width are set globally by `LucideProvider` in `App.tsx`. Don't pass `size` or `strokeWidth` to icons.
 - Always use `GameCover` for game artwork. Without an image URL it renders a calm, flat placeholder.
 - Every page needs a skeleton loading state (no spinners), an empty state with friendly text (`EmptyState`) and an error state with a retry action.
 - Focus states are always visible (`:focus-visible`). Everything must be usable with the keyboard.
-- **Contrast WCAG 2.1 AA:** text at least 4.5:1 on every surface it can sit on (`bg`, `bg-sidebar`, `hover`, `active`), input outlines and switch tracks at least 3:1 (`border-input`). Check new tokens in both themes and all five accents; `e2e/a11y.e2e.ts` runs axe on every page in light and dark mode.
+- **Contrast WCAG 2.1 AA:** text at least 4.5:1 on every surface it can sit on (`bg`, `bg-sidebar`, `hover`, `active`), input outlines and switch tracks at least 3:1 (`border-input`). Check new tokens with all five accents; `e2e/a11y.e2e.ts` runs axe on every page.
 - Use only 4px-grid spacing utilities (`1`, `2`, `3` …), no half steps (`1.5`, `2.5`). Icons stay 18px, also next to small text.
 - Game covers without alt text are decoration (`aria-hidden`); give their link an `aria-label` with the title.
 - **UI languages: German and English.** Never write UI text into a component: add it to `src/i18n/de.ts` **and** `src/i18n/en.ts` (same keys; `i18n.test.ts` fails on missing keys or umlauts in English) and read it with `useMessages()` (components) or `messages()` (other code). Texts with values are functions (`(title: string) => …`). Label tables use `localized()`. Formats come from `lib/format.ts` (locale follows the language). The main navigation labels Home, Catalogue, My Library, Downloads, Settings stay English in both languages on purpose.
+- Cove's own logo is `components/ui/CoveLogo.tsx` (light square, dark rings, drawn with theme tokens); the app icons are generated from `src-tauri/icons/icon.svg` with `npx tauri icon <1024px png> -o src-tauri/icons` (delete the android/ios folders it creates).
 - Store logos (`components/ui/StoreIcon.tsx`, Simple Icons, CC0) are drawn in the current text colour at 18px, never in brand colours.
 
 ## Code rules

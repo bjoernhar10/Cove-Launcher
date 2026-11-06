@@ -80,7 +80,7 @@ export const FAKE_SCAN: ScanCandidate[] = [
 
 export const DEFAULT_SETTINGS: AppSettings = {
   general: { language: "de", launchOnStartup: false, minimizeToTray: false, startPage: "home" },
-  appearance: { theme: "system", accent: "blue" },
+  appearance: { theme: "dark", accent: "blue" },
   library: { scanFolders: [], scanOnStartup: false },
   downloads: { directory: "/home/u/Games", bandwidthLimitBytesPerSecond: null, maxConcurrent: 1 },
   catalog: { useCoveService: true },

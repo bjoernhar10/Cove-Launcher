@@ -1,12 +1,11 @@
 import { useMessages } from "../../i18n/index.ts";
 import type { Game } from "@cove/shared";
-import { CornerDownLeft, Moon, Plus, Search, Sun, type LucideIcon } from "lucide-react";
+import { CornerDownLeft, Plus, Search, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../../api/index.ts";
 import { useDebounced } from "../../hooks/useDebounced.ts";
 import { cx } from "../../lib/cx.ts";
-import { usePreferences } from "../../stores/preferences.ts";
 import { useUi } from "../../stores/ui.ts";
 import { GameCover } from "../game/GameCover.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
@@ -28,7 +27,6 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
   const t = useMessages();
   const navigate = useNavigate();
   const openAddGame = useUi((s) => s.openAddGame);
-  const setTheme = usePreferences((s) => s.setTheme);
   const [query, setQuery] = useState("");
   const [games, setGames] = useState<Game[]>([]);
   /** Game or catalogue id → library game id. */
@@ -98,12 +96,10 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
           openAddGame();
         },
       },
-      { id: "theme-light", group: t.palette.actions, label: t.palette.lightTheme, icon: Sun, run: () => { setTheme("light"); onClose(); } },
-      { id: "theme-dark", group: t.palette.actions, label: t.palette.darkTheme, icon: Moon, run: () => { setTheme("dark"); onClose(); } },
     ];
     const matches = (c: Command) => !q || c.label.toLowerCase().includes(q);
     return [...gameCommands, ...nav.filter(matches), ...actions.filter(matches)];
-  }, [games, owned, query, navigate, onClose, openAddGame, setTheme, t]);
+  }, [games, owned, query, navigate, onClose, openAddGame, t]);
 
   const safeIndex = Math.min(activeIndex, Math.max(0, commands.length - 1));
   const active = commands[safeIndex];
