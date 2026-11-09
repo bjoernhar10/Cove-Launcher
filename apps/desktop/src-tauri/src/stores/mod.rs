@@ -481,6 +481,11 @@ impl StoreService {
                     added.push(id);
                 }
                 Upsert::Updated(_) => summary.updated += 1,
+                // Real title now known: match it against the catalogue like a new game.
+                Upsert::Renamed(id) => {
+                    summary.updated += 1;
+                    added.push(id);
+                }
             }
             if i % 25 == 0 || i + 1 == games.len() {
                 progress(SyncProgress {

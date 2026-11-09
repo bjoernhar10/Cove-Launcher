@@ -15,6 +15,13 @@ namespace Cove.Connectors.Connectors;
 /// </summary>
 public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreConnector
 {
+    /// <summary>First pause before retrying a catalogue request (doubles each time); zero in tests.</summary>
+    public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>Cover art by preference: portrait box art first, landscape last (the card crops it).</summary>
+    private static readonly string[] CoverImageTypes =
+        ["DieselGameBoxTall", "OfferImageTall", "DieselStoreFrontTall", "DieselGameBox", "OfferImageWide", "DieselStoreFrontWide", "Thumbnail"];
+
     public string Id => "epic";
 
     public string Name => "Epic";
@@ -114,8 +121,11 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
             }
         }
 
-        // 2. Titles from the catalogue; DLCs (items with a main game) are skipped.
+        // 2. Titles and box art from the catalogue; DLCs (items with a main game) are skipped.
+        // One request per namespace, so a large library sends hundreds: rate limits and
+        // hiccups are retried, otherwise the game would only get its cryptic app name.
         var titles = new Dictionary<string, string>(StringComparer.Ordinal);
+        var images = new Dictionary<string, string>(StringComparer.Ordinal);
         var dlcs = new HashSet<string>(StringComparer.Ordinal);
         foreach (var group in records.GroupBy(r => r.Namespace))
         {
@@ -124,16 +134,7 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
                 var url = config.CatalogUrl
                     .Replace("{namespace}", Uri.EscapeDataString(group.Key), StringComparison.Ordinal)
                     .Replace("{ids}", string.Join(',', chunk.Select(r => r.CatalogItemId)), StringComparison.Ordinal);
-                JsonNode catalog;
-                try
-                {
-                    catalog = await StoreHttp.GetJsonAsync(http, url, Name, ct, session.AccessToken).ConfigureAwait(false);
-                }
-                catch (ConnectorException e) when (e.Kind == ConnectorErrorKind.Unavailable)
-                {
-                    continue; // titles fall back to the app name
-                }
-
+                var catalog = await CatalogAsync(url, session, ct).ConfigureAwait(false);
                 if (catalog is not JsonObject items)
                 {
                     continue;
@@ -153,6 +154,10 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
                     else if (StoreHttp.Optional(item, "title") is { } title)
                     {
                         titles[id] = title;
+                        if (CoverImage(item) is { } image)
+                        {
+                            images[id] = image;
+                        }
                     }
                 }
             }
@@ -185,7 +190,57 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
                 titles.GetValueOrDefault(r.CatalogItemId) ?? r.AppName,
                 playtime.TryGetValue(r.AppName, out var minutes) ? minutes : null,
                 null,
-                null))];
+                images.GetValueOrDefault(r.CatalogItemId)))];
+    }
+
+    /// <summary>Catalogue items, or null when Epic still fails after a few tries.</summary>
+    private async Task<JsonNode?> CatalogAsync(string url, StoreSession session, CancellationToken ct)
+    {
+        var delay = RetryDelay;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await StoreHttp.GetJsonAsync(http, url, Name, ct, session.AccessToken).ConfigureAwait(false);
+            }
+            catch (ConnectorException e) when (e.Kind is ConnectorErrorKind.Unavailable or ConnectorErrorKind.Network)
+            {
+                if (attempt == 4)
+                {
+                    return null; // the title falls back to the app name
+                }
+            }
+
+            await Task.Delay(delay, ct).ConfigureAwait(false);
+            delay *= 2;
+        }
+    }
+
+    /// <summary>Best box art of a catalogue item, scaled down by Epic's image CDN.</summary>
+    private static string? CoverImage(JsonNode item)
+    {
+        var byType = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var image in item["keyImages"]?.AsArray() ?? [])
+        {
+            if (StoreHttp.Optional(image, "type") is { } type && StoreHttp.Optional(image, "url") is { } url &&
+                url.StartsWith("https://", StringComparison.Ordinal))
+            {
+                byType.TryAdd(type, url);
+            }
+        }
+
+        foreach (var type in CoverImageTypes)
+        {
+            if (byType.TryGetValue(type, out var url))
+            {
+                // Box art is often several megabytes; cdn1.epicgames.com resizes on request.
+                return url.Contains('?', StringComparison.Ordinal) || !url.StartsWith("https://cdn1.epicgames.com/", StringComparison.Ordinal)
+                    ? url
+                    : $"{url}?h=900&resize=1&w=600";
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Epic achievements use a separate, undocumented GraphQL API; not supported yet.</summary>

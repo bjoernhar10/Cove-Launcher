@@ -48,7 +48,8 @@ export function GameCover({
   alt,
 }: GameCoverProps) {
   const t = useMessages();
-  const image = kind === "cover" ? game.artwork.cover : game.artwork.header;
+  // Wide views fall back to the cover (cropped) when a game has no header, e.g. Epic games.
+  const image = kind === "cover" || !game.artwork.header.url ? game.artwork.cover : game.artwork.header;
   // Stored alt texts are in the language they were fetched in; only their
   // presence counts, the text follows the UI language.
   const label = image.alt ? (alt ?? (kind === "cover" ? t.cover.cover(game.title) : t.cover.header(game.title))) : "";

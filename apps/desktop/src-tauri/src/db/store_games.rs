@@ -32,6 +32,9 @@ pub struct LocalInstall {
 pub enum Upsert {
     Added(GameId),
     Updated(GameId),
+    /// Updated, and the store now knows the real title: the game only had its
+    /// store id as name (e.g. an Epic import whose catalogue lookup failed).
+    Renamed(GameId),
 }
 
 async fn unique_id(
@@ -72,8 +75,51 @@ pub async fn find(
 /// library brings the same URL from the connectors). Keep in sync with
 /// `migrations/0007_steam_covers.sql` and `connectors.json`.
 fn steam_cover(store: StoreSource, app_id: &str) -> Option<String> {
-    (store == StoreSource::Steam && !app_id.is_empty() && app_id.bytes().all(|b| b.is_ascii_digit()))
-        .then(|| format!("https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{app_id}/library_600x900_2x.jpg"))
+    steam_asset(store, app_id, "library_600x900_2x.jpg")
+}
+
+/// Steam's landscape header, used where Cove shows wide artwork ("Weiterspielen").
+fn steam_header(store: StoreSource, app_id: &str) -> Option<String> {
+    steam_asset(store, app_id, "header.jpg")
+}
+
+fn steam_asset(store: StoreSource, app_id: &str, file: &str) -> Option<String> {
+    (store == StoreSource::Steam
+        && !app_id.is_empty()
+        && app_id.bytes().all(|b| b.is_ascii_digit()))
+    .then(|| {
+        format!(
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{app_id}/{file}"
+        )
+    })
+}
+
+/// Title (when it was only the store id) and missing artwork of an existing game.
+async fn refresh_game(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    game_id: &str,
+    title: Option<&str>,
+    cover: Option<&str>,
+    header: Option<&str>,
+) -> AppResult<()> {
+    if let Some(title) = title {
+        sqlx::query("UPDATE games SET title = ? WHERE id = ?")
+            .bind(title)
+            .bind(game_id)
+            .execute(&mut **tx)
+            .await?;
+    }
+    // Artwork the store brings now fills gaps, never replaces existing artwork.
+    sqlx::query(
+        "UPDATE games SET cover_url = COALESCE(NULLIF(cover_url, ''), ?), \
+           header_url = COALESCE(NULLIF(header_url, ''), ?) WHERE id = ?",
+    )
+    .bind(cover)
+    .bind(header)
+    .bind(game_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// Adds the game or refreshes playtime/install data of the existing entry.
@@ -89,8 +135,34 @@ pub async fn upsert(
         Some(_) => None,
         None => Some(unique_id(pool, store, &input.store_game_id).await?),
     };
+    let current_title: Option<String> = match &existing {
+        Some(game_id) => {
+            sqlx::query_scalar("SELECT title FROM games WHERE id = ?")
+                .bind(game_id)
+                .fetch_optional(pool)
+                .await?
+        }
+        None => None,
+    };
+    let title = input.title.trim();
+    let renamed = current_title.as_deref() == Some(input.store_game_id.as_str())
+        && !title.is_empty()
+        && title != input.store_game_id;
+    let cover = input
+        .image_url
+        .clone()
+        .or_else(|| steam_cover(store, &input.store_game_id));
+    let header = steam_header(store, &input.store_game_id);
     let mut tx = pool.begin().await?;
     if let Some(game_id) = existing {
+        refresh_game(
+            &mut tx,
+            &game_id,
+            renamed.then_some(title),
+            cover.as_deref(),
+            header.as_deref(),
+        )
+        .await?;
         sqlx::query(
             "UPDATE library_entries SET \
                playtime_offset_minutes = COALESCE(?, playtime_offset_minutes), \
@@ -116,24 +188,24 @@ pub async fn upsert(
             .await?;
         }
         tx.commit().await?;
-        return Ok(Upsert::Updated(game_id));
+        return Ok(if renamed {
+            Upsert::Renamed(game_id)
+        } else {
+            Upsert::Updated(game_id)
+        });
     }
 
     let id = new_id.unwrap_or_default();
     let now = now_iso();
     sqlx::query(
-        "INSERT INTO games (id, title, summary, platforms, release_date, cover_url, created_at) \
-         VALUES (?, ?, '', ?, '', ?, ?)",
+        "INSERT INTO games (id, title, summary, platforms, release_date, cover_url, header_url, created_at) \
+         VALUES (?, ?, '', ?, '', ?, ?, ?)",
     )
     .bind(&id)
-    .bind(input.title.trim())
+    .bind(title)
     .bind(serde_json::to_string(&[Platform::current()])?)
-    .bind(
-        input
-            .image_url
-            .clone()
-            .or_else(|| steam_cover(store, &input.store_game_id)),
-    )
+    .bind(&cover)
+    .bind(&header)
     .bind(&now)
     .execute(&mut *tx)
     .await?;
@@ -247,6 +319,87 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn store_ids_as_titles_are_replaced_once_the_store_knows_the_name() {
+        let pool = open_in_memory().await.unwrap();
+        let app = "0449f415f5404df093";
+        // First import: Epic's catalogue failed, so the title is the app name.
+        let bare = StoreGameInput {
+            store_game_id: app.into(),
+            title: app.into(),
+            ..StoreGameInput::default()
+        };
+        let Upsert::Added(id) = upsert(&pool, StoreSource::Epic, &bare).await.unwrap() else {
+            panic!("expected a new game");
+        };
+        // Still unknown: nothing to rename.
+        assert_eq!(
+            upsert(&pool, StoreSource::Epic, &bare).await.unwrap(),
+            Upsert::Updated(id.clone())
+        );
+
+        let named = StoreGameInput {
+            title: "Rocket League".into(),
+            image_url: Some("https://cdn1.epicgames.com/tall.jpg".into()),
+            ..bare.clone()
+        };
+        assert_eq!(
+            upsert(&pool, StoreSource::Epic, &named).await.unwrap(),
+            Upsert::Renamed(id.clone())
+        );
+        let item = library::require(&pool, &id).await.unwrap();
+        assert_eq!(item.game.title, "Rocket League");
+        assert_eq!(
+            item.game.artwork.cover.url.as_deref(),
+            Some("https://cdn1.epicgames.com/tall.jpg")
+        );
+
+        // A real title and existing artwork are never overwritten.
+        let other = StoreGameInput {
+            title: "Something Else".into(),
+            image_url: Some("https://cdn1.epicgames.com/other.jpg".into()),
+            ..bare
+        };
+        assert_eq!(
+            upsert(&pool, StoreSource::Epic, &other).await.unwrap(),
+            Upsert::Updated(id.clone())
+        );
+        let item = library::require(&pool, &id).await.unwrap();
+        assert_eq!(item.game.title, "Rocket League");
+        assert_eq!(
+            item.game.artwork.cover.url.as_deref(),
+            Some("https://cdn1.epicgames.com/tall.jpg")
+        );
+    }
+
+    #[tokio::test]
+    async fn steam_games_get_a_header_for_wide_views() {
+        let pool = open_in_memory().await.unwrap();
+        let Upsert::Added(id) = upsert(&pool, StoreSource::Steam, &portal(None))
+            .await
+            .unwrap()
+        else {
+            panic!("expected a new game");
+        };
+        let header =
+            "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/620/header.jpg";
+        let item = library::require(&pool, &id).await.unwrap();
+        assert_eq!(item.game.artwork.header.url.as_deref(), Some(header));
+
+        // Older imports without a header get it from the migration.
+        sqlx::query("UPDATE games SET header_url = NULL WHERE id = ?")
+            .bind(&id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::raw_sql(include_str!("../../migrations/0008_store_artwork.sql"))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let item = library::require(&pool, &id).await.unwrap();
+        assert_eq!(item.game.artwork.header.url.as_deref(), Some(header));
     }
 
     #[tokio::test]

@@ -21,6 +21,11 @@ pub const ALLOWED_HOSTS: &[&str] = &[
     "cdn.akamai.steamstatic.com",
     "cdn.cloudflare.steamstatic.com",
     "shared.akamai.steamstatic.com",
+    // Epic box art (catalogue keyImages)
+    "cdn1.epicgames.com",
+    "media-cdn.epicgames.com",
+    "cdn1.unrealengine.com",
+    "cdn2.unrealengine.com",
     // itch.io cover images
     "img.itch.zone",
     // GOG product images
@@ -75,13 +80,22 @@ pub fn unproxied(url: Option<String>) -> Option<String> {
 /// Steam's portrait library artwork (`library_600x900_2x.jpg`) is missing for some games,
 /// and newer games keep all their artwork under hashed paths. Fallbacks, best first:
 /// the 1x portrait, the landscape header, then the header URL the store API names.
+/// A missing `header.jpg` goes straight to the store API.
 const STEAM_PORTRAIT: &str = "/library_600x900_2x.jpg";
+const STEAM_HEADER: &str = "/header.jpg";
 const STEAM_API: &str = "https://store.steampowered.com";
 
-fn steam_app(remote: &str) -> Option<(&str, &str)> {
-    let base = remote.strip_suffix(STEAM_PORTRAIT)?;
+/// `(base URL, app id, smaller files to try first)` of a Steam artwork URL.
+fn steam_app(remote: &str) -> Option<(&str, &str, &'static [&'static str])> {
+    let (base, files): (&str, &'static [&'static str]) =
+        if let Some(base) = remote.strip_suffix(STEAM_PORTRAIT) {
+            (base, &["library_600x900.jpg", "header.jpg"])
+        } else {
+            (remote.strip_suffix(STEAM_HEADER)?, &[])
+        };
     let (_, app_id) = base.rsplit_once("/steam/apps/")?;
-    (!app_id.is_empty() && app_id.bytes().all(|b| b.is_ascii_digit())).then_some((base, app_id))
+    (!app_id.is_empty() && app_id.bytes().all(|b| b.is_ascii_digit()))
+        .then_some((base, app_id, files))
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -180,8 +194,8 @@ impl ImageCache {
             return Ok((bytes, mime_for(&path)));
         }
         let bytes = match (self.download(url).await, steam_app(remote)) {
-            (Err(ImageError::Unavailable), Some((base, app_id))) => {
-                self.steam_fallback(base, app_id).await?
+            (Err(ImageError::Unavailable), Some((base, app_id, files))) => {
+                self.steam_fallback(base, app_id, files).await?
             }
             (result, _) => result?,
         };
@@ -195,8 +209,13 @@ impl ImageCache {
         Ok((bytes, mime_for(&path)))
     }
 
-    async fn steam_fallback(&self, base: &str, app_id: &str) -> Result<Vec<u8>, ImageError> {
-        for file in ["library_600x900.jpg", "header.jpg"] {
+    async fn steam_fallback(
+        &self,
+        base: &str,
+        app_id: &str,
+        files: &[&str],
+    ) -> Result<Vec<u8>, ImageError> {
+        for file in files {
             if let Ok(bytes) = self.download(self.check(&format!("{base}/{file}"))?).await {
                 return Ok(bytes);
             }
@@ -354,6 +373,9 @@ mod tests {
         let portrait =
             |id: &str| format!("{}/steam/apps/{id}/library_600x900_2x.jpg", server.uri());
         assert_eq!(cache.get(&portrait("10")).await.unwrap().0, b"HEADER");
+        // A missing header goes straight to the store API (never the portrait).
+        let header = format!("{}/steam/apps/20/header.jpg", server.uri());
+        assert_eq!(cache.get(&header).await.unwrap().0, b"HASHED");
         assert_eq!(cache.get(&portrait("20")).await.unwrap().0, b"HASHED");
         assert!(
             cache.path_for(&portrait("20")).is_file(),

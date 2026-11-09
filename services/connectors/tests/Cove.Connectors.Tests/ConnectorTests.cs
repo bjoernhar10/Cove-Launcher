@@ -180,6 +180,7 @@ public class EpicConnectorTests
     [Fact]
     public async Task ExchangesCodeWithBasicAuthAndImportsGamesOnly()
     {
+        var catalogCalls = 0;
         var handler = new StubHandler((request, _) =>
         {
             var url = request.RequestUri!;
@@ -205,7 +206,14 @@ public class EpicConnectorTests
 
             if (url.AbsolutePath.Contains("/namespace/ns1/", StringComparison.Ordinal))
             {
-                return StubHandler.Json("""{ "i1": { "title": "Rocket League" } }""");
+                // Rate limited once: the connector retries instead of falling back to the app name.
+                return ++catalogCalls == 1
+                    ? StubHandler.Text("slow down", HttpStatusCode.TooManyRequests)
+                    : StubHandler.Json("""
+                        { "i1": { "title": "Rocket League", "keyImages": [
+                            { "type": "OfferImageWide", "url": "https://cdn1.epicgames.com/wide.jpg" },
+                            { "type": "DieselGameBoxTall", "url": "https://cdn1.epicgames.com/tall.jpg" } ] } }
+                        """);
             }
 
             if (url.AbsolutePath.Contains("/namespace/ns2/", StringComparison.Ordinal))
@@ -217,7 +225,7 @@ public class EpicConnectorTests
                 ? StubHandler.Json("""[ { "artifactId": "Sugar", "totalTime": 7200 } ]""")
                 : StubHandler.Text("", HttpStatusCode.NotFound);
         });
-        var epic = new EpicConnector(new HttpClient(handler), TestConfig.Default.Epic);
+        var epic = new EpicConnector(new HttpClient(handler), TestConfig.Default.Epic) { RetryDelay = TimeSpan.Zero };
 
         var start = epic.LoginStart("unused", "unused");
         Assert.Equal("https://www.epicgames.com/id/api/redirect", start.CallbackPrefix);
@@ -232,6 +240,8 @@ public class EpicConnectorTests
         var games = await epic.GetLibraryAsync(session, new StoreContext(null), TestContext.Current.CancellationToken);
         var game = Assert.Single(games);
         Assert.Equal(("Sugar", "Rocket League", 120L), (game.StoreGameId, game.Title, game.PlaytimeMinutes!.Value));
+        Assert.Equal("https://cdn1.epicgames.com/tall.jpg?h=900&resize=1&w=600", game.ImageUrl);
+        Assert.Equal(2, catalogCalls);
     }
 }
 
