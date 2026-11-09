@@ -1,8 +1,13 @@
-# Desktop builds: Linux (AppImage, .deb, .rpm) and Windows (MSI, NSIS).
+# Desktop builds: Linux (AppImage, .deb, .rpm), Windows (MSI, NSIS) and
+# macOS on Apple Silicon (.dmg, plus the .app archive for the updater; not
+# signed with an Apple Developer ID yet).
 #
 # Every push to main builds all bundles and keeps them as workflow artifacts.
 # A tag `v*` (e.g. v0.2.0) additionally creates a draft GitHub release with
 # signed updater artifacts and `latest.json` for the Tauri updater.
+#
+# Run manually with `tag` (e.g. v0.2.2) to add builds to an existing release
+# from the current branch; `platforms` limits it (e.g. only macOS).
 #
 # Secrets (Settings → Secrets and variables → Actions), only needed for tags:
 #   TAURI_SIGNING_PRIVATE_KEY           contents of ~/.tauri/cove-updater.key
@@ -14,9 +19,19 @@ on:
     branches: [main]
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Add the builds to this existing release (e.g. v0.2.2); empty = workflow artifacts only"
+        required: false
+        default: ""
+      platforms:
+        description: "Platforms to build"
+        type: choice
+        options: [all, linux, windows, macos]
+        default: all
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.ref }}-${{ inputs.tag }}
   cancel-in-progress: true
 
 permissions:
@@ -28,18 +43,29 @@ env:
   DOTNET_NOLOGO: "1"
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - id: matrix
+        env:
+          PLATFORMS: ${{ inputs.platforms || 'all' }}
+        run: |
+          all='[
+            {"platform":"linux","name":"Linux (AppImage, deb, rpm)","os":"ubuntu-22.04","bundles":"appimage,deb,rpm"},
+            {"platform":"windows","name":"Windows (MSI, NSIS)","os":"windows-latest","bundles":"msi,nsis"},
+            {"platform":"macos","name":"macOS Apple Silicon (dmg)","os":"macos-latest","bundles":"app,dmg"}
+          ]'
+          echo "matrix=$(jq -c --arg p "$PLATFORMS" 'map(select($p == "all" or .platform == $p))' <<<"$all")" >> "$GITHUB_OUTPUT"
+
   bundle:
     name: ${{ matrix.name }}
+    needs: plan
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: Linux (AppImage, deb, rpm)
-            os: ubuntu-22.04
-            bundles: appimage,deb,rpm
-          - name: Windows (MSI, NSIS)
-            os: windows-latest
-            bundles: msi,nsis
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -69,7 +95,7 @@ jobs:
 
       # `beforeBuildCommand` builds both sidecars (PyInstaller, .NET) and the UI.
       - name: Build (workflow artifacts)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') && !inputs.tag }}
         uses: tauri-apps/tauri-action@v1
         with:
           projectPath: apps/desktop
@@ -78,7 +104,7 @@ jobs:
           workflowArtifactNamePattern: "cove-[platform]-[arch]-[bundle]"
 
       - name: Build and publish a draft release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.tag }}
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -87,8 +113,8 @@ jobs:
         with:
           projectPath: apps/desktop
           args: --bundles ${{ matrix.bundles }} --config src-tauri/tauri.release.conf.json
-          tagName: ${{ github.ref_name }}
-          releaseName: Cove ${{ github.ref_name }}
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: Cove ${{ inputs.tag || github.ref_name }}
           releaseBody: See the commits since the previous release for what changed.
           releaseDraft: true
           uploadUpdaterJson: true
