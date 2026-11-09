@@ -88,6 +88,11 @@ jobs:
         working-directory: apps/desktop/src-tauri
       - run: cargo test
         working-directory: apps/desktop/src-tauri
+      # The real Credential Manager (entry size limit; Linux CI has no Secret Service).
+      - name: Real keyring (Windows Credential Manager)
+        if: runner.os == 'Windows'
+        run: cargo test real_keyring_roundtrip -- --ignored
+        working-directory: apps/desktop/src-tauri
 
   csharp:
     name: C# connectors

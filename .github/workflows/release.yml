@@ -116,7 +116,9 @@ jobs:
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: Cove ${{ inputs.tag || github.ref_name }}
           releaseBody: See the commits since the previous release for what changed.
-          releaseDraft: true
+          # Tag pushes create a draft; a manual run with `tag` adds to that release
+          # as it is (a draft lookup would miss a published one and open a new draft).
+          releaseDraft: ${{ !inputs.tag }}
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
           # The signatures are inside latest.json; no separate .sig downloads.
