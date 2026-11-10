@@ -31,6 +31,8 @@ public sealed record SteamDlcParams(string AppId, string Home, string? ProgramDa
 /// <param name="Language">de or en: preferred game language.</param>
 public sealed record GogPlanParams(StoreSession Session, string ProductId, string Platform, string Language, string? ProxyUrl);
 
+public sealed record GogDlcParams(StoreSession Session, string ProductId, string Platform, string? ProxyUrl);
+
 public sealed record EpicAppParams(StoreSession Session, string AppName, string? Platform, bool OwnershipToken, IReadOnlyList<string>? Paths, string? ProxyUrl);
 
 public sealed record LibraryResult(IReadOnlyList<OwnedGame> Games);
@@ -61,6 +63,8 @@ public sealed record LocalResult(IReadOnlyList<LocalGame> Games);
 [JsonSerializable(typeof(AchievementsResult))]
 [JsonSerializable(typeof(LocalResult))]
 [JsonSerializable(typeof(GogPlanParams))]
+[JsonSerializable(typeof(GogDlcParams))]
+[JsonSerializable(typeof(OwnedDlcs))]
 [JsonSerializable(typeof(GogInstallPlan))]
 [JsonSerializable(typeof(GogLatest))]
 [JsonSerializable(typeof(EpicAppParams))]

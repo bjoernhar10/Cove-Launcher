@@ -210,6 +210,13 @@ public sealed class RpcDispatcher
                     return Node(plan, ctx.GogInstallPlan);
                 }
 
+            case "gog.dlcs":
+                {
+                    var args = Params(p, ctx.GogDlcParams);
+                    var dlcs = await GogContent().OwnedDlcsAsync(args.Session, args.ProductId, args.Platform, ct).ConfigureAwait(false);
+                    return Node(dlcs, ctx.OwnedDlcs);
+                }
+
             case "gog.latest":
                 {
                     var args = Params(p, ctx.GogPlanParams);
@@ -222,6 +229,13 @@ public sealed class RpcDispatcher
                     var args = Params(p, ctx.EpicAppParams);
                     var info = await EpicContent().InstallInfoAsync(args.Session, args.AppName, args.Platform ?? "windows", ct).ConfigureAwait(false);
                     return Node(info, ctx.EpicInstallInfo);
+                }
+
+            case "epic.dlcs":
+                {
+                    var args = Params(p, ctx.EpicAppParams);
+                    var dlcs = await EpicContent().OwnedDlcsAsync(args.Session, args.AppName, args.Platform ?? "windows", ct).ConfigureAwait(false);
+                    return Node(dlcs, ctx.OwnedDlcs);
                 }
 
             case "epic.launch":

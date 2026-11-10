@@ -147,6 +147,53 @@ public sealed class EpicContent(HttpClient http, EpicConfig config)
     }
 
     /// <summary>
+    /// Every DLC of the game the user owns (library records in the game's namespace
+    /// whose catalogue entry has a main game), marked when it has no build of its own
+    /// and is only unlocked inside the game.
+    /// </summary>
+    public async Task<OwnedDlcs> OwnedDlcsAsync(StoreSession session, string appName, string platform, CancellationToken ct)
+    {
+        CheckApp(appName);
+        var records = await RecordsAsync(session, ct).ConfigureAwait(false);
+        var (ns, item) = Find(records, appName);
+        var candidates = records
+            .Where(r => r.Namespace == ns && r.CatalogItemId != item && r.AppName != appName)
+            .DistinctBy(r => r.CatalogItemId)
+            .ToList();
+        var titles = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var chunk in candidates.Chunk(50))
+        {
+            // Several ids go in as repeated "id=" parameters: a comma-separated list returns nothing.
+            var catalog = await StoreHttp.GetJsonAsync(
+                http,
+                config.CatalogUrl.Replace("{namespace}", Uri.EscapeDataString(ns), StringComparison.Ordinal)
+                    .Replace("{ids}", string.Join("&id=", chunk.Select(r => Uri.EscapeDataString(r.CatalogItemId))), StringComparison.Ordinal),
+                Name, ct, Token(session)).ConfigureAwait(false);
+            foreach (var (id, entry) in catalog.AsObject())
+            {
+                if (entry?["mainGameItem"] is not null)
+                {
+                    titles[id] = StoreHttp.Optional(entry, "title") ?? id;
+                }
+            }
+        }
+
+        var epicPlatform = platform == "osx" ? "Mac" : "Windows";
+        var dlcs = candidates.Where(r => titles.ContainsKey(r.CatalogItemId)).ToList();
+        var result = new OwnedDlc[dlcs.Count];
+        var parallel = new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = ct };
+        await Parallel.ForEachAsync(Enumerable.Range(0, dlcs.Count), parallel, async (i, token) =>
+        {
+            var (_, dlcItem, dlcApp) = dlcs[i];
+            var build = IsAppName(dlcApp)
+                ? await ManifestsAsync(session, epicPlatform, ns, dlcItem, dlcApp, token).ConfigureAwait(false)
+                : null;
+            result[i] = new OwnedDlc(dlcApp.Length > 0 ? dlcApp : dlcItem, titles[dlcItem], build is not { ManifestUrls.Count: > 0 });
+        }).ConfigureAwait(false);
+        return new OwnedDlcs([.. result.OrderBy(d => d.Title, StringComparer.CurrentCultureIgnoreCase)]);
+    }
+
+    /// <summary>
     /// Owned DLCs of the game that come with files on this platform. DLCs that
     /// only unlock content (no build of their own) are left out: the game checks
     /// them itself through the login Cove starts it with.

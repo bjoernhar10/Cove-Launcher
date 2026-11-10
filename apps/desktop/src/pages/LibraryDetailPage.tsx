@@ -43,47 +43,50 @@ function Overview({ item }: { item: LibraryItem }) {
   const { entry, game } = item;
 
   return (
-    <div className="grid grid-cols-1 gap-10 xl:grid-cols-[1fr_320px]">
-      <section aria-label={t.library.colPlaytime}>
-        <h2 className="text-base font-semibold text-fg">{t.game.last14Days}</h2>
-        {stats.status === "loading" && (
-          <LoadingRegion label={t.game.loadingPlaytime}>
-            <Skeleton className="mt-4 h-40" />
-          </LoadingRegion>
-        )}
-        {stats.status === "error" && <ErrorState message={stats.error} onRetry={stats.retry} />}
-        {stats.status === "success" && (
-          <>
-            <p className="num mt-1 text-sm text-fg-muted">
-              {formatPlaytime(stats.data.last14DaysMinutes)} · {t.game.sessions(stats.data.sessionCount)}
-            </p>
-            <div className="mt-4">
-              <PlaytimeChart days={stats.data.days} title={t.game.perDay(game.title)} />
-            </div>
-          </>
-        )}
-      </section>
-      <section aria-label={t.game.info}>
-        <h2 className="mb-3 text-base font-semibold text-fg">{t.game.info}</h2>
-        <dl className="m-0 rounded-lg border border-border px-4 text-sm">
-          {[
-            [t.library.colSource, SOURCE_LABELS[entry.source]],
-            [t.game.launchViaLabel, entry.launchVia ? LAUNCH_VIA_LABELS[entry.launchVia] : "—"],
-            [t.game.status, entry.installed ? t.library.installed : t.library.notInstalled],
-            [t.game.location, entry.installPath ?? "—"],
-            [t.game.size, entry.installSizeBytes === null ? "—" : formatBytes(entry.installSizeBytes)],
-            [t.game.added, formatDate(entry.addedAt)],
-            [t.detail.developer, game.developer],
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-4 border-b border-border py-3 last:border-b-0">
-              <dt className="text-fg-subtle">{label}</dt>
-              <dd className="m-0 min-w-0 truncate text-right text-fg" title={value}>
-                {value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </section>
+    <div className="flex flex-col gap-10">
+      <div className="grid grid-cols-1 gap-10 xl:grid-cols-[1fr_320px]">
+        <section aria-label={t.library.colPlaytime}>
+          <h2 className="text-base font-semibold text-fg">{t.game.last14Days}</h2>
+          {stats.status === "loading" && (
+            <LoadingRegion label={t.game.loadingPlaytime}>
+              <Skeleton className="mt-4 h-40" />
+            </LoadingRegion>
+          )}
+          {stats.status === "error" && <ErrorState message={stats.error} onRetry={stats.retry} />}
+          {stats.status === "success" && (
+            <>
+              <p className="num mt-1 text-sm text-fg-muted">
+                {formatPlaytime(stats.data.last14DaysMinutes)} · {t.game.sessions(stats.data.sessionCount)}
+              </p>
+              <div className="mt-4">
+                <PlaytimeChart days={stats.data.days} title={t.game.perDay(game.title)} />
+              </div>
+            </>
+          )}
+        </section>
+        <section aria-label={t.game.info}>
+          <h2 className="mb-3 text-base font-semibold text-fg">{t.game.info}</h2>
+          <dl className="m-0 rounded-lg border border-border px-4 text-sm">
+            {[
+              [t.library.colSource, SOURCE_LABELS[entry.source]],
+              [t.game.launchViaLabel, entry.launchVia ? LAUNCH_VIA_LABELS[entry.launchVia] : "—"],
+              [t.game.status, entry.installed ? t.library.installed : t.library.notInstalled],
+              [t.game.location, entry.installPath ?? "—"],
+              [t.game.size, entry.installSizeBytes === null ? "—" : formatBytes(entry.installSizeBytes)],
+              [t.game.added, formatDate(entry.addedAt)],
+              [t.detail.developer, game.developer],
+            ].map(([label, value]) => (
+              <div key={label} className="flex justify-between gap-4 border-b border-border py-3 last:border-b-0">
+                <dt className="text-fg-subtle">{label}</dt>
+                <dd className="m-0 min-w-0 truncate text-right text-fg" title={value}>
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      </div>
+      {entry.source !== "manual" && entry.storeGameId && <GameDlcs item={item} />}
     </div>
   );
 }
@@ -355,43 +358,17 @@ function GameUpdates({ item }: { item: LibraryItem }) {
   );
 }
 
-/** GOG/Epic games Cove installed: "DLCs ändern". */
-function StoreDlcs({ item }: { item: LibraryItem }) {
-  const t = useMessages();
-  const [open, setOpen] = useState(false);
-  return (
-    <section aria-labelledby={`store-dlcs-${item.game.id}`} className="max-w-2xl border-t border-border pt-6">
-      <h3 id={`store-dlcs-${item.game.id}`} className="text-sm font-medium text-fg">
-        {t.game.dlcsTitle}
-      </h3>
-      <p className="mt-1 text-sm text-fg-muted">{t.game.dlcsStoreHint}</p>
-      <Button
-        icon={PackageOpen}
-        className="mt-4"
-        onClick={() => {
-          setOpen(true);
-        }}
-      >
-        {t.game.changeDlcs}
-      </Button>
-      {open && (
-        <DlcDialog
-          item={item}
-          open
-          onClose={() => {
-            setOpen(false);
-          }}
-        />
-      )}
-    </section>
-  );
-}
-
-/** Steam games: their DLCs (installed ones marked) and "In Steam verwalten". */
-function SteamDlcs({ item }: { item: LibraryItem }) {
+/**
+ * DLCs of a store game. Steam: every DLC (installed ones marked) and "In Steam verwalten".
+ * GOG/Epic: the DLCs the account owns; "DLCs ändern" for games Cove installed.
+ */
+function GameDlcs({ item }: { item: LibraryItem }) {
   const t = useMessages();
   const dlcs = useQuery(`dlcs/${item.game.id}`, () => api.library.gameDlcs(item.game.id));
   const [busy, setBusy] = useState(false);
+  const [changing, setChanging] = useState(false);
+  const steam = item.entry.source === "steam";
+  const changeable = item.entry.installed && ownStoreInstall(item);
 
   async function manage(): Promise<void> {
     setBusy(true);
@@ -405,11 +382,19 @@ function SteamDlcs({ item }: { item: LibraryItem }) {
     }
   }
 
+  const hint = steam
+    ? t.game.dlcsSteamHint
+    : changeable
+      ? t.game.dlcsStoreHint
+      : item.entry.installed
+        ? t.game.dlcsLauncherHint
+        : t.game.dlcsInstallHint;
+
   return (
-    <section aria-labelledby={`dlcs-${item.game.id}`} className="max-w-2xl border-t border-border pt-6">
-      <h3 id={`dlcs-${item.game.id}`} className="text-sm font-medium text-fg">
+    <section aria-labelledby={`dlcs-${item.game.id}`} className="max-w-2xl">
+      <h2 id={`dlcs-${item.game.id}`} className="text-base font-semibold text-fg">
         {t.game.dlcsTitle}
-      </h3>
+      </h2>
       {dlcs.status === "loading" && (
         <LoadingRegion label={t.game.dlcsLoading} className="mt-2 flex flex-col gap-2">
           <Skeleton className="h-5 w-64" />
@@ -417,25 +402,50 @@ function SteamDlcs({ item }: { item: LibraryItem }) {
         </LoadingRegion>
       )}
       {dlcs.status === "error" && <ErrorState message={dlcs.error} onRetry={dlcs.retry} />}
-      {dlcs.status === "success" && dlcs.data.dlcs.length === 0 && <p className="mt-1 text-sm text-fg-muted">{t.game.dlcsNone}</p>}
+      {dlcs.status === "success" && dlcs.data.dlcs.length === 0 && (
+        <p className="mt-1 text-sm text-fg-muted">{steam ? t.game.dlcsNone : t.game.dlcsNoneOwned}</p>
+      )}
       {dlcs.status === "success" && dlcs.data.dlcs.length > 0 && (
         <>
-          <p className="mt-1 text-sm text-fg-muted">{t.game.dlcsSteamHint}</p>
+          <p className="mt-1 text-sm text-fg-muted">{hint}</p>
           <ul className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-border">
             {dlcs.data.dlcs.map((dlc) => (
               <li key={dlc.id} className="flex items-center gap-3 border-b border-border px-3 py-2 text-sm text-fg last:border-b-0">
                 <span className="min-w-0 flex-1 truncate">{dlc.title}</span>
-                {dlc.installed && <Badge>{t.game.dlcInstalled}</Badge>}
+                {dlc.unlockOnly === true ? <Badge>{t.game.dlcUnlockOnly}</Badge> : dlc.installed && <Badge>{t.game.dlcInstalled}</Badge>}
               </li>
             ))}
           </ul>
           {dlcs.data.total > dlcs.data.dlcs.length && (
             <p className="num mt-2 text-xs text-fg-subtle">{t.game.dlcsCut(dlcs.data.dlcs.length, dlcs.data.total)}</p>
           )}
-          <Button icon={ExternalLink} className="mt-4" disabled={busy} onClick={() => void manage()}>
-            {t.game.manageInSteam}
-          </Button>
+          {steam && (
+            <Button icon={ExternalLink} className="mt-4" disabled={busy} onClick={() => void manage()}>
+              {t.game.manageInSteam}
+            </Button>
+          )}
         </>
+      )}
+      {changeable && (
+        <Button
+          icon={PackageOpen}
+          className="mt-4"
+          onClick={() => {
+            setChanging(true);
+          }}
+        >
+          {t.game.changeDlcs}
+        </Button>
+      )}
+      {changing && (
+        <DlcDialog
+          item={item}
+          open
+          onClose={() => {
+            setChanging(false);
+            dlcs.retry();
+          }}
+        />
       )}
     </section>
   );
@@ -736,8 +746,6 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
       </div>
     </form>
     {item.entry.installed && ownStoreInstall(item) && <GameUpdates item={item} />}
-    {item.entry.source === "steam" && item.entry.storeGameId && <SteamDlcs item={item} />}
-    {item.entry.installed && ownStoreInstall(item) && <StoreDlcs item={item} />}
     {item.entry.installed && (item.entry.source === "manual" || ownStoreInstall(item)) && item.entry.installPath && (
       <MoveGame item={item} />
     )}

@@ -23,7 +23,8 @@ public sealed record GogConfig(
     string BuildsUrl,
     string MetaUrl,
     string SecureLinkUrl,
-    string ProductDownloadsUrl);
+    string ProductDownloadsUrl,
+    string ProductDlcsUrl);
 
 public sealed record EpicConfig(
     string ClientId,

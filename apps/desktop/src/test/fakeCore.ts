@@ -168,8 +168,8 @@ export interface FakeCore {
   dlcs: Record<string, DlcOption[]>;
   /** Targets of store installs Cove does itself (per game id). */
   installTargets: Record<string, InstallTarget>;
-  /** Steam DLC lists (per game id). */
-  steamDlcs: Record<string, StoreDlcList>;
+  /** DLC lists of store games (per game id). */
+  gameDlcs: Record<string, StoreDlcList>;
   /** URLs Cove asked the system to open (steam:// …). */
   openedUrls: string[];
   /** Upload ids of extras sent with itch.io downloads. */
@@ -248,7 +248,7 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     launcherOnly: {},
     dlcs: {},
     installTargets: {},
-    steamDlcs: {},
+    gameDlcs: {},
     openedUrls: [],
     itchExtras: [],
   };
@@ -338,8 +338,8 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     game_running_list: () => [],
     game_dlcs: ({ gameId }) => {
       const item = require(gameId);
-      if (item.entry.source !== "steam") reject("invalidInput", "Die DLC-Liste gibt es nur für Steam-Spiele.");
-      return core.steamDlcs[gameId] ?? { dlcs: [], total: 0 };
+      if (item.entry.source === "manual") reject("invalidInput", "Die DLC-Liste gibt es nur für Steam-, GOG- und Epic-Spiele.");
+      return core.gameDlcs[gameId] ?? { dlcs: [], total: 0 };
     },
     game_manage_dlcs: ({ gameId }) => {
       const item = require(gameId);

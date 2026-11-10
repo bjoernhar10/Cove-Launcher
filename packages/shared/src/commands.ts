@@ -77,7 +77,7 @@ export interface CoveCommands {
   game_running_list: { args: NoArgs; result: RunningGame[] };
   /** Steam: opens Steam's uninstall dialog. Games Cove installed: deletes the game folder. */
   game_uninstall: { args: { gameId: GameId }; result: UninstallMethod };
-  /** DLCs of a Steam game (installed ones marked). */
+  /** DLCs of a store game: Steam lists all of them, GOG/Epic the owned ones (installed ones marked). */
   game_dlcs: { args: { gameId: GameId }; result: StoreDlcList };
   /** Opens the game in Steam, where its DLCs are ticked under Properties → DLC. */
   game_manage_dlcs: { args: { gameId: GameId }; result: null };

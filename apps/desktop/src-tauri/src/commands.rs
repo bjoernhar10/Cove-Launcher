@@ -180,8 +180,58 @@ pub async fn game_dlcs(
     state: State<'_, AppState>,
     game_id: String,
 ) -> AppResult<crate::models::StoreDlcList> {
-    let app_id = steam_app(&state, &game_id).await?;
-    state.stores.steam_dlcs(&app_id).await
+    let item = db::library::require(&state.pool, &game_id).await?;
+    let store = item.entry.source;
+    let Some(store_game_id) = item.entry.store_game_id.clone() else {
+        return Err(no_dlc_list());
+    };
+    match store {
+        StoreSource::Steam => state.stores.steam_dlcs(&store_game_id).await,
+        StoreSource::Gog | StoreSource::Epic => {
+            let owned = state
+                .stores
+                .owned_dlcs(
+                    store,
+                    &store_game_id,
+                    crate::downloads::gog::host_platform(),
+                )
+                .await?;
+            let excluded = db::store_installs::excluded_dlcs(&state.pool, &game_id).await?;
+            let saved: std::collections::HashSet<String> =
+                db::store_installs::dlcs(&state.pool, &game_id)
+                    .await?
+                    .into_iter()
+                    .map(|d| d.app_name)
+                    .collect();
+            let game_installed = item.entry.installed && item.entry.installed_by_cove;
+            let dlcs: Vec<crate::models::StoreDlc> = owned
+                .into_iter()
+                .map(|d| crate::models::StoreDlc {
+                    // Epic keeps installed DLCs apart; GOG installs every chosen one with the game.
+                    installed: game_installed
+                        && !d.unlock_only
+                        && if store == StoreSource::Epic {
+                            saved.contains(&d.id)
+                        } else {
+                            !excluded.contains(&d.id)
+                        },
+                    id: d.id,
+                    title: d.title,
+                    unlock_only: d.unlock_only,
+                })
+                .collect();
+            let total = i64::try_from(dlcs.len()).unwrap_or(i64::MAX);
+            Ok(crate::models::StoreDlcList { dlcs, total })
+        }
+        StoreSource::Manual => Err(no_dlc_list()),
+    }
+}
+
+fn no_dlc_list() -> AppError {
+    AppError::InvalidInput(tr!(
+        "Die DLC-Liste gibt es nur für Steam-, GOG- und Epic-Spiele.",
+        "The DLC list is only available for Steam, GOG and Epic games."
+    ))
 }
 
 /// Opens the game in Steam, where its DLCs are ticked under Properties → DLC.

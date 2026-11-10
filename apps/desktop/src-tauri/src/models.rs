@@ -1062,6 +1062,9 @@ pub struct StoreDlc {
     pub title: String,
     /// Installed on this computer.
     pub installed: bool,
+    /// GOG/Epic: no files of its own, the game unlocks it through the login.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unlock_only: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

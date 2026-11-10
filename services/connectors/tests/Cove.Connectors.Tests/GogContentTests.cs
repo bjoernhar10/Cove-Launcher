@@ -113,6 +113,23 @@ public class GogContentTests
     }
 
     [Fact]
+    public async Task ListsOwnedDlcsAndMarksTheOnesWithoutFiles()
+    {
+        var gog = new GogContent(new HttpClient(Cdn(url => url switch
+        {
+            "https://embed.gog.com/user/data/games" => StubHandler.Json("""{ "owned": [100, 200, 400] }"""),
+            "https://api.gog.com/products/100?expand=expanded_dlcs" => StubHandler.Json("""
+                { "id": 100, "expanded_dlcs": [ { "id": 200, "title": "Saltmarsh: Deep Water" }, { "id": 300, "title": "Not owned" },
+                                                { "id": 400, "title": "Saltmarsh: Golden Boat" } ] }
+                """),
+            _ => null,
+        })), TestConfig.Default.Gog);
+        var owned = await gog.OwnedDlcsAsync(Session, "100", "windows", TestContext.Current.CancellationToken);
+        // 200 has a depot in the build; 400 is only unlocked in the game.
+        Assert.Equal([new OwnedDlc("200", "Saltmarsh: Deep Water", false), new OwnedDlc("400", "Saltmarsh: Golden Boat", true)], owned.Dlcs);
+    }
+
+    [Fact]
     public async Task FallsBackToEnglishAndRefusesTheOldFormat()
     {
         var gog = new GogContent(new HttpClient(Cdn()), TestConfig.Default.Gog);

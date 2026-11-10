@@ -510,7 +510,7 @@ async fn download_commands_accept_frontend_payloads() {
     assert_eq!(enqueue["kind"], "invalidInput");
     let uninstall = invoke_raw(&app, "game_uninstall", json!({ "gameId": game_id })).unwrap_err();
     assert_eq!(uninstall["kind"], "invalidInput");
-    // The DLC list and "In Steam verwalten" are for Steam games only.
+    // The DLC list is for store games only, "In Steam verwalten" for Steam games.
     for command in ["game_dlcs", "game_manage_dlcs"] {
         let error = invoke_raw(&app, command, json!({ "gameId": game_id })).unwrap_err();
         assert_eq!(error["kind"], "invalidInput", "{command}");

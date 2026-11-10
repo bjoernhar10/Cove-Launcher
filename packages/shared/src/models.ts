@@ -297,6 +297,8 @@ export interface StoreDlc {
   title: string;
   /** Installed on this computer. */
   installed: boolean;
+  /** GOG/Epic: no files of its own, the game unlocks it through the login. */
+  unlockOnly?: boolean;
 }
 
 export interface StoreDlcList {

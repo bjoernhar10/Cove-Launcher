@@ -27,6 +27,16 @@ use crate::sidecar::{RpcError, Sidecar, SidecarErrors, SidecarStatus};
 /// Refresh tokens this long before they expire.
 const REFRESH_MARGIN: chrono::TimeDelta = chrono::TimeDelta::minutes(5);
 
+/// A DLC of a GOG or Epic game the account owns.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnedDlc {
+    /// GOG product id or Epic app name.
+    pub id: String,
+    pub title: String,
+    pub unlock_only: bool,
+}
+
 /// What the connectors return after a login. Tokens never leave the core
 /// except as parameters to the connectors; `Debug` redacts them.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -414,10 +424,42 @@ impl StoreService {
                     id: d.app_id,
                     title: d.title,
                     installed: d.installed,
+                    unlock_only: false,
                 })
                 .collect(),
             total: list.total,
         })
+    }
+
+    /// DLCs of a GOG or Epic game the account owns (connector `gog.dlcs` / `epic.dlcs`).
+    pub async fn owned_dlcs(
+        &self,
+        store: StoreSource,
+        store_game_id: &str,
+        platform: &str,
+    ) -> AppResult<Vec<OwnedDlc>> {
+        #[derive(Deserialize)]
+        struct List {
+            dlcs: Vec<OwnedDlc>,
+        }
+        let (method, params) = match store {
+            StoreSource::Gog => (
+                "gog.dlcs",
+                json!({ "productId": store_game_id, "platform": platform }),
+            ),
+            StoreSource::Epic => (
+                "epic.dlcs",
+                json!({ "appName": store_game_id, "platform": platform }),
+            ),
+            _ => {
+                return Err(AppError::InvalidInput(tr!(
+                    "Gekaufte DLCs gibt es nur für GOG- und Epic-Spiele.",
+                    "Owned DLCs are only available for GOG and Epic games."
+                )))
+            }
+        };
+        let list: List = serde_json::from_value(self.with_session(store, method, params).await?)?;
+        Ok(list.dlcs)
     }
 
     /// Manifest links and catalogue attributes of an Epic game.
@@ -1191,7 +1233,17 @@ mod sidecar_contract {
             .await
             .unwrap_err();
         assert!(matches!(plan, AppError::InvalidInput(_)), "{plan:?}");
-        for method in ["epic.installInfo", "epic.launch", "epic.saves"] {
+        let dlcs = rpc
+            .call(
+                "gog.dlcs",
+                json!({ "session": { "store": "gog", "accountId": "1", "displayName": "x", "accessToken": "a",
+                                     "refreshToken": "r", "expiresAt": null },
+                        "productId": "../1", "platform": "linux", "proxyUrl": null }),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(dlcs, AppError::InvalidInput(_)), "{dlcs:?}");
+        for method in ["epic.installInfo", "epic.launch", "epic.saves", "epic.dlcs"] {
             let error = rpc
                 .call(
                     method,

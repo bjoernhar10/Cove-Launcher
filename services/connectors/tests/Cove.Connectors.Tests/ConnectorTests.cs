@@ -256,8 +256,9 @@ public class EpicConnectorTests
             var url = request.RequestUri!;
             if (url.AbsolutePath.EndsWith("/public/items", StringComparison.Ordinal))
             {
+                // Two games per namespace (editions, bundles): the catalogue gets several ids at once.
                 var records = string.Join(',', Enumerable.Range(0, count).Select(i =>
-                    $$"""{ "namespace": "ns{{i}}", "catalogItemId": "item{{i}}", "appName": "app{{i}}" }"""));
+                    $$"""{ "namespace": "ns{{i / 2}}", "catalogItemId": "item{{i}}", "appName": "app{{i}}" }"""));
                 return StubHandler.Json($$"""{ "records": [ {{records}} ], "responseMetadata": {} }""");
             }
 
@@ -267,8 +268,11 @@ public class EpicConnectorTests
                 InterlockedMax(ref mostAtOnce, now);
                 await Task.Delay(20).ConfigureAwait(false);
                 Interlocked.Decrement(ref inFlight);
-                var id = url.Query.Split("id=")[1].Split('&')[0];
-                return StubHandler.Json($$"""{ "{{id}}": { "title": "Game {{id}}" } }""");
+                // Like Epic: only repeated "id=" parameters count; a comma-separated list finds nothing.
+                var ids = url.Query.TrimStart('?').Split('&')
+                    .Where(p => p.StartsWith("id=", StringComparison.Ordinal) && !p.Contains(',', StringComparison.Ordinal))
+                    .Select(p => p[3..]);
+                return StubHandler.Json("{" + string.Join(',', ids.Select(id => $"\"{id}\": {{ \"title\": \"Game {id}\" }}")) + "}");
             }
 
             return StubHandler.Text("", HttpStatusCode.NotFound);
@@ -281,6 +285,7 @@ public class EpicConnectorTests
         Assert.Equal(count, games.Count);
         Assert.All(games, g => Assert.Equal($"Game item{g.StoreGameId[3..]}", g.Title));
         Assert.InRange(mostAtOnce, 2, 8);
+        Assert.Equal(count / 2, handler.Calls);
     }
 
     private static void InterlockedMax(ref int target, int value)

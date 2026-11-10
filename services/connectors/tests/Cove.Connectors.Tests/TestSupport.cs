@@ -30,7 +30,20 @@ internal sealed class StubHandler(Func<HttpRequestMessage, string, HttpResponseM
 /// <summary>A stub that can wait, for tests about requests running at the same time.</summary>
 internal sealed class AsyncStubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
 {
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => respond(request);
+    private int calls;
+
+    /// <summary>Catalogue requests seen (everything but the library list).</summary>
+    public int Calls => calls;
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        if (request.RequestUri!.AbsolutePath.Contains("/namespace/", StringComparison.Ordinal))
+        {
+            Interlocked.Increment(ref calls);
+        }
+
+        return respond(request);
+    }
 }
 
 internal static class TestConfig

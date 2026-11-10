@@ -2627,6 +2627,10 @@
         },
         "title": {
           "type": "string"
+        },
+        "unlockOnly": {
+          "description": "GOG/Epic: no files of its own, the game unlocks it through the login.",
+          "type": "boolean"
         }
       },
       "required": [

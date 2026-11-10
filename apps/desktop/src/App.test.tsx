@@ -489,7 +489,7 @@ describe("Downloads", () => {
       { id: "SugarIsland", title: "Sugar Island", downloadBytes: 1_000_000_000, installBytes: 2_000_000_000, selected: true },
       { id: "NightMarket", title: "Night Market", downloadBytes: 500_000_000, installBytes: 500_000_000, selected: false },
     ];
-    renderAt("/library/epic-sugar?tab=settings");
+    renderAt("/library/epic-sugar");
     const section = await screen.findByRole("region", { name: "DLCs" });
     fireEvent.click(within(section).getByRole("button", { name: "DLCs ändern" }));
     const dialog = await screen.findByRole("dialog", { name: "DLCs von Sugar" });
@@ -507,14 +507,14 @@ describe("Downloads", () => {
 
   it("lists Steam DLCs and opens Steam to change them", async () => {
     core.library = [fakeItem("steam-620", "Portal 2", { source: "steam", storeGameId: "620" })];
-    core.steamDlcs["steam-620"] = {
+    core.gameDlcs["steam-620"] = {
       dlcs: [
         { id: "651", title: "Peer Review", installed: true },
         { id: "652", title: "Art Pack", installed: false },
       ],
       total: 2,
     };
-    renderAt("/library/steam-620?tab=settings");
+    renderAt("/library/steam-620");
     const section = await screen.findByRole("region", { name: "DLCs" });
     expect(await within(section).findByText("Peer Review")).toBeDefined();
     expect(within(section).getAllByText("Installiert")).toHaveLength(1);
@@ -522,6 +522,24 @@ describe("Downloads", () => {
     await waitFor(() => {
       expect(core.openedUrls).toEqual(["steam://nav/games/details/620"]);
     });
+  });
+
+  it("lists the DLCs a GOG game owns, also when Cove did not install it", async () => {
+    core.library = [fakeItem("gog-100", "Saltmarsh", { source: "gog", storeGameId: "100", installed: false, installPath: null, executablePath: null })];
+    core.gameDlcs["gog-100"] = {
+      dlcs: [
+        { id: "200", title: "Deep Water", installed: false },
+        { id: "400", title: "Golden Boat", installed: false, unlockOnly: true },
+      ],
+      total: 2,
+    };
+    renderAt("/library/gog-100");
+    const section = await screen.findByRole("region", { name: "DLCs" });
+    expect(await within(section).findByText("Deep Water")).toBeDefined();
+    expect(within(section).getByText("Im Spiel freigeschaltet")).toBeDefined();
+    expect(within(section).getByText("Welche DLCs mitinstalliert werden, wählst du beim Installieren über Cove.")).toBeDefined();
+    expect(within(section).queryByRole("button", { name: "DLCs ändern" })).toBeNull();
+    expect(within(section).queryByRole("button", { name: "In Steam verwalten" })).toBeNull();
   });
 
   it("asks to connect itch.io first", async () => {

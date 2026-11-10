@@ -229,6 +229,52 @@ public sealed class GogContent(HttpClient http, GogConfig config)
             productId, "linux", $"installer:{version}", version, size, size, [], [], [], [], [], new GogInstaller(url, fileName, size), []);
     }
 
+    /// <summary>
+    /// DLCs of the game the user owns (GOG's product list), marked when no build
+    /// of the game has files for them. Unknown builds (old format only) leave them unmarked.
+    /// </summary>
+    public async Task<OwnedDlcs> OwnedDlcsAsync(StoreSession session, string productId, string platform, CancellationToken ct)
+    {
+        var token = Token(session);
+        CheckProduct(productId);
+        var owned = await OwnedAsync(token, ct).ConfigureAwait(false);
+        var product = await StoreHttp.GetJsonAsync(http, Fill(config.ProductDlcsUrl, "productId", productId), Name, ct).ConfigureAwait(false);
+        var dlcs = (product["expanded_dlcs"]?.AsArray() ?? [])
+            .Select(d => (Id: d?["id"]?.ToString() ?? string.Empty, Title: StoreHttp.Optional(d, "title")))
+            .Where(d => d.Id.Length > 0 && owned.Contains(d.Id))
+            .DistinctBy(d => d.Id)
+            .ToList();
+        if (dlcs.Count == 0)
+        {
+            return new OwnedDlcs([]);
+        }
+
+        var withFiles = await DepotProductsAsync(token, productId, platform, ct).ConfigureAwait(false);
+        return new OwnedDlcs([.. dlcs.Select(d => new OwnedDlc(d.Id, d.Title ?? d.Id, withFiles is not null && !withFiles.Contains(d.Id)))]);
+    }
+
+    /// <summary>Products with files in the newest build (Windows build as fallback); null when GOG has none.</summary>
+    private async Task<HashSet<string>?> DepotProductsAsync(string token, string productId, string platform, CancellationToken ct)
+    {
+        string[] systems = platform == "osx" ? ["osx", "windows"] : platform == "linux" ? ["linux", "windows"] : ["windows"];
+        foreach (var os in systems)
+        {
+            try
+            {
+                var build = await LatestBuildAsync(token, productId, os, ct).ConfigureAwait(false);
+                var manifest = await MetaAsync(build.Link, ct).ConfigureAwait(false);
+                var baseProduct = StoreHttp.Optional(manifest, "baseProductId") ?? productId;
+                return [.. (manifest["depots"]?.AsArray() ?? []).Select(d => StoreHttp.Optional(d, "productId") ?? baseProduct)];
+            }
+            catch (ConnectorException e) when (e.Kind is ConnectorErrorKind.Unavailable)
+            {
+                // No (new-format) build for this system: try the next one.
+            }
+        }
+
+        return null;
+    }
+
     public async Task<GogInstallPlan> PlanAsync(StoreSession session, string productId, string platform, string language, CancellationToken ct)
     {
         var token = Token(session);

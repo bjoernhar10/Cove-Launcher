@@ -43,7 +43,7 @@ test.describe("Installierte Spiele", () => {
         { id: "Island", title: "Sugar Island", downloadBytes: 1_000_000_000, installBytes: 2_000_000_000, selected: true },
         { id: "Market", title: "Night Market", downloadBytes: 500_000_000, installBytes: 500_000_000, selected: false },
       ];
-      window.location.hash = "#/library/game-1?tab=settings";
+      window.location.hash = "#/library/game-1";
     });
     const section = page.getByRole("region", { name: "DLCs" });
     await section.getByRole("button", { name: "DLCs ändern" }).click();

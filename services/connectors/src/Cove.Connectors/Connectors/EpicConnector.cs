@@ -125,6 +125,7 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
         }
 
         // 2. Titles and box art from the catalogue; DLCs (items with a main game) are skipped.
+        // Several ids go in as repeated "id=" parameters: a comma-separated list returns nothing.
         // One request per namespace, so a large library sends hundreds: they run a few at a
         // time (one after another took minutes and ran into the core's timeout), and rate
         // limits and hiccups are retried, otherwise the game would only get its cryptic app name.
@@ -136,7 +137,7 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
             .SelectMany(group => group.Select(r => r.CatalogItemId).Distinct(StringComparer.Ordinal).Chunk(50)
                 .Select(ids => config.CatalogUrl
                     .Replace("{namespace}", Uri.EscapeDataString(group.Key), StringComparison.Ordinal)
-                    .Replace("{ids}", string.Join(',', ids), StringComparison.Ordinal)))
+                    .Replace("{ids}", string.Join("&id=", ids.Select(Uri.EscapeDataString)), StringComparison.Ordinal)))
             .ToList();
         var parallel = new ParallelOptions { MaxDegreeOfParallelism = CatalogParallelism, CancellationToken = ct };
         await Parallel.ForEachAsync(requests, parallel, async (url, token) =>

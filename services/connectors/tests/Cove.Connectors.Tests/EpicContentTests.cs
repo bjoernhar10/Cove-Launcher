@@ -35,6 +35,12 @@ public class EpicContentTests
                       { "uri": "https://cdn2.test/Builds/Org/o/x/default/abc.manifest", "queryParams": [] },
                       { "uri": "http://insecure.test/abc.manifest" } ] } ] }
                     """),
+            // Like Epic: repeated "id=" parameters, never a comma-separated list.
+            _ when url.Contains("/bulk/items?id=dlcFiles&id=dlcUnlock&id=dlcMac&", StringComparison.Ordinal) => StubHandler.Json("""
+                { "dlcFiles": { "title": "Sugar Island", "mainGameItem": { "id": "cat1" } },
+                  "dlcUnlock": { "title": "Golden Skin", "mainGameItem": { "id": "cat1" } },
+                  "dlcMac": { "title": "Mac Only", "mainGameItem": { "id": "cat1" } } }
+                """),
             _ when url.Contains("/bulk/items", StringComparison.Ordinal) => StubHandler.Json($$"""
                 { "cat1": { "title": "Sugar", "customAttributes": {{attributes}}, "dlcItemList": [
                   { "id": "dlcFiles", "title": "Sugar Island", "releaseInfo": [ { "appId": "SugarIsland", "platform": [ "Windows" ] } ] },
@@ -76,6 +82,16 @@ public class EpicContentTests
         Assert.Equal(["https://cdn.test/Builds/Org/o/island/default/i.manifest"], dlc.ManifestUrls);
         Assert.DoesNotContain(handler.Requests, r => r.Request.RequestUri!.ToString().Contains("SugarMac", StringComparison.Ordinal));
         Assert.All(handler.Requests, r => Assert.Equal("a1", r.Request.Headers.Authorization!.Parameter));
+    }
+
+    [Fact]
+    public async Task ListsEveryOwnedDlcAndMarksTheOnesWithoutFiles()
+    {
+        var epic = new EpicContent(new HttpClient(Epic("{}")), TestConfig.Default.Epic);
+        var owned = await epic.OwnedDlcsAsync(Session, "Sugar", "windows", TestContext.Current.CancellationToken);
+        Assert.Equal(
+            [new OwnedDlc("SugarSkin", "Golden Skin", true), new OwnedDlc("SugarMac", "Mac Only", true), new OwnedDlc("SugarIsland", "Sugar Island", false)],
+            owned.Dlcs);
     }
 
     [Fact]
