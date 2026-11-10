@@ -51,9 +51,34 @@ pub fn unique_dir(root: &Path, title: &str) -> PathBuf {
 
 /// The folder itself or its closest existing parent.
 fn nearest_existing(path: &Path) -> Option<PathBuf> {
-    path.ancestors()
-        .find(|p| p.is_dir())
-        .map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
+    path.ancestors().find(|p| p.is_dir()).map(|p| {
+        p.canonicalize()
+            .map_or_else(|_| p.to_path_buf(), without_verbatim)
+    })
+}
+
+/// `canonicalize` on Windows returns `\\?\C:\…`, while disks and the
+/// "Program Files" check use plain `C:\…` paths.
+fn without_verbatim(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    path
+}
+
+/// Is `dir` on the disk mounted at `mount`? Windows paths ignore case.
+fn on_disk(dir: &Path, mount: &Path) -> bool {
+    if cfg!(windows) {
+        dir.to_string_lossy()
+            .to_lowercase()
+            .starts_with(&mount.to_string_lossy().to_lowercase())
+    } else {
+        dir.starts_with(mount)
+    }
 }
 
 /// Can Cove create files there? Tested on the closest existing folder with a
@@ -117,7 +142,7 @@ pub fn free_bytes(path: &Path) -> Option<u64> {
     disks
         .list()
         .iter()
-        .filter(|d| dir.starts_with(d.mount_point()))
+        .filter(|d| on_disk(&dir, d.mount_point()))
         .max_by_key(|d| d.mount_point().as_os_str().len())
         .map(sysinfo::Disk::available_space)
 }
@@ -160,6 +185,24 @@ pub fn require_install_folder(path: &str) -> AppResult<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_verbatim_paths_become_plain() {
+        assert_eq!(
+            without_verbatim(PathBuf::from(r"\\?\C:\Users\me\Games")),
+            PathBuf::from(r"C:\Users\me\Games")
+        );
+        assert_eq!(
+            without_verbatim(PathBuf::from(r"\\?\UNC\nas\games")),
+            PathBuf::from(r"\\nas\games")
+        );
+        assert_eq!(
+            without_verbatim(PathBuf::from("/home/me")),
+            PathBuf::from("/home/me")
+        );
+        assert!(on_disk(Path::new("/home/me/Games"), Path::new("/home")));
+        assert!(!on_disk(Path::new("/home/me"), Path::new("/mnt")));
+    }
 
     #[test]
     fn folder_names_drop_special_characters() {

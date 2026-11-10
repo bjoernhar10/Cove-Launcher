@@ -1873,8 +1873,9 @@ mod tests {
             "downloadBytes": 0, "installBytes": 0, "directories": ["saves"],
             "files": files, "links": [{ "path": "start", "target": "bin/game.exe" }],
             "containers": containers,
-            // A dead CDN first: Cove falls back to the next one.
-            "chunkUrls": { "100": ["http://127.0.0.1:1/{chunk}", format!("{}/cdn/{{chunk}}", world.server.uri())] },
+            // A broken CDN first (404): Cove falls back to the next one. (Not a
+            // closed port: Windows takes about 2 s to refuse each connection.)
+            "chunkUrls": { "100": [format!("{}/broken/{{chunk}}", world.server.uri()), format!("{}/cdn/{{chunk}}", world.server.uri())] },
             "installer": null
         })
     }
@@ -2004,7 +2005,7 @@ mod tests {
         assert_eq!(
             requests
                 .iter()
-                .filter(|r| r.url.path().ends_with(&a_path))
+                .filter(|r| r.url.path().starts_with("/cdn/") && r.url.path().ends_with(&a_path))
                 .count(),
             1
         );
