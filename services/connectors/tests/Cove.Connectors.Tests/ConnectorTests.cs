@@ -195,7 +195,10 @@ public class EpicConnectorTests
             if (url.AbsolutePath.EndsWith("/public/items", StringComparison.Ordinal))
             {
                 return url.Query.Contains("cursor=c2", StringComparison.Ordinal)
-                    ? StubHandler.Json("""{ "records": [ { "namespace": "ns2", "catalogItemId": "i3", "appName": "Dlc" } ], "responseMetadata": {} }""")
+                    ? StubHandler.Json("""
+                        { "records": [ { "namespace": "ns2", "catalogItemId": "i3", "appName": "Dlc" },
+                                       { "namespace": "fab", "catalogItemId": "a1", "appName": "CitySample" } ], "responseMetadata": {} }
+                        """)
                     : StubHandler.Json("""
                         { "records": [
                             { "namespace": "ns1", "catalogItemId": "i1", "appName": "Sugar" },
@@ -214,6 +217,15 @@ public class EpicConnectorTests
                             { "type": "OfferImageWide", "url": "https://cdn1.epicgames.com/wide.jpg" },
                             { "type": "DieselGameBoxTall", "url": "https://cdn1.epicgames.com/tall.jpg" } ] } }
                         """);
+            }
+
+            // Fab content (here: an Unreal Engine sample project) is not a game.
+            if (url.AbsolutePath.Contains("/namespace/fab/", StringComparison.Ordinal))
+            {
+                return StubHandler.Json("""
+                    { "a1": { "title": "City Sample", "categories": [ { "path": "projects" }, { "path": "asset-format" },
+                      { "path": "asset-format/game-engine/unreal-engine" } ] } }
+                    """);
             }
 
             if (url.AbsolutePath.Contains("/namespace/ns2/", StringComparison.Ordinal))

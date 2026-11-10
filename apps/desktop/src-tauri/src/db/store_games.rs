@@ -274,6 +274,36 @@ pub async fn remove_store(pool: &SqlitePool, store: StoreSource) -> AppResult<u6
     )
 }
 
+/// Removes games of a store that are no longer in the account's library (refunded,
+/// or content that is not a game, such as Fab assets). Installed games, games Cove
+/// installed and games with a download stay. Returns the number removed.
+pub async fn remove_missing(
+    pool: &SqlitePool,
+    store: StoreSource,
+    owned: &HashSet<String>,
+) -> AppResult<u64> {
+    let entries: Vec<(String, String)> = sqlx::query_as(
+        "SELECT e.game_id, e.store_game_id FROM library_entries e \
+         WHERE e.source_id = ? AND e.store_game_id IS NOT NULL AND e.installed = 0 \
+         AND NOT EXISTS (SELECT 1 FROM store_installs s WHERE s.game_id = e.game_id) \
+         AND NOT EXISTS (SELECT 1 FROM downloads d WHERE d.game_id = e.game_id)",
+    )
+    .bind(store.as_str())
+    .fetch_all(pool)
+    .await?;
+    let mut removed = 0;
+    for (game_id, store_game_id) in entries {
+        if !owned.contains(&store_game_id) {
+            removed += sqlx::query("DELETE FROM library_entries WHERE game_id = ?")
+                .bind(&game_id)
+                .execute(pool)
+                .await?
+                .rows_affected();
+        }
+    }
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,5 +525,47 @@ mod tests {
         assert!(
             matches!(upsert(&pool, StoreSource::Steam, &portal(Some(1))).await.unwrap(), Upsert::Added(id) if id == "steam-620-2")
         );
+    }
+
+    #[tokio::test]
+    async fn games_that_left_the_library_are_removed_unless_installed() {
+        let pool = open_in_memory().await.unwrap();
+        let game = |id: &str, installed: bool| StoreGameInput {
+            store_game_id: id.into(),
+            title: id.into(),
+            install: installed.then(|| LocalInstall {
+                install_path: format!("/games/{id}"),
+                executable_path: None,
+                size_bytes: None,
+            }),
+            ..StoreGameInput::default()
+        };
+        for input in [
+            game("Kept", false),
+            game("CitySample", false),
+            game("Installed", true),
+        ] {
+            upsert(&pool, StoreSource::Epic, &input).await.unwrap();
+        }
+        upsert(&pool, StoreSource::Steam, &game("620", false))
+            .await
+            .unwrap();
+
+        let owned = HashSet::from(["Kept".to_owned()]);
+        assert_eq!(
+            remove_missing(&pool, StoreSource::Epic, &owned)
+                .await
+                .unwrap(),
+            1
+        );
+        let mut left: Vec<String> = library::list(&pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter_map(|i| i.entry.store_game_id)
+            .collect();
+        left.sort();
+        // Installed games and other stores stay.
+        assert_eq!(left, ["620", "Installed", "Kept"]);
     }
 }

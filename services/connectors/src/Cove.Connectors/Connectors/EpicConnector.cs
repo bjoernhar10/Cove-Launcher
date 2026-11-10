@@ -124,14 +124,15 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
             }
         }
 
-        // 2. Titles and box art from the catalogue; DLCs (items with a main game) are skipped.
+        // 2. Titles and box art from the catalogue; DLCs (items with a main game) and
+        // Unreal Engine / Fab assets (category "asset-format…") are skipped.
         // Several ids go in as repeated "id=" parameters: a comma-separated list returns nothing.
         // One request per namespace, so a large library sends hundreds: they run a few at a
         // time (one after another took minutes and ran into the core's timeout), and rate
         // limits and hiccups are retried, otherwise the game would only get its cryptic app name.
         var titles = new Dictionary<string, string>(StringComparer.Ordinal);
         var images = new Dictionary<string, string>(StringComparer.Ordinal);
-        var dlcs = new HashSet<string>(StringComparer.Ordinal);
+        var skipped = new HashSet<string>(StringComparer.Ordinal);
         var requests = records
             .GroupBy(r => r.Namespace)
             .SelectMany(group => group.Select(r => r.CatalogItemId).Distinct(StringComparer.Ordinal).Chunk(50)
@@ -156,9 +157,9 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
                         continue;
                     }
 
-                    if (item["mainGameItem"] is not null)
+                    if (item["mainGameItem"] is not null || IsAsset(item))
                     {
-                        dlcs.Add(id);
+                        skipped.Add(id);
                     }
                     else if (StoreHttp.Optional(item, "title") is { } title)
                     {
@@ -192,7 +193,7 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
         }
 
         return [.. records
-            .Where(r => !dlcs.Contains(r.CatalogItemId))
+            .Where(r => !skipped.Contains(r.CatalogItemId))
             .DistinctBy(r => r.AppName)
             .Select(r => new OwnedGame(
                 r.AppName,
@@ -201,6 +202,16 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
                 null,
                 images.GetValueOrDefault(r.CatalogItemId)))];
     }
+
+    /// <summary>
+    /// Fab / Unreal Engine marketplace content (models, sample projects): Epic files it under
+    /// "asset-format…" categories, which no game carries. The old marketplace namespace "ue" is
+    /// skipped earlier; Fab content lives in namespaces of its own.
+    /// </summary>
+    private static bool IsAsset(JsonNode item) =>
+        (item["categories"]?.AsArray() ?? []).Any(c =>
+            StoreHttp.Optional(c, "path") is { } path &&
+            (path == "asset-format" || path.StartsWith("asset-format/", StringComparison.Ordinal)));
 
     /// <summary>Catalogue items, or null when Epic still fails after a few tries.</summary>
     private async Task<JsonNode?> CatalogAsync(string url, StoreSession session, CancellationToken ct)

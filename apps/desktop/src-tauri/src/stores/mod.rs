@@ -4,7 +4,7 @@
 
 pub mod login;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -683,6 +683,13 @@ impl StoreService {
                     total,
                     finished: i + 1 == games.len(),
                 });
+            }
+        }
+        if signed_in {
+            let owned: HashSet<String> = games.iter().map(|g| g.store_game_id.clone()).collect();
+            let removed = db::store_games::remove_missing(&self.pool, store, &owned).await?;
+            if removed > 0 {
+                eprintln!("[stores] {removed} {store:?} games are no longer in the library");
             }
         }
         db::sources::mark_synced(&self.pool, store).await?;
