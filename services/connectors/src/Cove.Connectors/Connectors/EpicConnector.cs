@@ -18,6 +18,9 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
     /// <summary>First pause before retrying a catalogue request (doubles each time); zero in tests.</summary>
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(1);
 
+    /// <summary>Catalogue requests in flight at once; Epic answered 8 without rate limits.</summary>
+    private const int CatalogParallelism = 8;
+
     /// <summary>Cover art by preference: portrait box art first, landscape last (the card crops it).</summary>
     private static readonly string[] CoverImageTypes =
         ["DieselGameBoxTall", "OfferImageTall", "DieselStoreFrontTall", "DieselGameBox", "OfferImageWide", "DieselStoreFrontWide", "Thumbnail"];
@@ -122,24 +125,29 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
         }
 
         // 2. Titles and box art from the catalogue; DLCs (items with a main game) are skipped.
-        // One request per namespace, so a large library sends hundreds: rate limits and
-        // hiccups are retried, otherwise the game would only get its cryptic app name.
+        // One request per namespace, so a large library sends hundreds: they run a few at a
+        // time (one after another took minutes and ran into the core's timeout), and rate
+        // limits and hiccups are retried, otherwise the game would only get its cryptic app name.
         var titles = new Dictionary<string, string>(StringComparer.Ordinal);
         var images = new Dictionary<string, string>(StringComparer.Ordinal);
         var dlcs = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var group in records.GroupBy(r => r.Namespace))
-        {
-            foreach (var chunk in group.Chunk(50))
-            {
-                var url = config.CatalogUrl
+        var requests = records
+            .GroupBy(r => r.Namespace)
+            .SelectMany(group => group.Select(r => r.CatalogItemId).Distinct(StringComparer.Ordinal).Chunk(50)
+                .Select(ids => config.CatalogUrl
                     .Replace("{namespace}", Uri.EscapeDataString(group.Key), StringComparison.Ordinal)
-                    .Replace("{ids}", string.Join(',', chunk.Select(r => r.CatalogItemId)), StringComparison.Ordinal);
-                var catalog = await CatalogAsync(url, session, ct).ConfigureAwait(false);
-                if (catalog is not JsonObject items)
-                {
-                    continue;
-                }
+                    .Replace("{ids}", string.Join(',', ids), StringComparison.Ordinal)))
+            .ToList();
+        var parallel = new ParallelOptions { MaxDegreeOfParallelism = CatalogParallelism, CancellationToken = ct };
+        await Parallel.ForEachAsync(requests, parallel, async (url, token) =>
+        {
+            if (await CatalogAsync(url, session, token).ConfigureAwait(false) is not JsonObject items)
+            {
+                return;
+            }
 
+            lock (titles)
+            {
                 foreach (var (id, item) in items)
                 {
                     if (item is not JsonObject)
@@ -161,7 +169,7 @@ public sealed class EpicConnector(HttpClient http, EpicConfig config) : IStoreCo
                     }
                 }
             }
-        }
+        }).ConfigureAwait(false);
 
         // 3. Playtime (optional).
         var playtime = new Dictionary<string, long>(StringComparer.Ordinal);

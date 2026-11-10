@@ -243,6 +243,53 @@ public class EpicConnectorTests
         Assert.Equal("https://cdn1.epicgames.com/tall.jpg?h=900&resize=1&w=600", game.ImageUrl);
         Assert.Equal(2, catalogCalls);
     }
+
+    [Fact]
+    public async Task LargeLibrariesAskTheCatalogueSeveralAtATime()
+    {
+        // One namespace per game, as with Epic's free games: one request after another took minutes.
+        const int count = 40;
+        var inFlight = 0;
+        var mostAtOnce = 0;
+        var handler = new AsyncStubHandler(async request =>
+        {
+            var url = request.RequestUri!;
+            if (url.AbsolutePath.EndsWith("/public/items", StringComparison.Ordinal))
+            {
+                var records = string.Join(',', Enumerable.Range(0, count).Select(i =>
+                    $$"""{ "namespace": "ns{{i}}", "catalogItemId": "item{{i}}", "appName": "app{{i}}" }"""));
+                return StubHandler.Json($$"""{ "records": [ {{records}} ], "responseMetadata": {} }""");
+            }
+
+            if (url.AbsolutePath.Contains("/namespace/", StringComparison.Ordinal))
+            {
+                var now = Interlocked.Increment(ref inFlight);
+                InterlockedMax(ref mostAtOnce, now);
+                await Task.Delay(20).ConfigureAwait(false);
+                Interlocked.Decrement(ref inFlight);
+                var id = url.Query.Split("id=")[1].Split('&')[0];
+                return StubHandler.Json($$"""{ "{{id}}": { "title": "Game {{id}}" } }""");
+            }
+
+            return StubHandler.Text("", HttpStatusCode.NotFound);
+        });
+        var epic = new EpicConnector(new HttpClient(handler), TestConfig.Default.Epic) { RetryDelay = TimeSpan.Zero };
+        var session = new StoreSession("epic", "acc1", "Tiny", "eg1~a", "eg1~r", DateTimeOffset.UtcNow.AddHours(1));
+
+        var games = await epic.GetLibraryAsync(session, new StoreContext(null), TestContext.Current.CancellationToken);
+
+        Assert.Equal(count, games.Count);
+        Assert.All(games, g => Assert.Equal($"Game item{g.StoreGameId[3..]}", g.Title));
+        Assert.InRange(mostAtOnce, 2, 8);
+    }
+
+    private static void InterlockedMax(ref int target, int value)
+    {
+        int seen;
+        while ((seen = Volatile.Read(ref target)) < value && Interlocked.CompareExchange(ref target, value, seen) != seen)
+        {
+        }
+    }
 }
 
 /// <summary>Tests that read or change the process-wide UI language never run in parallel.</summary>

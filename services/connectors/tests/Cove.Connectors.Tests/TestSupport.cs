@@ -12,7 +12,11 @@ internal sealed class StubHandler(Func<HttpRequestMessage, string, HttpResponseM
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        Requests.Add((request, body));
+        lock (Requests)
+        {
+            Requests.Add((request, body));
+        }
+
         return respond(request, body);
     }
 
@@ -21,6 +25,12 @@ internal sealed class StubHandler(Func<HttpRequestMessage, string, HttpResponseM
 
     public static HttpResponseMessage Text(string text, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status) { Content = new StringContent(text) };
+}
+
+/// <summary>A stub that can wait, for tests about requests running at the same time.</summary>
+internal sealed class AsyncStubHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> respond) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => respond(request);
 }
 
 internal static class TestConfig
