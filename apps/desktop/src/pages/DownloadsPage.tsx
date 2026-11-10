@@ -1,4 +1,4 @@
-import { localized, useMessages } from "../i18n/index.ts";
+import { localized, useMessages, type Messages } from "../i18n/index.ts";
 import {
   closestCenter,
   DndContext,
@@ -41,6 +41,11 @@ async function act(action: () => Promise<void>): Promise<void> {
   await useDownloads.getState().refresh();
 }
 
+/** The game's title; extras say which file they are. */
+function downloadTitle(item: DownloadItem, t: Messages): string {
+  return item.download.extra ? t.downloads.extraOf(item.game.title, item.download.extra) : item.game.title;
+}
+
 const ORIGIN_LABELS: Record<DownloadItem["download"]["origin"], string> = {
   direct: "Link",
   itch: "itch.io",
@@ -53,13 +58,14 @@ const ORIGIN_LABELS: Record<DownloadItem["download"]["origin"], string> = {
 function HandedOff({ item }: { item: DownloadItem }) {
   const t = useMessages();
   const { download, game } = item;
+  const title = downloadTitle(item, t);
   const store = ORIGIN_LABELS[download.origin];
   return (
-    <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={t.downloads.installation(game.title)}>
+    <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={t.downloads.installation(title)}>
       <GameCover game={game} kind="header" aspect="landscape" showTitle={false} className="w-36 shrink-0 rounded-md" />
       <div className="min-w-0 flex-1">
         <Link to={`/library/${game.id}`} className="block truncate text-base font-medium text-fg hover:underline">
-          {game.title}
+          {title}
         </Link>
         <p className="mt-1 flex items-center gap-2 text-sm text-fg-muted">
           <ExternalLink aria-hidden />
@@ -70,7 +76,7 @@ function HandedOff({ item }: { item: DownloadItem }) {
       <Button
         iconOnly
         icon={X}
-        label={t.downloads.stopTracking(game.title)}
+        label={t.downloads.stopTracking(title)}
         onClick={() => void act(() => api.downloads.cancelDownload(download.id))}
       />
     </article>
@@ -80,6 +86,7 @@ function HandedOff({ item }: { item: DownloadItem }) {
 function ActiveDownload({ item }: { item: DownloadItem }) {
   const t = useMessages();
   const { download, game } = item;
+  const title = downloadTitle(item, t);
   if (download.status === "handedOff") return <HandedOff item={item} />;
   const paused = download.status === "paused";
   const busy = download.status === "verifying" || download.status === "extracting";
@@ -88,12 +95,12 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
   const eta = download.bytesPerSecond > 0 && known ? remaining / download.bytesPerSecond : Number.POSITIVE_INFINITY;
 
   return (
-    <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={t.downloads.download(game.title)}>
+    <article className="flex items-center gap-5 rounded-lg border border-border p-4" aria-label={t.downloads.download(title)}>
       <GameCover game={game} kind="header" aspect="landscape" showTitle={false} className="w-36 shrink-0 rounded-md" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-4">
           <Link to={`/library/${game.id}`} className="truncate text-base font-medium text-fg hover:underline">
-            {game.title}
+            {title}
           </Link>
           <span className="num shrink-0 text-sm font-medium text-fg">
             {busy ? formatPercent(1) : known ? formatPercent(download.downloadedBytes / download.totalBytes) : ""}
@@ -102,7 +109,7 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
         <ProgressBar
           value={busy ? 1 : download.downloadedBytes}
           max={busy ? 1 : Math.max(download.totalBytes, 1)}
-          label={t.home.progressOf(game.title)}
+          label={t.home.progressOf(title)}
           tone={paused ? "muted" : "accent"}
           className="mt-3"
         />
@@ -125,11 +132,11 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
       </div>
       <div className="flex shrink-0 gap-1">
         {busy ? null : paused ? (
-          <Button iconOnly icon={Play} label={t.downloads.resume(game.title)} onClick={() => void act(() => api.downloads.resumeDownload(download.id))} />
+          <Button iconOnly icon={Play} label={t.downloads.resume(title)} onClick={() => void act(() => api.downloads.resumeDownload(download.id))} />
         ) : (
-          <Button iconOnly icon={Pause} label={t.downloads.pause(game.title)} onClick={() => void act(() => api.downloads.pauseDownload(download.id))} />
+          <Button iconOnly icon={Pause} label={t.downloads.pause(title)} onClick={() => void act(() => api.downloads.pauseDownload(download.id))} />
         )}
-        <Button iconOnly icon={X} label={t.downloads.cancel(game.title)} onClick={() => void act(() => api.downloads.cancelDownload(download.id))} />
+        <Button iconOnly icon={X} label={t.downloads.cancel(title)} onClick={() => void act(() => api.downloads.cancelDownload(download.id))} />
       </div>
     </article>
   );
@@ -138,6 +145,7 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
 function QueueRow({ item, position }: { item: DownloadItem; position: number }) {
   const t = useMessages();
   const { download, game } = item;
+  const title = downloadTitle(item, t);
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: download.id });
   return (
     <li
@@ -151,7 +159,7 @@ function QueueRow({ item, position }: { item: DownloadItem; position: number }) 
       <button
         ref={setActivatorNodeRef}
         type="button"
-        aria-label={t.downloads.move(game.title)}
+        aria-label={t.downloads.move(title)}
         className="inline-flex size-8 cursor-grab items-center justify-center rounded-md text-fg-subtle hover:bg-hover hover:text-fg active:cursor-grabbing"
         {...attributes}
         {...listeners}
@@ -160,7 +168,7 @@ function QueueRow({ item, position }: { item: DownloadItem; position: number }) 
       </button>
       <span className="num w-5 text-xs text-fg-subtle">{position}</span>
       <GameCover game={game} aspect="square" showTitle={false} className="w-9 shrink-0 rounded-md" />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{game.title}</span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{title}</span>
       <span className="num text-xs text-fg-muted">{formatBytes(download.totalBytes)}</span>
       <span className="w-14 text-xs text-fg-subtle">{ORIGIN_LABELS[download.origin]}</span>
       <Button
@@ -168,7 +176,7 @@ function QueueRow({ item, position }: { item: DownloadItem; position: number }) 
         size="sm"
         iconOnly
         icon={X}
-        label={t.downloads.removeFromQueue(game.title)}
+        label={t.downloads.removeFromQueue(title)}
         onClick={() => void act(() => api.downloads.cancelDownload(download.id))}
       />
     </li>
@@ -229,6 +237,7 @@ const HISTORY_LABELS = localized((m) => m.downloads.history);
 function HistoryRow({ item }: { item: DownloadItem }) {
   const t = useMessages();
   const { download, game } = item;
+  const title = downloadTitle(item, t);
   const status = download.status === "failed" ? "failed" : download.status === "cancelled" ? "cancelled" : "completed";
   const meta = HISTORY_STATUS[status];
   const Icon = meta.icon;
@@ -237,7 +246,7 @@ function HistoryRow({ item }: { item: DownloadItem }) {
       <GameCover game={game} aspect="square" showTitle={false} className="w-9 shrink-0 rounded-md" />
       <div className="min-w-0 flex-1">
         <Link to={`/library/${game.id}`} className="block truncate text-sm font-medium text-fg hover:underline">
-          {game.title}
+          {title}
         </Link>
         <p className={cx("truncate text-xs", download.error ? "text-danger" : "text-fg-subtle")}>
           {download.error ?? (

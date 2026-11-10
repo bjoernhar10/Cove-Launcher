@@ -24,6 +24,10 @@ use crate::error::{AppError, AppResult};
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const MAX_STARTS_PER_MINUTE: usize = 3;
+/// Leftovers younger than this may belong to a sidecar that is unpacking right now.
+const STALE_AFTER: Duration = Duration::from_secs(10 * 60);
+/// Where in-use folders can't be seen (not Linux), only remove really old ones.
+const STALE_AFTER_BLIND: Duration = Duration::from_secs(24 * 60 * 60);
 /// First line written by `build.rs` into the placeholder binary.
 pub const PLACEHOLDER_MARKER: &str = "cove-sidecar-placeholder";
 
@@ -47,6 +51,65 @@ impl SidecarConfig {
             cwd: None,
             start_timeout: Duration::from_secs(30),
             request_timeout: Duration::from_secs(20),
+        }
+    }
+}
+
+/// Temp folder of the sidecars. A `PyInstaller` onefile binary unpacks itself
+/// into `$TMPDIR/_MEI…` and removes that only when it exits normally; killed
+/// or crashed runs leave about 160 MB behind (in RAM where `/tmp` is a tmpfs).
+/// Cove gives the sidecars this folder and clears its leftovers before each start.
+fn sidecar_tmp() -> PathBuf {
+    std::env::temp_dir().join("cove-sidecars")
+}
+
+/// `_MEI…` folders below `dir` that a running process has files open from (Linux).
+#[cfg(target_os = "linux")]
+fn folders_in_use(dir: &Path) -> Option<std::collections::HashSet<String>> {
+    let prefix = format!("{}/", dir.display());
+    let mut used = std::collections::HashSet::new();
+    for proc in std::fs::read_dir("/proc").ok()?.flatten() {
+        let Ok(maps) = std::fs::read_to_string(proc.path().join("maps")) else {
+            continue;
+        };
+        for line in maps.lines() {
+            if let Some(rest) = line.find(&prefix).map(|i| &line[i + prefix.len()..]) {
+                used.insert(rest.split('/').next().unwrap_or_default().to_owned());
+            }
+        }
+    }
+    Some(used)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn folders_in_use(_dir: &Path) -> Option<std::collections::HashSet<String>> {
+    None
+}
+
+/// Removes unpacked folders of sidecar runs that were killed or crashed.
+fn clear_leftovers(dir: &Path, min_age: Duration) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let in_use = folders_in_use(dir);
+    let min_age = if in_use.is_some() {
+        min_age
+    } else {
+        min_age.max(STALE_AFTER_BLIND)
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .is_some_and(|age| age >= min_age);
+        let used = in_use.as_ref().is_some_and(|u| u.contains(&name));
+        if name.starts_with("_MEI") && old && !used {
+            if let Err(error) = std::fs::remove_dir_all(entry.path()) {
+                eprintln!("[sidecar] Alte Entpackung {name} nicht gelöscht: {error}");
+            }
         }
     }
 }
@@ -298,6 +361,13 @@ impl Sidecar {
         command.creation_flags(CREATE_NO_WINDOW);
         if let Some(cwd) = &config.cwd {
             command.current_dir(cwd);
+        }
+        let tmp = sidecar_tmp();
+        if std::fs::create_dir_all(&tmp).is_ok() {
+            clear_leftovers(&tmp, STALE_AFTER);
+            for key in ["TMPDIR", "TMP", "TEMP"] {
+                command.env(key, &tmp);
+            }
         }
         let mut child = command.spawn().map_err(|e| {
             let detail = format!("{}: {e}", config.program.display());
@@ -674,5 +744,29 @@ for line in sys.stdin:
         std::fs::write(&real, vec![0u8; 10_000]).unwrap();
         assert!(!is_placeholder(&real));
         assert!(is_placeholder(&dir.path().join("missing")));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn leftovers_of_killed_sidecars_are_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("_MEIold");
+        let fresh = dir.path().join("_MEIfresh");
+        let other = dir.path().join("keep-me");
+        for d in [&old, &fresh, &other] {
+            std::fs::create_dir_all(d.join("numpy")).unwrap();
+            std::fs::write(d.join("numpy/core.so"), b"x").unwrap();
+        }
+        let long_ago = std::time::SystemTime::now() - Duration::from_secs(3600);
+        for d in [&old, &other] {
+            std::fs::File::open(d)
+                .unwrap()
+                .set_modified(long_ago)
+                .unwrap();
+        }
+        clear_leftovers(dir.path(), Duration::from_secs(600));
+        assert!(!old.exists());
+        assert!(fresh.exists(), "may be unpacking right now");
+        assert!(other.exists(), "not ours");
     }
 }

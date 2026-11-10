@@ -25,6 +25,14 @@ public sealed record AchievementsParams(StoreSession Session, string StoreGameId
 
 public sealed record DetectLocalParams(string Home, string? ProgramData, string? Store);
 
+public sealed record SteamDlcParams(string AppId, string Home, string? ProgramData);
+
+/// <param name="Platform">windows, linux or osx: the system Cove runs on.</param>
+/// <param name="Language">de or en: preferred game language.</param>
+public sealed record GogPlanParams(StoreSession Session, string ProductId, string Platform, string Language, string? ProxyUrl);
+
+public sealed record EpicAppParams(StoreSession Session, string AppName, string? Platform, bool OwnershipToken, IReadOnlyList<string>? Paths, string? ProxyUrl);
+
 public sealed record LibraryResult(IReadOnlyList<OwnedGame> Games);
 
 public sealed record AchievementsResult(IReadOnlyList<StoreAchievement> Achievements);
@@ -47,9 +55,19 @@ public sealed record LocalResult(IReadOnlyList<LocalGame> Games);
 [JsonSerializable(typeof(SessionParams))]
 [JsonSerializable(typeof(AchievementsParams))]
 [JsonSerializable(typeof(DetectLocalParams))]
+[JsonSerializable(typeof(SteamDlcParams))]
+[JsonSerializable(typeof(SteamDlcs))]
 [JsonSerializable(typeof(LibraryResult))]
 [JsonSerializable(typeof(AchievementsResult))]
 [JsonSerializable(typeof(LocalResult))]
+[JsonSerializable(typeof(GogPlanParams))]
+[JsonSerializable(typeof(GogInstallPlan))]
+[JsonSerializable(typeof(GogLatest))]
+[JsonSerializable(typeof(EpicAppParams))]
+[JsonSerializable(typeof(EpicInstallInfo))]
+[JsonSerializable(typeof(EpicLaunch))]
+[JsonSerializable(typeof(EpicSaves))]
+[JsonSerializable(typeof(EpicWriteLinks))]
 internal sealed partial class RpcJsonContext : JsonSerializerContext
 {
 }

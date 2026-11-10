@@ -40,9 +40,9 @@ public static class LocalDetection
         }
     }
 
-    public static IReadOnlyList<LocalGame> DetectSteam(LocalEnvironment env)
+    /// <summary>Every Steam library folder (from libraryfolders.vdf of each Steam install).</summary>
+    public static HashSet<string> SteamLibraries(LocalEnvironment env)
     {
-        var games = new Dictionary<string, LocalGame>();
         var libraries = new HashSet<string>(StringComparer.Ordinal);
         foreach (var root in SteamRoots(env))
         {
@@ -65,6 +65,37 @@ public static class LocalDetection
             }
         }
 
+        return libraries;
+    }
+
+    /// <summary>DLC app ids Steam has installed for a game (InstalledDepots with a dlcappid).</summary>
+    public static HashSet<string> SteamInstalledDlcs(LocalEnvironment env, string appId)
+    {
+        var dlcs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var library in SteamLibraries(env))
+        {
+            var manifest = Path.Combine(library, "steamapps", $"appmanifest_{appId}.acf");
+            if (!File.Exists(manifest) || TryRead(manifest, KeyValues.Parse)?["AppState"]?["InstalledDepots"] is not { } depots)
+            {
+                continue;
+            }
+
+            foreach (var depot in depots.Children.Values)
+            {
+                if (depot.Get("dlcappid") is { Length: > 0 } dlc)
+                {
+                    dlcs.Add(dlc);
+                }
+            }
+        }
+
+        return dlcs;
+    }
+
+    public static IReadOnlyList<LocalGame> DetectSteam(LocalEnvironment env)
+    {
+        var games = new Dictionary<string, LocalGame>();
+        var libraries = SteamLibraries(env);
         foreach (var library in libraries)
         {
             var steamapps = Path.Combine(library, "steamapps");

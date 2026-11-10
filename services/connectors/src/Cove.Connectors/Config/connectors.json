@@ -3,7 +3,9 @@
   "steam": {
     "openIdEndpoint": "https://steamcommunity.com/openid/login",
     "privacySettingsUrl": "https://steamcommunity.com/my/edit/settings",
-    "coverUrl": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appId}/library_600x900_2x.jpg"
+    "coverUrl": "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{appId}/library_600x900_2x.jpg",
+    "appDetailsUrl": "https://store.steampowered.com/api/appdetails?appids={appId}&filters=basic&l={language}",
+    "storeItemsUrl": "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?input_json={input}"
   },
   "gog": {
     "clientId": "46899977096215655",
@@ -12,7 +14,12 @@
     "tokenUrl": "https://auth.gog.com/token",
     "redirectUri": "https://embed.gog.com/on_login_success?origin=client",
     "userDataUrl": "https://embed.gog.com/userData.json",
-    "ownedProductsUrl": "https://embed.gog.com/account/getFilteredProducts?mediaType=1&sortBy=title&page={page}"
+    "ownedProductsUrl": "https://embed.gog.com/account/getFilteredProducts?mediaType=1&sortBy=title&page={page}",
+    "ownedIdsUrl": "https://embed.gog.com/user/data/games",
+    "buildsUrl": "https://content-system.gog.com/products/{productId}/os/{os}/builds?generation=2",
+    "metaUrl": "https://gog-cdn-fastly.gog.com/content-system/v2/meta/{path}",
+    "secureLinkUrl": "https://content-system.gog.com/products/{productId}/secure_link?generation=2&_version=2&path=/",
+    "productDownloadsUrl": "https://api.gog.com/products/{productId}?expand=downloads"
   },
   "epic": {
     "clientId": "34a02cf8f4414e29b15921876da36f9a",
@@ -22,6 +29,10 @@
     "tokenUrl": "https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/token",
     "libraryUrl": "https://library-service.live.use1a.on.epicgames.com/library/api/public/items?includeMetadata=true",
     "playtimeUrl": "https://library-service.live.use1a.on.epicgames.com/library/api/public/playtime/account/{accountId}/all",
-    "catalogUrl": "https://catalog-public-service-prod06.ol.epicgames.com/catalog/api/shared/namespace/{namespace}/bulk/items?id={ids}&includeDLCDetails=true&includeMainGameDetails=true&country=US&locale=en-US"
+    "catalogUrl": "https://catalog-public-service-prod06.ol.epicgames.com/catalog/api/shared/namespace/{namespace}/bulk/items?id={ids}&includeDLCDetails=true&includeMainGameDetails=true&country=US&locale=en-US",
+    "assetsUrl": "https://launcher-public-service-prod06.ol.epicgames.com/launcher/api/public/assets/v2/platform/{platform}/namespace/{namespace}/catalogItem/{catalogItemId}/app/{appName}/label/Live",
+    "exchangeUrl": "https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/exchange",
+    "ownershipTokenUrl": "https://ecommerceintegration-public-service-ecomprod02.ol.epicgames.com/ecommerceintegration/api/public/platforms/EPIC/identities/{accountId}/ownershipToken",
+    "savesUrl": "https://datastorage-public-service-liveegs.live.use1a.on.epicgames.com/api/v1/access/egstore/savesync/{accountId}/{appName}/"
   }
 }

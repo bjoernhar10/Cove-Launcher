@@ -251,12 +251,7 @@ impl ItchApi {
             .cloned()
             .unwrap_or_default()
             .iter()
-            .filter(|u| {
-                !matches!(
-                    u.get("type").and_then(Value::as_str),
-                    Some("html" | "soundtrack" | "video" | "book")
-                )
-            })
+            .filter(|u| u.get("type").and_then(Value::as_str) != Some("html"))
             .filter_map(|u| {
                 let mut platforms = Vec::new();
                 for (flag, platform) in [
@@ -273,6 +268,7 @@ impl ItchApi {
                     file_name: str_of(u, "filename")?,
                     size_bytes: u.get("size").and_then(Value::as_i64),
                     platforms,
+                    extra: is_extra(u.get("type").and_then(Value::as_str)),
                 })
             })
             .collect())
@@ -325,6 +321,14 @@ impl ItchApi {
             "itch.io didn't provide a download address."
         )))
     }
+}
+
+/// Uploads that are not the game itself (soundtrack, artbook, source code …).
+fn is_extra(kind: Option<&str>) -> bool {
+    !matches!(
+        kind,
+        None | Some("default" | "flash" | "unity" | "java" | "executable")
+    )
 }
 
 #[cfg(test)]
@@ -413,18 +417,30 @@ mod tests {
             .and(query_param("download_key_id", "11"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "uploads": [
                 { "id": 100, "filename": "zeta-linux.zip", "size": 1234, "p_linux": true, "type": "default" },
-                { "id": 101, "filename": "ost.zip", "type": "soundtrack" } ] })))
+                { "id": 101, "filename": "ost.zip", "type": "soundtrack" },
+                { "id": 102, "filename": "play.html", "type": "html" } ] })))
             .mount(&server)
             .await;
         let uploads = itch.uploads(1, Some(11)).await.unwrap();
+        // Browser builds are left out; the soundtrack is an extra.
         assert_eq!(
             uploads,
-            [ItchUpload {
-                upload_id: 100,
-                file_name: "zeta-linux.zip".into(),
-                size_bytes: Some(1234),
-                platforms: vec![Platform::Linux]
-            }]
+            [
+                ItchUpload {
+                    upload_id: 100,
+                    file_name: "zeta-linux.zip".into(),
+                    size_bytes: Some(1234),
+                    platforms: vec![Platform::Linux],
+                    extra: false,
+                },
+                ItchUpload {
+                    upload_id: 101,
+                    file_name: "ost.zip".into(),
+                    size_bytes: None,
+                    platforms: vec![],
+                    extra: true,
+                }
+            ]
         );
 
         Mock::given(method("GET"))

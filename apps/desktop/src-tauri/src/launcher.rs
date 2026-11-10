@@ -24,7 +24,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     now_iso, CompatibilityTool, GameId, GameState, GameStateEvent, LaunchMethod, LaunchOptions,
-    LaunchResult, LibraryItem, Platform, RunningGame, StoreSource,
+    LaunchResult, LaunchVia, LibraryItem, Platform, RunningGame, StoreSource,
 };
 use crate::scanner::parse_desktop_entry;
 
@@ -145,6 +145,10 @@ pub struct LaunchTarget {
     pub executable_path: Option<String>,
     pub install_path: Option<String>,
     pub options: LaunchOptions,
+    /// Installed by Cove (Epic: started directly with a login instead of the Epic Launcher).
+    pub installed_by_cove: bool,
+    /// Store login arguments (Epic exchange code), before the user's arguments.
+    pub extra_args: Vec<String>,
 }
 
 impl From<&LibraryItem> for LaunchTarget {
@@ -156,6 +160,8 @@ impl From<&LibraryItem> for LaunchTarget {
             executable_path: item.entry.executable_path.clone(),
             install_path: item.entry.install_path.clone(),
             options: item.entry.launch_options.clone(),
+            installed_by_cove: item.entry.installed_by_cove,
+            extra_args: Vec::new(),
         }
     }
 }
@@ -171,6 +177,31 @@ fn store_url(source: StoreSource, id: &str) -> Option<String> {
     }
 }
 
+/// How [`plan`] will start a game (shown per game). Mirrors its decisions
+/// without touching the file system; None = nothing to start yet.
+pub fn launch_via(
+    source: StoreSource,
+    store_game_id: Option<&str>,
+    executable_path: Option<&str>,
+    installed_by_cove: bool,
+) -> Option<LaunchVia> {
+    if source == StoreSource::Steam && store_game_id.is_some() {
+        return Some(LaunchVia::Steam);
+    }
+    if source == StoreSource::Epic && store_game_id.is_some() && !installed_by_cove {
+        return Some(LaunchVia::EpicLauncher);
+    }
+    if executable_path.is_some_and(|p| !p.trim().is_empty()) {
+        return Some(LaunchVia::Direct);
+    }
+    store_game_id?;
+    match source {
+        StoreSource::Epic => Some(LaunchVia::EpicLauncher),
+        StoreSource::Gog => Some(LaunchVia::GogGalaxy),
+        StoreSource::Steam | StoreSource::Manual => None,
+    }
+}
+
 fn split_args(raw: &str) -> AppResult<Vec<String>> {
     shlex::split(raw).ok_or_else(|| {
         AppError::InvalidInput(tr!(
@@ -180,15 +211,33 @@ fn split_args(raw: &str) -> AppResult<Vec<String>> {
     })
 }
 
+/// Steam games, and Epic games from the Epic Launcher, start in their store client.
+fn store_client_plan(target: &LaunchTarget) -> Option<LaunchPlan> {
+    // Steam: DRM, overlay, cloud saves. Epic Launcher installs need its login.
+    let via_client = target.source == StoreSource::Steam
+        || (target.source == StoreSource::Epic && !target.installed_by_cove);
+    let id = target.store_game_id.as_deref().filter(|_| via_client)?;
+    store_url(target.source, id).map(LaunchPlan::Url)
+}
+
+/// GOG games define their start in goggame-<id>.info: arguments and working folder.
+fn gog_task(target: &LaunchTarget, exe: &Path) -> Option<(Vec<String>, Option<PathBuf>)> {
+    let (StoreSource::Gog, Some(dir), Some(product)) = (
+        target.source,
+        target.install_path.as_deref(),
+        target.store_game_id.as_deref(),
+    ) else {
+        return None;
+    };
+    crate::downloads::gog::primary_task(Path::new(dir), product)
+        .filter(|t| t.path == exe)
+        .map(|t| (t.arguments, t.working_dir))
+}
+
 /// Decides how to start a game.
 pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
-    // Steam games always go through Steam (DRM, overlay, cloud saves).
-    if target.source == StoreSource::Steam {
-        if let Some(id) = &target.store_game_id {
-            return Ok(LaunchPlan::Url(
-                store_url(StoreSource::Steam, id).unwrap_or_default(),
-            ));
-        }
+    if let Some(plan) = store_client_plan(target) {
+        return Ok(plan);
     }
 
     let Some(executable) = target
@@ -212,6 +261,13 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
     let user_args = split_args(&target.options.arguments)?;
     let mut env: Vec<(String, String)> = Vec::new();
     let mut cwd = exe.parent().map(Path::to_path_buf);
+    let mut task_args = Vec::new();
+    if let Some((args, working_dir)) = gog_task(target, &exe) {
+        task_args = args;
+        if working_dir.is_some() {
+            cwd = working_dir;
+        }
+    }
     let has_ext = |ext: &str| exe.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext));
 
     let (program, mut args) = if has_ext("desktop") {
@@ -255,6 +311,8 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
         (exe.clone(), Vec::new())
     };
 
+    args.extend(task_args);
+    args.extend(target.extra_args.iter().cloned());
     args.extend(user_args);
     // User variables last so they can override ours.
     env.extend(
@@ -477,11 +535,24 @@ impl Launcher {
     }
 
     pub fn launch(&self, item: &LibraryItem, host: &HostEnv) -> AppResult<LaunchResult> {
+        self.launch_with(item, host, Vec::new())
+    }
+
+    /// Starts with extra store arguments (Epic login).
+    pub fn launch_with(
+        &self,
+        item: &LibraryItem,
+        host: &HostEnv,
+        extra_args: Vec<String>,
+    ) -> AppResult<LaunchResult> {
         let game_id = item.game.id.clone();
         if self.lock().contains_key(&game_id) {
             return Err(AppError::AlreadyRunning(game_id));
         }
-        let target = LaunchTarget::from(item);
+        let target = LaunchTarget {
+            extra_args,
+            ..LaunchTarget::from(item)
+        };
         let plan = plan(&target, host)?;
 
         match plan {
@@ -692,6 +763,8 @@ mod tests {
             executable_path: exe.map(Into::into),
             install_path: None,
             options: LaunchOptions::default(),
+            installed_by_cove: false,
+            extra_args: Vec::new(),
         }
     }
 
@@ -729,6 +802,79 @@ mod tests {
             plan(&target(StoreSource::Manual, None, None), &linux),
             Err(AppError::Launch(_))
         ));
+    }
+
+    #[test]
+    fn gog_games_start_with_their_play_task() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("goggame-100.info"),
+            r#"{ "playTasks": [ { "isPrimary": true, "type": "FileTask", "path": "bin\\game.exe",
+                 "arguments": "-lang de", "workingDir": "bin" } ] }"#,
+        )
+        .unwrap();
+        let exe = dir.path().join("bin").join("game.exe");
+        let mut t = target(StoreSource::Gog, Some(&exe.to_string_lossy()), Some("100"));
+        t.install_path = Some(dir.path().to_string_lossy().into_owned());
+        t.options.arguments = "-windowed".into();
+        t.options.compatibility_tool = CompatibilityTool::Wine;
+        let LaunchPlan::Process { args, cwd, .. } = plan(&t, &host(Platform::Linux, &[])).unwrap()
+        else {
+            panic!("expected process")
+        };
+        assert_eq!(
+            args,
+            [
+                exe.to_string_lossy().into_owned(),
+                "-lang".into(),
+                "de".into(),
+                "-windowed".into()
+            ]
+        );
+        assert_eq!(cwd, Some(dir.path().join("bin")));
+    }
+
+    #[test]
+    fn launch_via_follows_the_plan() {
+        let linux = host(Platform::Linux, &[]);
+        let cases = [
+            (
+                target(StoreSource::Steam, Some("/x/game"), Some("620")),
+                Some(LaunchVia::Steam),
+            ),
+            (
+                target(StoreSource::Epic, None, Some("Sugar")),
+                Some(LaunchVia::EpicLauncher),
+            ),
+            (
+                target(StoreSource::Gog, None, Some("1")),
+                Some(LaunchVia::GogGalaxy),
+            ),
+            (
+                target(StoreSource::Gog, Some("/g/start.sh"), Some("1")),
+                Some(LaunchVia::Direct),
+            ),
+            (
+                target(StoreSource::Manual, Some("/g/run"), None),
+                Some(LaunchVia::Direct),
+            ),
+            (target(StoreSource::Manual, None, None), None),
+        ];
+        for (t, expected) in cases {
+            let via = launch_via(
+                t.source,
+                t.store_game_id.as_deref(),
+                t.executable_path.as_deref(),
+                t.installed_by_cove,
+            );
+            assert_eq!(via, expected, "{t:?}");
+            let planned = plan(&t, &linux).ok();
+            assert_eq!(
+                matches!(planned, Some(LaunchPlan::Process { .. })),
+                via == Some(LaunchVia::Direct),
+                "{t:?}"
+            );
+        }
     }
 
     #[test]

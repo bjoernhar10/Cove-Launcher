@@ -1,6 +1,6 @@
 [package]
 name = "cove"
-version = "0.2.4"
+version = "0.3.0"
 description = "Cove — universal desktop game launcher"
 edition = "2021"
 rust-version = "1.85"
@@ -40,6 +40,8 @@ futures-util = "0.3.34"
 tauri-plugin-dialog = "2.7.3"
 tauri-plugin-updater = "2.12.0"
 sys-locale = "0.3.2"
+md-5 = "0.11.0"
+sha1 = "0.11.0"
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -56,3 +58,6 @@ jsonschema = "0.33.0"
 tempfile = "3.27.0"
 tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "process", "time", "sync", "fs", "net", "io-util", "test-util"] }
 wiremock = "0.6.5"
+
+[target."cfg(windows)".dependencies]
+winreg = "0.56.0"

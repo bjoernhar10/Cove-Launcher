@@ -33,7 +33,16 @@ playtime and achievements. No ads, no social feed, no accounts of its own.
 - **Downloads** from legal sources only: direct links for DRM-free games, mods and patches, and
   your itch.io purchases through the official API. Parallel chunks, resume after restart, pause,
   bandwidth limit, SHA-256 check, unpacking (zip, 7z, tar, tar.gz) and automatic library entry.
-  Store games are installed by their own client (Steam, Heroic, Galaxy, Epic), never by Cove.
+  Before each install a dialog shows the sizes, the target folder and the free space on that drive.
+  Several games folders (one per drive, like Steam libraries); installed games can be moved
+  between them.
+- **GOG and Epic without their launchers:** Cove downloads, installs, updates and starts GOG
+  and Epic games itself (Windows builds through Proton on Linux, native Linux GOG builds directly).
+  Updates only download what changed. Epic games start with your Epic login, and their cloud saves
+  are synced before and after playing. Games with anti-cheat or a third-party launcher are left to
+  the Epic Launcher, and Cove says so. Steam games are installed by Steam.
+- **Steam in the background:** Steam games always start through Steam. If Steam isn't running,
+  Cove starts it silently (tray only) first, so no Steam window shows up.
 - **Achievements** from the stores plus Cove's own (and plugin) achievements.
 - **Plugins** in plain JavaScript, isolated in a Web Worker with browser-extension-style
   permissions. Guide: [docs/plugins.md](docs/plugins.md).

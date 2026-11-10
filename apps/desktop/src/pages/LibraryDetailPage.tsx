@@ -1,9 +1,10 @@
 import { locale, useMessages } from "../i18n/index.ts";
 import type { Achievement, CompatibilityTool, EnvVar, LaunchOptions, LibraryItem } from "@cove/shared";
-import { ArrowLeft, Compass, Library, Link2, Lock, Plus, Star, Trash2, Trophy } from "lucide-react";
+import { ArrowLeft, Compass, ExternalLink, FolderInput, PackageOpen, Library, Link2, Lock, PackageMinus, Plus, RefreshCw, Star, Trash2, Trophy } from "lucide-react";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api, CoveError } from "../api/index.ts";
+import { DlcDialog } from "../features/DlcDialog.tsx";
 import { MatchDialog } from "../features/MatchDialog.tsx";
 import { GameCover } from "../components/game/GameCover.tsx";
 import { PlayButton } from "../components/game/PlayButton.tsx";
@@ -18,8 +19,9 @@ import { Tabs } from "../components/ui/Tabs.tsx";
 import { useQuery } from "../hooks/useQuery.ts";
 import { cx } from "../lib/cx.ts";
 import { detectPlatform } from "../lib/env.ts";
-import { formatBytes, formatDate, formatPlaytime, formatRelative } from "../lib/format.ts";
-import { COMPAT_LABELS, SOURCE_LABELS } from "../lib/labels.ts";
+import { formatBytes, formatDate, formatPercent, formatPlaytime, formatRelative } from "../lib/format.ts";
+import { COMPAT_LABELS, LAUNCH_VIA_LABELS, SOURCE_LABELS } from "../lib/labels.ts";
+import { useMoves } from "../stores/moves.ts";
 import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 
@@ -66,6 +68,7 @@ function Overview({ item }: { item: LibraryItem }) {
         <dl className="m-0 rounded-lg border border-border px-4 text-sm">
           {[
             [t.library.colSource, SOURCE_LABELS[entry.source]],
+            [t.game.launchViaLabel, entry.launchVia ? LAUNCH_VIA_LABELS[entry.launchVia] : "—"],
             [t.game.status, entry.installed ? t.library.installed : t.library.notInstalled],
             [t.game.location, entry.installPath ?? "—"],
             [t.game.size, entry.installSizeBytes === null ? "—" : formatBytes(entry.installSizeBytes)],
@@ -217,6 +220,292 @@ function Achievements({ item }: { item: LibraryItem }) {
 }
 
 const COMPAT_TOOLS = Object.keys(COMPAT_LABELS) as CompatibilityTool[];
+
+/** The folder that holds `path` ("/a/b/Game" → "/a/b"). */
+function parentFolder(path: string): string {
+  const cut = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return cut > 0 ? path.slice(0, cut) : path;
+}
+
+const OTHER_FOLDER = "\u0000other";
+
+/** "Spiel verschieben": into another games folder, with progress. */
+function MoveGame({ item }: { item: LibraryItem }) {
+  const t = useMessages();
+  const settings = useQuery("settings", api.settings.getSettings);
+  const move = useMoves((s) => s.moves[item.game.id]);
+  const start = useMoves((s) => s.start);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const current = parentFolder(item.entry.installPath ?? "");
+  const folders = [
+    ...new Set([...(settings.status === "success" ? settings.data.library.gameFolders : []), ...(picked ? [picked] : [])]),
+  ].filter((f) => f !== current);
+  const target = chosen ?? folders[0] ?? null;
+
+  async function pick(): Promise<void> {
+    try {
+      const folder = await api.system.pickFolder(current);
+      if (!folder) return;
+      setPicked(folder);
+      setChosen(folder);
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+    }
+  }
+
+  async function run(): Promise<void> {
+    if (!target) return;
+    try {
+      await start(item.game.id, item.game.title, target);
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+    }
+  }
+
+  return (
+    <section aria-labelledby={`move-${item.game.id}`} className="max-w-2xl border-t border-border pt-6">
+      <h3 id={`move-${item.game.id}`} className="text-sm font-medium text-fg">
+        {t.game.moveTitle}
+      </h3>
+      <p className="mt-1 text-sm text-fg-muted">{t.game.moveText}</p>
+      {move ? (
+        <div className="mt-4" aria-live="polite">
+          <ProgressBar
+            value={move.totalBytes > 0 ? move.copiedBytes : 0}
+            max={Math.max(move.totalBytes, 1)}
+            label={t.game.moveTitle}
+          />
+          <p className="num mt-2 text-xs text-fg-muted">
+            {move.status === "verifying"
+              ? t.game.verifyingMove
+              : t.game.moving(move.totalBytes > 0 ? formatPercent(move.copiedBytes / move.totalBytes) : "")}
+          </p>
+        </div>
+      ) : (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Select
+            className="min-w-64 flex-1"
+            aria-label={t.game.moveTo}
+            value={target ?? OTHER_FOLDER}
+            onChange={(value) => {
+              if (value === OTHER_FOLDER) void pick();
+              else setChosen(value);
+            }}
+            options={[...folders.map((f) => ({ value: f, label: f })), { value: OTHER_FOLDER, label: t.game.otherFolder }]}
+          />
+          <Button icon={FolderInput} disabled={!target} onClick={() => void run()}>
+            {t.game.move}
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** A GOG or Epic game Cove installed itself (updates, moving). */
+function ownStoreInstall(item: LibraryItem): boolean {
+  return (item.entry.source === "gog" || item.entry.source === "epic") && item.entry.installedByCove;
+}
+
+/** Store games Cove installed: installed vs. newest build, "Aktualisieren". */
+function GameUpdates({ item }: { item: LibraryItem }) {
+  const t = useMessages();
+  const update = useQuery(`update/${item.game.id}`, () => api.library.checkGameUpdate(item.game.id));
+  const [busy, setBusy] = useState(false);
+
+  async function run(): Promise<void> {
+    setBusy(true);
+    try {
+      await api.library.installGameUpdate(item.game.id);
+      toast(t.game.updateQueued(item.game.title));
+      invalidateQueries();
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby={`updates-${item.game.id}`} className="max-w-2xl border-t border-border pt-6">
+      <h3 id={`updates-${item.game.id}`} className="text-sm font-medium text-fg">
+        {t.game.updatesTitle}
+      </h3>
+      {update.status === "loading" && (
+        <LoadingRegion label={t.game.checkingUpdate}>
+          <Skeleton className="mt-2 h-5 w-64" />
+        </LoadingRegion>
+      )}
+      {update.status === "error" && <ErrorState message={update.error} onRetry={update.retry} />}
+      {update.status === "success" && (
+        <>
+          <p className="num mt-1 text-sm text-fg-muted">
+            {t.game.installedVersion(update.data.installedVersion)} ·{" "}
+            {update.data.available ? t.game.updateAvailable(update.data.latestVersion) : t.game.upToDate}
+          </p>
+          {update.data.available && (
+            <Button variant="primary" icon={RefreshCw} className="mt-4" disabled={busy} onClick={() => void run()}>
+              {t.game.updateNow}
+            </Button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+/** GOG/Epic games Cove installed: "DLCs ändern". */
+function StoreDlcs({ item }: { item: LibraryItem }) {
+  const t = useMessages();
+  const [open, setOpen] = useState(false);
+  return (
+    <section aria-labelledby={`store-dlcs-${item.game.id}`} className="max-w-2xl border-t border-border pt-6">
+      <h3 id={`store-dlcs-${item.game.id}`} className="text-sm font-medium text-fg">
+        {t.game.dlcsTitle}
+      </h3>
+      <p className="mt-1 text-sm text-fg-muted">{t.game.dlcsStoreHint}</p>
+      <Button
+        icon={PackageOpen}
+        className="mt-4"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        {t.game.changeDlcs}
+      </Button>
+      {open && (
+        <DlcDialog
+          item={item}
+          open
+          onClose={() => {
+            setOpen(false);
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+/** Steam games: their DLCs (installed ones marked) and "In Steam verwalten". */
+function SteamDlcs({ item }: { item: LibraryItem }) {
+  const t = useMessages();
+  const dlcs = useQuery(`dlcs/${item.game.id}`, () => api.library.gameDlcs(item.game.id));
+  const [busy, setBusy] = useState(false);
+
+  async function manage(): Promise<void> {
+    setBusy(true);
+    try {
+      await api.library.manageDlcs(item.game.id);
+      toast(t.game.dlcsOpened);
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby={`dlcs-${item.game.id}`} className="max-w-2xl border-t border-border pt-6">
+      <h3 id={`dlcs-${item.game.id}`} className="text-sm font-medium text-fg">
+        {t.game.dlcsTitle}
+      </h3>
+      {dlcs.status === "loading" && (
+        <LoadingRegion label={t.game.dlcsLoading} className="mt-2 flex flex-col gap-2">
+          <Skeleton className="h-5 w-64" />
+          <Skeleton className="h-5 w-48" />
+        </LoadingRegion>
+      )}
+      {dlcs.status === "error" && <ErrorState message={dlcs.error} onRetry={dlcs.retry} />}
+      {dlcs.status === "success" && dlcs.data.dlcs.length === 0 && <p className="mt-1 text-sm text-fg-muted">{t.game.dlcsNone}</p>}
+      {dlcs.status === "success" && dlcs.data.dlcs.length > 0 && (
+        <>
+          <p className="mt-1 text-sm text-fg-muted">{t.game.dlcsSteamHint}</p>
+          <ul className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-border">
+            {dlcs.data.dlcs.map((dlc) => (
+              <li key={dlc.id} className="flex items-center gap-3 border-b border-border px-3 py-2 text-sm text-fg last:border-b-0">
+                <span className="min-w-0 flex-1 truncate">{dlc.title}</span>
+                {dlc.installed && <Badge>{t.game.dlcInstalled}</Badge>}
+              </li>
+            ))}
+          </ul>
+          {dlcs.data.total > dlcs.data.dlcs.length && (
+            <p className="num mt-2 text-xs text-fg-subtle">{t.game.dlcsCut(dlcs.data.dlcs.length, dlcs.data.total)}</p>
+          )}
+          <Button icon={ExternalLink} className="mt-4" disabled={busy} onClick={() => void manage()}>
+            {t.game.manageInSteam}
+          </Button>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Steam: Steam's own dialog. Games Cove installed: deletes the folder after a confirmation. */
+function Uninstall({ item }: { item: LibraryItem }) {
+  const t = useMessages();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const steam = item.entry.source === "steam";
+
+  async function uninstall(): Promise<void> {
+    setBusy(true);
+    try {
+      const method = await api.library.uninstallGame(item.game.id);
+      toast(method === "steam" ? t.game.uninstallInSteam(item.game.title) : t.game.uninstalled(item.game.title));
+      invalidateQueries();
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby={`uninstall-${item.game.id}`} className="max-w-2xl border-t border-border pt-6">
+      <h3 id={`uninstall-${item.game.id}`} className="text-sm font-medium text-fg">
+        {t.game.uninstallTitle}
+      </h3>
+      <p className="mt-1 text-sm text-fg-muted">{steam ? t.game.uninstallSteamText : t.game.uninstallText}</p>
+      <Button
+        icon={PackageMinus}
+        className="mt-4"
+        disabled={busy}
+        onClick={() => {
+          if (steam) void uninstall();
+          else setConfirming(true);
+        }}
+      >
+        {t.game.uninstall}
+      </Button>
+      <Dialog
+        open={confirming}
+        onClose={() => {
+          setConfirming(false);
+        }}
+        title={t.game.uninstallConfirm(item.game.title)}
+        description={t.game.uninstallConfirmText(item.entry.installPath ?? "")}
+        footer={
+          <>
+            <Button
+              onClick={() => {
+                setConfirming(false);
+              }}
+            >
+              {t.common.cancel}
+            </Button>
+            <Button variant="danger" disabled={busy} onClick={() => void uninstall()}>
+              {t.game.uninstall}
+            </Button>
+          </>
+        }
+      >
+        {null}
+      </Dialog>
+    </section>
+  );
+}
 
 function RemoveFromLibrary({ item }: { item: LibraryItem }) {
   const t = useMessages();
@@ -446,6 +735,13 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
         </Button>
       </div>
     </form>
+    {item.entry.installed && ownStoreInstall(item) && <GameUpdates item={item} />}
+    {item.entry.source === "steam" && item.entry.storeGameId && <SteamDlcs item={item} />}
+    {item.entry.installed && ownStoreInstall(item) && <StoreDlcs item={item} />}
+    {item.entry.installed && (item.entry.source === "manual" || ownStoreInstall(item)) && item.entry.installPath && (
+      <MoveGame item={item} />
+    )}
+    {item.entry.installed && (item.entry.source === "steam" || item.entry.installedByCove) && <Uninstall item={item} />}
     <RemoveFromLibrary item={item} />
     </div>
   );
@@ -515,6 +811,7 @@ export function LibraryDetailPage() {
             <div className="flex min-w-0 flex-1 flex-col justify-end pb-1">
               <div className="flex items-center gap-2">
                 <Badge>{SOURCE_LABELS[query.data.entry.source]}</Badge>
+                {query.data.entry.launchVia && <Badge>{LAUNCH_VIA_LABELS[query.data.entry.launchVia]}</Badge>}
                 {!query.data.entry.installed && <Badge>{t.library.notInstalled}</Badge>}
               </div>
               <h1 className="mt-3 text-xl font-semibold tracking-tight text-fg">{query.data.game.title}</h1>

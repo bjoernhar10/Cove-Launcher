@@ -1,5 +1,5 @@
 import { useMessages } from "../i18n/index.ts";
-import type { ItchGame, ItchUpload } from "@cove/shared";
+import type { InstallTarget, ItchGame, ItchUpload } from "@cove/shared";
 import { ChevronLeft, Download, Gamepad2 } from "lucide-react";
 import { useState, type SyntheticEvent } from "react";
 import { api } from "../api/index.ts";
@@ -10,8 +10,11 @@ import { Field, Input } from "../components/ui/Field.tsx";
 import { useQuery } from "../hooks/useQuery.ts";
 import { formatBytes } from "../lib/format.ts";
 import { PLATFORM_LABELS } from "../lib/labels.ts";
+import { isArchive } from "../lib/folders.ts";
 import { useDownloads } from "../stores/downloads.ts";
+import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
+import { InstallStep, previewGame } from "./InstallStep.tsx";
 
 function ListSkeleton() {
   const t = useMessages();
@@ -28,12 +31,26 @@ function Uploads({ game, onBack, onDone }: { game: ItchGame; onBack: () => void;
   const t = useMessages();
   const state = useQuery(`itch/uploads/${String(game.gameId)}`, () => api.downloads.itchUploads(game));
   const [busy, setBusy] = useState(false);
+  /** The file picked for the install dialog. */
+  const [chosen, setChosen] = useState<ItchUpload | null>(null);
 
-  async function download(upload: ItchUpload): Promise<void> {
+  const uploads = state.status === "success" ? state.data : [];
+  const gameFiles = uploads.some((u) => !u.extra) ? uploads.filter((u) => !u.extra) : uploads;
+  /** Extras offered next to the chosen file (unticked at first). */
+  const extras = uploads.filter((u) => u.extra && u.uploadId !== chosen?.uploadId);
+
+  async function download(upload: ItchUpload, target: InstallTarget): Promise<void> {
     setBusy(true);
     try {
-      await api.downloads.addItchDownload(game, upload);
+      const skipped = new Set(target.excludedDlcs ?? []);
+      await api.downloads.addItchDownload(
+        game,
+        upload,
+        { folder: target.folder, makeDefault: target.makeDefault },
+        extras.filter((e) => !skipped.has(String(e.uploadId))),
+      );
       toast(t.itch.downloading(game.title));
+      invalidateQueries();
       await useDownloads.getState().refresh();
       onDone();
     } catch (error: unknown) {
@@ -41,6 +58,34 @@ function Uploads({ game, onBack, onDone }: { game: ItchGame; onBack: () => void;
     } finally {
       setBusy(false);
     }
+  }
+
+  if (chosen) {
+    return (
+      <div>
+        <h3 className="mb-4 text-base font-medium text-fg">{t.install.title(game.title)}</h3>
+        <InstallStep
+          subject={{
+            game: previewGame(game.title),
+            downloadBytes: chosen.sizeBytes,
+            installBytes: isArchive(chosen.fileName) ? null : chosen.sizeBytes,
+            dlcs: extras.map((e) => ({
+              id: String(e.uploadId),
+              title: e.fileName,
+              downloadBytes: e.sizeBytes,
+              installBytes: isArchive(e.fileName) ? null : e.sizeBytes,
+              selected: false,
+            })),
+          }}
+          addOns="extra"
+          busy={busy}
+          onCancel={() => {
+            setChosen(null);
+          }}
+          onInstall={(target) => void download(chosen, target)}
+        />
+      </div>
+    );
   }
 
   return (
@@ -58,7 +103,7 @@ function Uploads({ game, onBack, onDone }: { game: ItchGame; onBack: () => void;
         )}
         {state.status === "success" && state.data.length > 0 && (
           <ul className="rounded-lg border border-border">
-            {state.data.map((upload) => (
+            {gameFiles.map((upload) => (
               <li key={upload.uploadId} className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-fg">{upload.fileName}</p>
@@ -67,7 +112,14 @@ function Uploads({ game, onBack, onDone }: { game: ItchGame; onBack: () => void;
                 {upload.platforms.map((p) => (
                   <Badge key={p}>{PLATFORM_LABELS[p]}</Badge>
                 ))}
-                <Button size="sm" variant="primary" disabled={busy} onClick={() => void download(upload)}>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => {
+                    setChosen(upload);
+                  }}
+                >
                   {t.itch.download}
                 </Button>
               </li>

@@ -11,13 +11,16 @@ mod cove_achievements;
 mod db;
 mod downloads;
 mod error;
+mod folders;
 mod launcher;
 mod models;
+mod mover;
 mod plugins;
 mod recommend;
 mod scanner;
 mod sidecar;
 mod state;
+mod steam;
 mod stores;
 mod updates;
 
@@ -49,6 +52,17 @@ macro_rules! cove_handlers {
             $crate::commands::library_achievements,
             $crate::commands::library_playtime,
             $crate::commands::achievements_recent,
+            $crate::commands::game_uninstall,
+            $crate::commands::game_dlcs,
+            $crate::commands::game_manage_dlcs,
+            $crate::commands::game_move,
+            $crate::commands::downloads_preview_url,
+            $crate::commands::downloads_preview_store,
+            $crate::commands::game_update_check,
+            $crate::commands::game_update,
+            $crate::commands::game_set_dlcs,
+            $crate::commands::system_pick_folder,
+            $crate::commands::system_folder_info,
             $crate::commands::game_launch,
             $crate::commands::game_stop,
             $crate::commands::game_running_list,
@@ -155,6 +169,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         // A finished session may unlock playtime or night-owl achievements.
         if event.session_seconds.is_some() {
             checker.check_in_background();
+            after_session(&handle, event.game_id.clone());
         }
         let _ = handle.emit(GAME_STATE_CHANGED, event);
     });
@@ -214,6 +229,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
     Ok(AppState {
         recommender,
         downloads,
+        mover: build_mover(app, &pool),
         stores,
         login_flows: Arc::new(stores::login::LoginFlows::default()),
         cove_achievements,
@@ -225,6 +241,30 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         pool,
         plugins,
     })
+}
+
+/// After a session: Epic cloud saves of games Cove installed go up (in the background).
+fn after_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, game_id: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        if let Err(error) = state.downloads.after_session(&game_id, &state.host).await {
+            eprintln!("[cove] Cloud-Spielstände von {game_id}: {error}");
+        }
+    });
+}
+
+/// "Spiel verschieben", reporting progress as `game-move-progress`.
+fn build_mover(app: &tauri::App, pool: &sqlx::SqlitePool) -> Arc<mover::Mover> {
+    let handle = app.handle().clone();
+    Arc::new(mover::Mover::new(
+        pool.clone(),
+        Arc::new(move |progress| {
+            let _ = handle.emit(commands::GAME_MOVE_PROGRESS, progress);
+        }),
+    ))
 }
 
 /// The download manager with its hooks into the app (events, library follow-ups).

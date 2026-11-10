@@ -9,6 +9,7 @@ pub mod sessions;
 pub mod settings;
 pub mod sources;
 pub mod store_games;
+pub mod store_installs;
 
 use std::path::Path;
 

@@ -103,6 +103,7 @@ async fn app_with(
             std::time::Duration::ZERO,
         )),
         login_flows: Arc::new(crate::stores::login::LoginFlows::default()),
+        mover: Arc::new(crate::mover::Mover::new(pool.clone(), Arc::new(|_| {}))),
         cove_achievements: Arc::new(crate::cove_achievements::CoveAchievements::new(
             pool.clone(),
             plugins.clone(),
@@ -380,12 +381,15 @@ async fn connector_commands_accept_frontend_payloads() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[allow(clippy::too_many_lines)] // one walk through all download commands
 async fn download_commands_accept_frontend_payloads() {
     let app = app().await;
+    let games = app.tmp.path().join("Games").to_string_lossy().into_owned();
+    let target = json!({ "folder": games, "makeDefault": false });
     let item: Value = invoke(
         &app,
         "downloads_add_url",
-        json!({ "input": { "url": "http://127.0.0.1:1/files/lantern-linux.zip", "title": null, "sha256": null } }),
+        json!({ "input": { "url": "http://127.0.0.1:1/files/lantern-linux.zip", "title": null, "sha256": null }, "target": target }),
     );
     assert_eq!(item["download"]["status"], "queued");
     assert_eq!(item["download"]["origin"], "direct");
@@ -394,10 +398,26 @@ async fn download_commands_accept_frontend_payloads() {
     let bad = invoke_raw(
         &app,
         "downloads_add_url",
-        json!({ "input": { "url": "ftp://x/y", "title": "X", "sha256": null } }),
+        // The install dialog's DLC choice is part of the target.
+        json!({ "input": { "url": "ftp://x/y", "title": "X", "sha256": null },
+                "target": { "folder": games, "makeDefault": false, "excludedDlcs": ["200"] } }),
     )
     .unwrap_err();
     assert_eq!(bad["kind"], "invalidInput");
+    let preview = invoke_raw(
+        &app,
+        "downloads_preview_url",
+        json!({ "input": { "url": "ftp://x/y", "title": null, "sha256": null } }),
+    )
+    .unwrap_err();
+    assert_eq!(preview["kind"], "invalidInput");
+
+    let folder: Value = invoke(&app, "system_folder_info", json!({ "path": games }));
+    assert_eq!(folder["writable"], true);
+    assert_eq!(folder["needsAdmin"], false);
+    assert!(folder["freeBytes"].as_i64().is_some_and(|b| b > 0));
+    let relative = invoke_raw(&app, "system_folder_info", json!({ "path": "Games" })).unwrap_err();
+    assert_eq!(relative["kind"], "invalidInput");
 
     let id = item["download"]["id"].as_str().unwrap();
     invoke_raw(
@@ -434,7 +454,7 @@ async fn download_commands_accept_frontend_payloads() {
     let add = invoke_raw(
         &app,
         "downloads_add_itch",
-        json!({ "gameId": 1, "uploadId": 2, "downloadKeyId": 3, "title": "Zeta" }),
+        json!({ "gameId": 1, "uploadId": 2, "downloadKeyId": 3, "title": "Zeta", "target": target, "extras": [4] }),
     )
     .unwrap_err();
     assert_eq!(add["kind"], "itch");
@@ -450,6 +470,65 @@ async fn download_commands_accept_frontend_payloads() {
     )
     .unwrap_err();
     assert_eq!(handoff["kind"], "notInLibrary");
+
+    // Uninstall and move: the game must be in the library and installed by Cove.
+    let exe = app.tmp.path().join("handmade/run");
+    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    std::fs::write(&exe, b"#!/bin/sh\n").unwrap();
+    let manual: Value = invoke(
+        &app,
+        "library_add_manual",
+        json!({ "input": { "title": "Hand Made", "executablePath": exe.to_string_lossy(), "sizeBytes": null } }),
+    );
+    let game_id = manual["game"]["id"].as_str().unwrap();
+    assert_eq!(manual["entry"]["launchVia"], "direct");
+    // GOG installs, updates: only for GOG games.
+    let preview = invoke_raw(
+        &app,
+        "downloads_preview_store",
+        json!({ "gameId": game_id }),
+    )
+    .unwrap_err();
+    assert_eq!(preview["kind"], "invalidInput");
+    let check = invoke_raw(&app, "game_update_check", json!({ "gameId": game_id })).unwrap_err();
+    assert_eq!(check["kind"], "invalidInput");
+    let update = invoke_raw(&app, "game_update", json!({ "gameId": "nope" })).unwrap_err();
+    assert_eq!(update["kind"], "notInLibrary");
+    let dlcs = invoke_raw(
+        &app,
+        "game_set_dlcs",
+        json!({ "gameId": "nope", "excludedDlcs": ["200"] }),
+    )
+    .unwrap_err();
+    assert_eq!(dlcs["kind"], "notInLibrary");
+    let enqueue = invoke_raw(
+        &app,
+        "downloads_enqueue",
+        json!({ "gameId": game_id, "target": target }),
+    )
+    .unwrap_err();
+    assert_eq!(enqueue["kind"], "invalidInput");
+    let uninstall = invoke_raw(&app, "game_uninstall", json!({ "gameId": game_id })).unwrap_err();
+    assert_eq!(uninstall["kind"], "invalidInput");
+    // The DLC list and "In Steam verwalten" are for Steam games only.
+    for command in ["game_dlcs", "game_manage_dlcs"] {
+        let error = invoke_raw(&app, command, json!({ "gameId": game_id })).unwrap_err();
+        assert_eq!(error["kind"], "invalidInput", "{command}");
+    }
+    let moved = invoke_raw(
+        &app,
+        "game_move",
+        json!({ "gameId": "nope", "folder": games }),
+    )
+    .unwrap_err();
+    assert_eq!(moved["kind"], "notInLibrary");
+    let moved = invoke_raw(
+        &app,
+        "game_move",
+        json!({ "gameId": game_id, "folder": "relative/folder" }),
+    )
+    .unwrap_err();
+    assert_eq!(moved["kind"], "invalidInput");
 }
 
 #[tokio::test(flavor = "multi_thread")]

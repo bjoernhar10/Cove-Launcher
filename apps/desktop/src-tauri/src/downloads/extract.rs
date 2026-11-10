@@ -260,21 +260,9 @@ pub fn find_executable(dir: &Path) -> Option<(String, CompatibilityTool)> {
     pick_executable(&candidates)
 }
 
-/// A free folder name below `root` for the game.
+/// Game folder below `root`, named after the game (see [`crate::folders::folder_name`]).
 pub fn unique_dir(root: &Path, name: &str) -> PathBuf {
-    let base = crate::db::slugify(name);
-    let base = if base.is_empty() {
-        "spiel".to_owned()
-    } else {
-        base
-    };
-    let mut candidate = root.join(&base);
-    let mut n = 2;
-    while candidate.exists() {
-        candidate = root.join(format!("{base}-{n}"));
-        n += 1;
-    }
-    candidate
+    crate::folders::unique_dir(root, name)
 }
 
 #[cfg(test)]
@@ -391,7 +379,7 @@ mod tests {
                 0
             );
         }
-        assert_eq!(unique_dir(dir.path(), "Game"), dir.path().join("game-2"));
+        assert_eq!(unique_dir(dir.path(), "game"), dir.path().join("game 2"));
     }
 
     #[test]

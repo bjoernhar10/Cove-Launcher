@@ -2,6 +2,8 @@ import type {
   Achievement,
   Game,
   GameId,
+  GameMoveProgress,
+  GameUpdateInfo,
   GameStateEvent,
   LaunchResult,
   LibraryItem,
@@ -12,6 +14,8 @@ import type {
   PlaytimeStats,
   RunningGame,
   ScanCandidate,
+  StoreDlcList,
+  UninstallMethod,
 } from "@cove/shared";
 import { call, subscribe } from "./transport.ts";
 
@@ -74,6 +78,45 @@ export function getPlaytimeStats(gameId: GameId): Promise<PlaytimeStats> {
 
 export function launchGame(gameId: GameId): Promise<LaunchResult> {
   return call("game_launch", { gameId });
+}
+
+/** Steam: opens Steam's uninstall dialog. Games Cove installed: deletes the game folder. */
+export function uninstallGame(gameId: GameId): Promise<UninstallMethod> {
+  return call("game_uninstall", { gameId });
+}
+
+/** DLCs of a Steam game (installed ones marked). */
+export function gameDlcs(gameId: GameId): Promise<StoreDlcList> {
+  return call("game_dlcs", { gameId });
+}
+
+/** Opens the game in Steam to tick or untick its DLCs. */
+export async function manageDlcs(gameId: GameId): Promise<void> {
+  await call("game_manage_dlcs", { gameId });
+}
+
+/** Moves the game folder into another games folder; progress via `subscribeMoveProgress`. */
+export async function moveGame(gameId: GameId, folder: string): Promise<void> {
+  await call("game_move", { gameId, folder });
+}
+
+/** Installed and newest version of a GOG game Cove installed. */
+export function checkGameUpdate(gameId: GameId): Promise<GameUpdateInfo> {
+  return call("game_update_check", { gameId });
+}
+
+/** Queues the update; only changed parts are downloaded. */
+export async function installGameUpdate(gameId: GameId): Promise<void> {
+  await call("game_update", { gameId });
+}
+
+/** "DLCs ändern": unticked DLCs are removed, ticked ones downloaded (as an update). */
+export async function setGameDlcs(gameId: GameId, excludedDlcs: string[]): Promise<void> {
+  await call("game_set_dlcs", { gameId, excludedDlcs });
+}
+
+export function subscribeMoveProgress(listener: (progress: GameMoveProgress) => void): () => void {
+  return subscribe("game-move-progress", listener);
 }
 
 export async function stopGame(gameId: GameId): Promise<void> {

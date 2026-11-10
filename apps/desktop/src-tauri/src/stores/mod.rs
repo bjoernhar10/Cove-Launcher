@@ -4,6 +4,7 @@
 
 pub mod login;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -354,6 +355,151 @@ impl StoreService {
             }
             other => other,
         }
+    }
+
+    /// Install plan for a GOG game (connector `gog.plan`): files, chunks, CDN links.
+    pub async fn gog_plan(
+        &self,
+        product_id: &str,
+        platform: &str,
+        language: &str,
+    ) -> AppResult<crate::downloads::gog::GogPlan> {
+        let value = self
+            .with_session(
+                StoreSource::Gog,
+                "gog.plan",
+                json!({ "productId": product_id, "platform": platform, "language": language }),
+            )
+            .await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
+    /// DLCs of a Steam game (store list, installed ones from Steam's app manifest).
+    pub async fn steam_dlcs(&self, app_id: &str) -> AppResult<crate::models::StoreDlcList> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Dlc {
+            app_id: String,
+            title: String,
+            installed: bool,
+        }
+        #[derive(Deserialize)]
+        struct List {
+            dlcs: Vec<Dlc>,
+            total: i64,
+        }
+        let home = dirs_home().ok_or_else(|| {
+            AppError::Launch(tr!(
+                "Kein Benutzerordner gefunden.",
+                "No home folder found."
+            ))
+        })?;
+        let value = self
+            .rpc
+            .call(
+                "steam.dlcs",
+                json!({
+                    "appId": app_id,
+                    "home": home,
+                    "programData": std::env::var("ProgramData").ok(),
+                }),
+            )
+            .await?;
+        let list: List = serde_json::from_value(value)?;
+        Ok(crate::models::StoreDlcList {
+            dlcs: list
+                .dlcs
+                .into_iter()
+                .map(|d| crate::models::StoreDlc {
+                    id: d.app_id,
+                    title: d.title,
+                    installed: d.installed,
+                })
+                .collect(),
+            total: list.total,
+        })
+    }
+
+    /// Manifest links and catalogue attributes of an Epic game.
+    pub async fn epic_install_info(
+        &self,
+        app_name: &str,
+        platform: &str,
+    ) -> AppResult<crate::downloads::epic::InstallInfo> {
+        let value = self
+            .with_session(
+                StoreSource::Epic,
+                "epic.installInfo",
+                json!({ "appName": app_name, "platform": platform }),
+            )
+            .await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
+    /// A one-time exchange code (and ownership token) to start an Epic game.
+    pub async fn epic_launch(
+        &self,
+        app_name: &str,
+        ownership_token: bool,
+    ) -> AppResult<crate::downloads::epic::LaunchAuth> {
+        let value = self
+            .with_session(
+                StoreSource::Epic,
+                "epic.launch",
+                json!({ "appName": app_name, "ownershipToken": ownership_token }),
+            )
+            .await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
+    /// The cloud-save files of an Epic game.
+    pub async fn epic_saves(
+        &self,
+        app_name: &str,
+    ) -> AppResult<crate::downloads::epic::saves::Saves> {
+        let value = self
+            .with_session(
+                StoreSource::Epic,
+                "epic.saves",
+                json!({ "appName": app_name }),
+            )
+            .await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
+    /// Signed upload links for new cloud-save files.
+    pub async fn epic_write_links(
+        &self,
+        app_name: &str,
+        paths: &[String],
+    ) -> AppResult<HashMap<String, String>> {
+        let value = self
+            .with_session(
+                StoreSource::Epic,
+                "epic.saveWriteLinks",
+                json!({ "appName": app_name, "paths": paths }),
+            )
+            .await?;
+        Ok(serde_json::from_value(
+            value.get("links").cloned().unwrap_or(Value::Null),
+        )?)
+    }
+
+    /// Newest public GOG build (update check).
+    pub async fn gog_latest(
+        &self,
+        product_id: &str,
+        platform: &str,
+        language: &str,
+    ) -> AppResult<crate::downloads::gog::GogLatest> {
+        let value = self
+            .with_session(
+                StoreSource::Gog,
+                "gog.latest",
+                json!({ "productId": product_id, "platform": platform, "language": language }),
+            )
+            .await?;
+        Ok(serde_json::from_value(value)?)
     }
 
     async fn note_problem(&self, store: StoreSource, error: &AppError) -> AppResult<()> {
@@ -981,6 +1127,7 @@ mod sidecar_contract {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)] // one walk through every connector method
     async fn real_connectors_understand_core_requests() {
         let Some(sidecar) = built() else {
             eprintln!("skipped: connectors not built (npm run build:connectors -w @cove/desktop)");
@@ -1032,6 +1179,43 @@ mod sidecar_contract {
             english.user_message(),
             "That's not a valid Epic sign-in code."
         );
+
+        // GOG install plans: the method exists and checks its input before any request.
+        let plan = rpc
+            .call(
+                "gog.plan",
+                json!({ "session": { "store": "gog", "accountId": "1", "displayName": "x", "accessToken": "a",
+                                     "refreshToken": "r", "expiresAt": null },
+                        "productId": "../1", "platform": "linux", "language": "de", "proxyUrl": null }),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(plan, AppError::InvalidInput(_)), "{plan:?}");
+        for method in ["epic.installInfo", "epic.launch", "epic.saves"] {
+            let error = rpc
+                .call(
+                    method,
+                    json!({ "session": { "store": "epic", "accountId": "1", "displayName": "x", "accessToken": "a",
+                                         "refreshToken": "r", "expiresAt": null },
+                            "appName": "../x", "platform": "linux", "ownershipToken": false, "paths": null, "proxyUrl": null }),
+                )
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, AppError::InvalidInput(_)),
+                "{method}: {error:?}"
+            );
+        }
+
+        // Steam DLC lists refuse odd app ids before any network call.
+        let error = rpc
+            .call(
+                "steam.dlcs",
+                json!({ "appId": "../x", "home": "/nowhere", "programData": null }),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::InvalidInput(_)), "{error:?}");
 
         // Local detection with a fake home folder.
         let home = tempfile::tempdir().unwrap();

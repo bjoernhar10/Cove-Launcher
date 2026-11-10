@@ -10,7 +10,7 @@
  */
 import type { CoveEvents, DownloadItem, Game, Genre, LibraryItem, Recommendation, StoreSource } from "@cove/shared";
 import { GENRE_LABELS } from "../lib/labels.ts";
-import { emitCoreEvent, fakeDownload, fakeGame, fakeItem, installFakeCore, FAKE_CATALOG } from "./fakeCore.ts";
+import { emitCoreEvent, fakeDownload, fakeGame, fakeItem, installFakeCore, launchViaOf, FAKE_CATALOG } from "./fakeCore.ts";
 
 const TITLES = [
   "Tidewater", "Hollow Lantern", "Paper Orbit", "Quiet Harbor", "Ember Fields", "Glass Meridian",
@@ -88,6 +88,11 @@ function realItem(game: Game, index: number): LibraryItem {
       achievements: { unlocked: Math.round(achievements * rand(game.id, 6)), total: achievements },
       catalogId: game.id,
       matchStatus: "matched",
+      launchVia: launchViaOf({
+        source,
+        storeGameId: source === "manual" ? null : String(100_000 + index),
+        executablePath: installed || source !== "manual" ? `/home/alex/Games/${game.title}/start` : null,
+      }),
     },
   };
 }
@@ -235,6 +240,18 @@ internals.invoke = async (command, args, options) => {
       }, 100);
       return null;
     }
+  }
+  if (command === "game_move") {
+    const result = await invoke(command, args, options);
+    const gameId = String(args?.gameId);
+    const total = 12 * 1024 ** 3;
+    setTimeout(() => {
+      emit("game-move-progress", { gameId, status: "copying", copiedBytes: total / 2, totalBytes: total, error: null });
+    }, 100);
+    setTimeout(() => {
+      emit("game-move-progress", { gameId, status: "completed", copiedBytes: 0, totalBytes: 0, error: null });
+    }, 600);
+    return result;
   }
   if (command === "game_running_list") {
     return [...running].map(([gameId, startedAt]) => ({ gameId, startedAt }));

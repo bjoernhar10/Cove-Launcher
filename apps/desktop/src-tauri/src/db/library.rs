@@ -103,16 +103,24 @@ struct EntryRow {
     achievements_unlocked: i64,
     catalog_id: Option<String>,
     match_status: String,
+    installed_by_cove: bool,
 }
 
 impl EntryRow {
     fn into_item(self) -> AppResult<LibraryItem> {
         let env: Vec<EnvVar> = serde_json::from_str(&self.env)?;
         let game = self.game.into_game()?;
+        let source = StoreSource::parse(&self.source_id).unwrap_or(StoreSource::Manual);
+        let launch_via = crate::launcher::launch_via(
+            source,
+            self.store_game_id.as_deref(),
+            self.executable_path.as_deref(),
+            self.installed_by_cove,
+        );
         Ok(LibraryItem {
             entry: LibraryEntry {
                 game_id: game.id.clone(),
-                source: StoreSource::parse(&self.source_id).unwrap_or(StoreSource::Manual),
+                source,
                 store_game_id: self.store_game_id,
                 installed: self.installed,
                 install_path: self.install_path,
@@ -133,6 +141,8 @@ impl EntryRow {
                 },
                 catalog_id: self.catalog_id,
                 match_status: MatchStatus::parse(&self.match_status),
+                launch_via,
+                installed_by_cove: self.installed_by_cove,
             },
             game,
         })
@@ -149,7 +159,9 @@ fn select_entries(filter: &str) -> String {
               MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at) \
               FROM play_sessions s WHERE s.game_id = g.id) AS last_played_at, \
            (SELECT COUNT(*) FROM achievements a WHERE a.game_id = g.id) AS achievements_total, \
-           (SELECT COUNT(*) FROM user_achievements u WHERE u.game_id = g.id) AS achievements_unlocked \
+           (SELECT COUNT(*) FROM user_achievements u WHERE u.game_id = g.id) AS achievements_unlocked, \
+           EXISTS (SELECT 1 FROM downloads d WHERE d.game_id = g.id AND d.status = 'completed' \
+             AND d.install_path = e.install_path) AS installed_by_cove \
          FROM library_entries e JOIN games g ON g.id = e.game_id {filter}"
     )
 }
@@ -375,6 +387,72 @@ pub async fn remove(pool: &SqlitePool, game_id: &str) -> AppResult<()> {
     if result.rows_affected() == 0 {
         return Err(AppError::NotInLibrary(game_id.to_owned()));
     }
+    Ok(())
+}
+
+/// New folder after "Spiel verschieben" (also on the download that installed it).
+pub async fn set_install_location(
+    pool: &SqlitePool,
+    game_id: &str,
+    install_path: &str,
+    executable_path: Option<&str>,
+) -> AppResult<()> {
+    let mut tx = pool.begin().await?;
+    let result = sqlx::query(
+        "UPDATE library_entries SET installed = 1, install_path = ?, executable_path = ? WHERE game_id = ?",
+    )
+    .bind(install_path)
+    .bind(executable_path)
+    .bind(game_id)
+    .execute(&mut *tx)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotInLibrary(game_id.to_owned()));
+    }
+    sqlx::query(
+        "UPDATE downloads SET install_path = ?, executable_path = ? \
+         WHERE game_id = ? AND install_path IS NOT NULL",
+    )
+    .bind(install_path)
+    .bind(executable_path)
+    .bind(game_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Windows games installed by Cove on Linux start through Proton unless the user chose otherwise.
+pub async fn set_compat_if_native(
+    pool: &SqlitePool,
+    game_id: &str,
+    tool: CompatibilityTool,
+) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE library_entries SET compatibility_tool = ? WHERE game_id = ? AND compatibility_tool = 'native'",
+    )
+    .bind(tool.as_str())
+    .bind(game_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// The game stays in the library, but is no longer installed.
+pub async fn mark_uninstalled(pool: &SqlitePool, game_id: &str) -> AppResult<()> {
+    for table in ["store_installs", "store_install_dlcs"] {
+        sqlx::query(&format!("DELETE FROM {table} WHERE game_id = ?"))
+            .bind(game_id)
+            .execute(pool)
+            .await?;
+    }
+    sqlx::query(
+        "UPDATE library_entries SET installed = 0, install_path = NULL, executable_path = NULL, \
+           install_size_bytes = NULL WHERE game_id = ?",
+    )
+    .bind(game_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

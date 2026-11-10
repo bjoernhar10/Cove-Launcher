@@ -18,6 +18,11 @@ import type {
   CoveCommand,
   CoveCommands,
   Game,
+  DlcOption,
+  GameUpdateInfo,
+  InstallTarget,
+  StoreDlcList,
+  LaunchVia,
   LibraryItem,
   ScanCandidate,
   UpdateInfo,
@@ -49,8 +54,16 @@ export function fakeGame(id: string, title: string): Game {
   };
 }
 
+/** Mirrors `launcher::launch_via` in the Rust core. */
+export function launchViaOf(entry: Pick<LibraryItem["entry"], "source" | "storeGameId" | "executablePath">): LaunchVia | null {
+  if (entry.source === "steam" && entry.storeGameId !== null) return "steam";
+  if (entry.executablePath?.trim()) return "direct";
+  if (entry.storeGameId === null) return null;
+  return entry.source === "epic" ? "epicLauncher" : entry.source === "gog" ? "gogGalaxy" : null;
+}
+
 export function fakeItem(id: string, title: string, overrides: Partial<LibraryItem["entry"]> = {}): LibraryItem {
-  return {
+  const item: LibraryItem = {
     game: fakeGame(id, title),
     entry: {
       gameId: id,
@@ -68,9 +81,13 @@ export function fakeItem(id: string, title: string, overrides: Partial<LibraryIt
       launchOptions: { arguments: "", compatibilityTool: "native", env: [] },
       catalogId: null,
       matchStatus: "none",
+      launchVia: null,
+      installedByCove: false,
       ...overrides,
     },
   };
+  if (!("launchVia" in overrides)) item.entry.launchVia = launchViaOf(item.entry);
+  return item;
 }
 
 export const FAKE_SCAN: ScanCandidate[] = [
@@ -81,7 +98,7 @@ export const FAKE_SCAN: ScanCandidate[] = [
 export const DEFAULT_SETTINGS: AppSettings = {
   general: { language: "de", launchOnStartup: false, minimizeToTray: false, startPage: "home" },
   appearance: { theme: "dark", accent: "blue" },
-  library: { scanFolders: [], scanOnStartup: false },
+  library: { scanFolders: [], scanOnStartup: false, gameFolders: ["/home/u/Games"], steamSilentStart: true, epicCloudSaves: true },
   downloads: { directory: "/home/u/Games", bandwidthLimitBytesPerSecond: null, maxConcurrent: 1 },
   catalog: { useCoveService: true },
 };
@@ -137,6 +154,26 @@ export interface FakeCore {
   /** What `updates_check` reports; `null` = up to date. */
   update: UpdateInfo | null;
   updateInstalled: boolean;
+  /** What the native folder picker returns (null = cancelled). */
+  pickedFolder: string | null;
+  /** Free space per folder (default 500 GB). */
+  freeBytes: Record<string, number>;
+  /** `game_move` calls. */
+  moves: { gameId: string; folder: string }[];
+  /** What `game_update_check` reports. */
+  gogUpdate: GameUpdateInfo;
+  /** Epic games that must stay with the Epic Launcher (reason per game id). */
+  launcherOnly: Record<string, string>;
+  /** DLCs the install dialog offers (per game id). */
+  dlcs: Record<string, DlcOption[]>;
+  /** Targets of store installs Cove does itself (per game id). */
+  installTargets: Record<string, InstallTarget>;
+  /** Steam DLC lists (per game id). */
+  steamDlcs: Record<string, StoreDlcList>;
+  /** URLs Cove asked the system to open (steam:// …). */
+  openedUrls: string[];
+  /** Upload ids of extras sent with itch.io downloads. */
+  itchExtras: number[][];
 }
 
 export function fakePlugin(id: string, overrides: Partial<PluginInfo> = {}): PluginInfo {
@@ -179,6 +216,7 @@ export function fakeDownload(id: string, title: string, overrides: Partial<Downl
       checksumVerified: false,
       installPath: null,
       executablePath: null,
+      extra: null,
       ...overrides,
     },
   };
@@ -203,6 +241,16 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     pluginAchievements: {},
     update: null,
     updateInstalled: false,
+    pickedFolder: null,
+    freeBytes: {},
+    moves: [],
+    gogUpdate: { available: false, installedVersion: "1.0", latestVersion: "1.0" },
+    launcherOnly: {},
+    dlcs: {},
+    installTargets: {},
+    steamDlcs: {},
+    openedUrls: [],
+    itchExtras: [],
   };
   const plugin = (id: string) => core.plugins.find((p) => p.id === id) ?? reject("invalidInput", `Plugin nicht gefunden: ${id}`);
   const activate = (p: PluginInfo, enabled: boolean) => {
@@ -288,6 +336,34 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       reject("notRunning", `${gameId} läuft nicht.`);
     },
     game_running_list: () => [],
+    game_dlcs: ({ gameId }) => {
+      const item = require(gameId);
+      if (item.entry.source !== "steam") reject("invalidInput", "Die DLC-Liste gibt es nur für Steam-Spiele.");
+      return core.steamDlcs[gameId] ?? { dlcs: [], total: 0 };
+    },
+    game_manage_dlcs: ({ gameId }) => {
+      const item = require(gameId);
+      if (item.entry.source !== "steam") reject("invalidInput", "Die DLC-Liste gibt es nur für Steam-Spiele.");
+      core.openedUrls.push(`steam://nav/games/details/${item.entry.storeGameId ?? ""}`);
+      return null;
+    },
+    game_uninstall: ({ gameId }) => {
+      const item = core.library.find((i) => i.game.id === gameId) ?? reject("notInLibrary", `${gameId} ist nicht in der Bibliothek.`);
+      if (item.entry.source === "steam") return "steam";
+      if (!item.entry.installed) reject("invalidInput", "Dieses Spiel ist nicht installiert.");
+      Object.assign(item.entry, { installed: false, installPath: null, executablePath: null, installSizeBytes: null, launchVia: null });
+      return "removed";
+    },
+    game_move: ({ gameId, folder }) => {
+      const item = core.library.find((i) => i.game.id === gameId) ?? reject("notInLibrary", `${gameId} ist nicht in der Bibliothek.`);
+      if (!folder.startsWith("/")) reject("invalidInput", "Bitte wähle einen vollständigen Ordnerpfad.");
+      const target = `${folder}/${item.game.title}`;
+      const old = item.entry.installPath ?? "";
+      item.entry.executablePath = item.entry.executablePath?.replace(old, target) ?? null;
+      item.entry.installPath = target;
+      core.moves.push({ gameId, folder });
+      return null;
+    },
     settings_get: () => core.settings,
     settings_update: ({ settings }) => {
       core.settings = settings;
@@ -389,10 +465,19 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       return item;
     },
     downloads_list: () => core.downloads,
-    downloads_enqueue: ({ gameId }) => {
+    downloads_enqueue: ({ gameId, target }) => {
       const item = require(gameId);
       const store = item.entry.source;
       if (store === "manual") reject("invalidInput", "Dieses Spiel stammt aus keinem Store.");
+      if (store === "gog" || (store === "epic" && target)) {
+        if (!target) reject("invalidInput", "Bitte wähle einen Zielordner.");
+        core.installTargets[gameId] = target;
+        const download = fakeDownload(`g-${gameId}`, item.game.title, { origin: store, source: store, queuePosition: core.downloads.length });
+        download.download.gameId = gameId;
+        download.game = item.game;
+        core.downloads.push(download);
+        return null;
+      }
       core.downloads.push(fakeDownload(`h-${gameId}`, item.game.title, { status: "handedOff", origin: store }));
       return null;
     },
@@ -402,6 +487,41 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       if (status === "cancelled") item.download.queuePosition = null;
       return null;
     },
+    downloads_preview_store: ({ gameId }) => {
+      const item = core.library.find((i) => i.game.id === gameId) ?? reject("notInLibrary", `${gameId} ist nicht in der Bibliothek.`);
+      const store = item.entry.source;
+      if (store !== "gog" && store !== "epic") reject("invalidInput", "Cove kann nur GOG- und Epic-Spiele selbst installieren.");
+      if (!core.accounts[store].connected) reject("invalidInput", `Du bist nicht bei ${store === "gog" ? "GOG" : "Epic Games"} angemeldet.`);
+      return {
+        title: item.game.title,
+        downloadBytes: 9_500_000_000,
+        installBytes: 12_000_000_000,
+        launcherOnly: core.launcherOnly[gameId] ?? null,
+        dlcs: core.dlcs[gameId] ?? [],
+      };
+    },
+    game_update_check: ({ gameId }) => {
+      const item = core.library.find((i) => i.game.id === gameId) ?? reject("notInLibrary", `${gameId} ist nicht in der Bibliothek.`);
+      if (!item.entry.installedByCove) reject("invalidInput", "Cove hat dieses Spiel nicht installiert.");
+      return core.gogUpdate;
+    },
+    game_set_dlcs: ({ gameId, excludedDlcs }) => {
+      const item = require(gameId);
+      if (!item.entry.installedByCove) reject("invalidInput", "Cove hat dieses Spiel nicht installiert.");
+      core.dlcs[gameId] = (core.dlcs[gameId] ?? []).map((d) => ({ ...d, selected: !excludedDlcs.includes(d.id) }));
+      core.downloads.push(fakeDownload(`up-${gameId}`, item.game.title, { origin: item.entry.source === "epic" ? "epic" : "gog", queuePosition: core.downloads.length }));
+      return null;
+    },
+    game_update: ({ gameId }) => {
+      const item = core.library.find((i) => i.game.id === gameId) ?? reject("notInLibrary", `${gameId} ist nicht in der Bibliothek.`);
+      core.downloads.push(fakeDownload(`up-${gameId}`, item.game.title, { origin: "gog", queuePosition: core.downloads.length }));
+      return null;
+    },
+    downloads_preview_url: ({ input }) => {
+      if (!/^https?:\/\//.test(input.url)) reject("invalidInput", "Das ist kein gültiger Link.");
+      const name = input.title ?? input.url.split("/").pop() ?? "Download";
+      return { title: name, downloadBytes: 2_000_000_000, installBytes: null, launcherOnly: null, dlcs: [] };
+    },
     downloads_add_url: ({ input }) => {
       if (!/^https?:\/\//.test(input.url)) reject("invalidInput", "Das ist kein gültiger Link.");
       const name = input.title ?? input.url.split("/").pop() ?? "Download";
@@ -409,8 +529,9 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       core.downloads.push(item);
       return item;
     },
-    downloads_add_itch: ({ title }) => {
+    downloads_add_itch: ({ title, extras }) => {
       if (!core.itchKey) reject("itch", "Verbinde zuerst dein itch.io-Konto.");
+      core.itchExtras.push(extras);
       const item = fakeDownload(`i${String(core.downloads.length)}`, title, { origin: "itch", queuePosition: core.downloads.length });
       core.downloads.push(item);
       return item;
@@ -433,9 +554,22 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       if (!url.includes("itch.io")) reject("invalidInput", "Bitte gib die Adresse einer itch.io-Spielseite ein.");
       return { gameId: 99, title: "Free Game", coverUrl: null, downloadKeyId: null, url };
     },
-    itch_uploads: () => [{ uploadId: 100, fileName: "zeta-linux.zip", sizeBytes: 1_000_000, platforms: ["linux"] }],
+    itch_uploads: () => [
+      { uploadId: 100, fileName: "zeta-linux.zip", sizeBytes: 1_000_000, platforms: ["linux"], extra: false },
+      { uploadId: 101, fileName: "zeta-soundtrack.zip", sizeBytes: 300_000_000, platforms: [], extra: true },
+    ],
     downloads_reorder: () => null,
     downloads_clear_history: () => null,
+    system_pick_folder: () => core.pickedFolder,
+    system_folder_info: ({ path }) => {
+      if (!path.startsWith("/") && !/^[A-Z]:\\/i.test(path)) reject("invalidInput", "Bitte wähle einen vollständigen Ordnerpfad.");
+      return {
+        path,
+        freeBytes: core.freeBytes[path] ?? 500_000_000_000,
+        writable: !path.startsWith("/readonly"),
+        needsAdmin: /^C:\\Program Files/i.test(path),
+      };
+    },
     system_profile: () => ({ id: "local", displayName: "Testperson", avatarUrl: null }),
     system_about: () => ({
       appVersion: "0.1.0",

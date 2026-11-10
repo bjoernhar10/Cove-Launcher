@@ -1,4 +1,4 @@
-import type { AboutInfo, UpdateCheck, UpdateProgress, UserProfile } from "@cove/shared";
+import type { AboutInfo, FolderInfo, UpdateCheck, UpdateProgress, UserProfile } from "@cove/shared";
 import { call, subscribe } from "./transport.ts";
 
 export function getProfile(): Promise<UserProfile> {
@@ -7,6 +7,16 @@ export function getProfile(): Promise<UserProfile> {
 
 export function getAbout(): Promise<AboutInfo> {
   return call("system_about", {});
+}
+
+/** Native folder picker, starting at `defaultPath`; null when cancelled. */
+export function pickFolder(defaultPath: string | null): Promise<string | null> {
+  return call("system_pick_folder", { defaultPath });
+}
+
+/** Free space, write access and the "Program Files" warning for a folder. */
+export function folderInfo(path: string): Promise<FolderInfo> {
+  return call("system_folder_info", { path });
 }
 
 /** Asks the release server whether a newer Cove exists. */

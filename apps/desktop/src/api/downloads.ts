@@ -1,4 +1,14 @@
-import type { DirectDownloadInput, DownloadItem, DownloadProgress, GameId, ItchGame, ItchStatus, ItchUpload } from "@cove/shared";
+import type {
+  DirectDownloadInput,
+  DownloadItem,
+  DownloadProgress,
+  GameId,
+  InstallPreview,
+  InstallTarget,
+  ItchGame,
+  ItchStatus,
+  ItchUpload,
+} from "@cove/shared";
 import { call, subscribe } from "./transport.ts";
 
 export function listDownloads(): Promise<DownloadItem[]> {
@@ -15,21 +25,41 @@ export function subscribeProgress(listener: (progress: DownloadProgress) => void
   return subscribe("download-progress", listener);
 }
 
-/** Store games: hands the installation to Steam, GOG or Epic (Heroic on Linux). */
-export async function enqueueDownload(gameId: GameId): Promise<void> {
-  await call("downloads_enqueue", { gameId });
+/**
+ * Store games: GOG games are installed by Cove into `target` (install dialog);
+ * Steam and Epic installs are handed to their client.
+ */
+export async function enqueueDownload(gameId: GameId, target: InstallTarget | null = null): Promise<void> {
+  await call("downloads_enqueue", { gameId, target });
 }
 
-export function addUrlDownload(input: DirectDownloadInput): Promise<DownloadItem> {
-  return call("downloads_add_url", { input });
+/** Sizes for the install dialog of a GOG game. */
+export function previewStoreInstall(gameId: GameId): Promise<InstallPreview> {
+  return call("downloads_preview_store", { gameId });
 }
 
-export function addItchDownload(game: ItchGame, upload: ItchUpload): Promise<DownloadItem> {
+/** Sizes for the install dialog (asks the server for the file size). */
+export function previewUrlDownload(input: DirectDownloadInput): Promise<InstallPreview> {
+  return call("downloads_preview_url", { input });
+}
+
+export function addUrlDownload(input: DirectDownloadInput, target: InstallTarget): Promise<DownloadItem> {
+  return call("downloads_add_url", { input, target });
+}
+
+export function addItchDownload(
+  game: ItchGame,
+  upload: ItchUpload,
+  target: InstallTarget,
+  extras: readonly ItchUpload[] = [],
+): Promise<DownloadItem> {
   return call("downloads_add_itch", {
     gameId: game.gameId,
     uploadId: upload.uploadId,
     downloadKeyId: game.downloadKeyId,
     title: game.title,
+    target,
+    extras: extras.map((e) => e.uploadId),
   });
 }
 

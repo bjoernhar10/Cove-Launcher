@@ -27,6 +27,7 @@ struct DownloadRow {
     checksum_verified: bool,
     install_path: Option<String>,
     executable_path: Option<String>,
+    extra: Option<String>,
     #[sqlx(flatten)]
     game: GameRow,
 }
@@ -52,6 +53,7 @@ impl DownloadRow {
                 checksum_verified: self.checksum_verified,
                 install_path: self.install_path,
                 executable_path: self.executable_path,
+                extra: self.extra,
             },
             game,
         })
@@ -60,7 +62,7 @@ impl DownloadRow {
 
 const SELECT: &str = "SELECT d.id AS download_id, d.source_id, d.origin, d.status, d.total_bytes, d.downloaded_bytes, \
        d.queue_position, d.queued_at, d.finished_at, d.error, d.file_name, d.checksum_verified, d.install_path, \
-       d.executable_path";
+       d.executable_path, d.extra";
 
 pub async fn list(pool: &SqlitePool) -> AppResult<Vec<DownloadItem>> {
     let rows: Vec<DownloadRow> = sqlx::query_as(&format!(
@@ -108,13 +110,17 @@ pub struct Record {
     pub itch_upload_id: Option<i64>,
     pub itch_download_key_id: Option<i64>,
     pub title: String,
+    /// Store installs: the game folder, fixed when queued (also for updates).
+    pub install_path: Option<String>,
+    /// itch.io extras: the file's name; it goes into the game's "Extras" folder.
+    pub extra: Option<String>,
 }
 
 pub async fn record(pool: &SqlitePool, id: &str) -> AppResult<Record> {
     sqlx::query_as(
         "SELECT d.id, d.game_id, d.origin, d.status, d.total_bytes, d.downloaded_bytes, d.url, d.file_name, \
            d.checksum_sha256, d.etag, d.chunk_size, d.chunks_done, d.target_dir, d.itch_game_id, d.itch_upload_id, \
-           d.itch_download_key_id, g.title \
+           d.itch_download_key_id, g.title, d.install_path, d.extra \
          FROM downloads d JOIN games g ON g.id = d.game_id WHERE d.id = ?",
     )
     .bind(id)
@@ -123,10 +129,10 @@ pub async fn record(pool: &SqlitePool, id: &str) -> AppResult<Record> {
     .ok_or_else(|| AppError::InvalidInput(tr!("Download nicht gefunden: {id}", "Download not found: {id}")))
 }
 
-/// Queued transfers (direct + itch) in queue order.
+/// Queued transfers Cove runs itself (direct, itch, store installs) in queue order.
 pub async fn queued(pool: &SqlitePool) -> AppResult<Vec<String>> {
     Ok(sqlx::query_scalar(
-        "SELECT id FROM downloads WHERE status = 'queued' AND origin IN ('direct', 'itch') \
+        "SELECT id FROM downloads WHERE status = 'queued' AND target_dir IS NOT NULL \
          ORDER BY queue_position",
     )
     .fetch_all(pool)
@@ -217,6 +223,44 @@ pub async fn enqueue_handoff(
     Ok((id, store, store_game_id))
 }
 
+/// A store game Cove installs itself (GOG): into `install_path` below `target_dir`.
+/// An update uses the existing game folder.
+pub async fn enqueue_store_install(
+    pool: &SqlitePool,
+    game_id: &str,
+    store: StoreSource,
+    target_dir: &str,
+    install_path: &str,
+) -> AppResult<String> {
+    let active: Option<String> = sqlx::query_scalar(
+        "SELECT id FROM downloads WHERE game_id = ? AND queue_position IS NOT NULL",
+    )
+    .bind(game_id)
+    .fetch_optional(pool)
+    .await?;
+    if active.is_some() {
+        return Err(AppError::InvalidInput(tr!(
+            "Dieses Spiel wird bereits heruntergeladen.",
+            "This game is already downloading."
+        )));
+    }
+    let id = new_id(game_id);
+    sqlx::query(
+        "INSERT INTO downloads (id, game_id, source_id, origin, status, queue_position, queued_at, target_dir, install_path) \
+         VALUES (?, ?, ?, ?, 'queued', (SELECT COALESCE(MAX(queue_position), -1) + 1 FROM downloads), ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(game_id)
+    .bind(store.as_str())
+    .bind(store.as_str())
+    .bind(now_iso())
+    .bind(target_dir)
+    .bind(install_path)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
 /// A file transfer (direct link or itch.io).
 #[derive(Debug, Clone, Default)]
 pub struct NewTransfer {
@@ -229,9 +273,23 @@ pub struct NewTransfer {
     pub itch_game_id: Option<i64>,
     pub itch_upload_id: Option<i64>,
     pub itch_download_key_id: Option<i64>,
+    /// The game folder, fixed when queued (itch.io games with extras).
+    pub install_path: Option<String>,
+    /// An extra of an already queued game: its game id and the file's name.
+    pub extra_of: Option<(String, String)>,
 }
 
 /// Creates the game (metadata only; it joins the library once installed) and queues the transfer.
+/// What the itch.io dialog picked: the game's file and extra files to put next to it.
+#[derive(Debug, Clone, Default)]
+pub struct ItchChoice {
+    pub game_id: i64,
+    pub upload_id: i64,
+    pub download_key_id: Option<i64>,
+    /// Upload ids of extras (soundtrack …); they go into the game's "Extras" folder.
+    pub extras: Vec<i64>,
+}
+
 pub async fn enqueue_transfer(pool: &SqlitePool, input: &NewTransfer) -> AppResult<String> {
     let title = input.title.trim();
     if title.is_empty() {
@@ -241,6 +299,42 @@ pub async fn enqueue_transfer(pool: &SqlitePool, input: &NewTransfer) -> AppResu
         )));
     }
     let origin = input.origin.unwrap_or(DownloadOrigin::Direct);
+    let game_id = match &input.extra_of {
+        Some((game_id, _)) => game_id.clone(),
+        None => new_game(pool, input, title, origin).await?,
+    };
+    let now = now_iso();
+    let id = new_id(&game_id);
+    sqlx::query(
+        "INSERT INTO downloads (id, game_id, source_id, origin, status, queue_position, queued_at, url, file_name, \
+           checksum_sha256, target_dir, itch_game_id, itch_upload_id, itch_download_key_id, install_path, extra) \
+         VALUES (?, ?, 'manual', ?, 'queued', (SELECT COALESCE(MAX(queue_position), -1) + 1 FROM downloads), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(&game_id)
+    .bind(origin.as_str())
+    .bind(&now)
+    .bind(&input.url)
+    .bind(&input.file_name)
+    .bind(input.sha256.as_ref().map(|s| s.trim().to_lowercase()))
+    .bind(&input.target_dir)
+    .bind(input.itch_game_id)
+    .bind(input.itch_upload_id)
+    .bind(input.itch_download_key_id)
+    .bind(&input.install_path)
+    .bind(input.extra_of.as_ref().map(|(_, name)| name))
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+/// A new game for a link or itch.io download (id from the title or itch id).
+async fn new_game(
+    pool: &SqlitePool,
+    input: &NewTransfer,
+    title: &str,
+    origin: DownloadOrigin,
+) -> AppResult<String> {
     let base = match (origin, input.itch_game_id) {
         (DownloadOrigin::Itch, Some(id)) => format!("itch-{id}"),
         _ => format!("dl-{}", slugify(title)),
@@ -296,26 +390,7 @@ pub async fn enqueue_transfer(pool: &SqlitePool, input: &NewTransfer) -> AppResu
     .bind(&now)
     .execute(pool)
     .await?;
-    let id = new_id(&game_id);
-    sqlx::query(
-        "INSERT INTO downloads (id, game_id, source_id, origin, status, queue_position, queued_at, url, file_name, \
-           checksum_sha256, target_dir, itch_game_id, itch_upload_id, itch_download_key_id) \
-         VALUES (?, ?, 'manual', ?, 'queued', (SELECT COALESCE(MAX(queue_position), -1) + 1 FROM downloads), ?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(&game_id)
-    .bind(origin.as_str())
-    .bind(&now)
-    .bind(&input.url)
-    .bind(&input.file_name)
-    .bind(input.sha256.as_ref().map(|s| s.trim().to_lowercase()))
-    .bind(&input.target_dir)
-    .bind(input.itch_game_id)
-    .bind(input.itch_upload_id)
-    .bind(input.itch_download_key_id)
-    .execute(pool)
-    .await?;
-    Ok(id)
+    Ok(game_id)
 }
 
 pub async fn set_status(pool: &SqlitePool, id: &str, status: DownloadStatus) -> AppResult<()> {
@@ -404,6 +479,26 @@ pub async fn set_checksum_verified(pool: &SqlitePool, id: &str) -> AppResult<()>
 }
 
 /// Puts the installed game into the library (or updates the existing entry) and completes the download.
+/// An extra is in the game's "Extras" folder; the library stays as it is.
+pub async fn complete_extra(pool: &SqlitePool, id: &str, path: &str) -> AppResult<()> {
+    sqlx::query("UPDATE downloads SET install_path = ? WHERE id = ?")
+        .bind(path)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    set_status(pool, id, DownloadStatus::Completed).await
+}
+
+/// Queued or running extras of a game.
+pub async fn active_extras(pool: &SqlitePool, game_id: &str) -> AppResult<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM downloads WHERE game_id = ? AND extra IS NOT NULL AND queue_position IS NOT NULL",
+    )
+    .bind(game_id)
+    .fetch_all(pool)
+    .await?)
+}
+
 pub async fn complete_install(
     pool: &SqlitePool,
     id: &str,

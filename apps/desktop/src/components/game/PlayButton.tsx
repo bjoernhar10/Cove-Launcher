@@ -9,6 +9,7 @@ import { useDownloads } from "../../stores/downloads.ts";
 import { invalidateQueries } from "../../stores/query.ts";
 import { useRunningGames } from "../../stores/running.ts";
 import { errorMessage, toast } from "../../stores/toasts.ts";
+import { StoreInstallDialog } from "../../features/StoreInstallDialog.tsx";
 import { Button, ButtonLink, type ButtonSize } from "../ui/Button.tsx";
 
 interface PlayButtonProps {
@@ -21,12 +22,14 @@ interface PlayButtonProps {
 /**
  * The primary action for a library game:
  * running → "Läuft" (click stops) · installed → "Spielen" ·
- * manual without executable → "Einrichten" · store game → "Installieren" / download progress.
+ * manual without executable → "Einrichten" · store game → "Installieren" (GOG/Epic: install dialog,
+ * Steam: Steam) / download progress.
  */
 export function PlayButton({ item, size = "md", iconOnly = false, className }: PlayButtonProps) {
   const t = useMessages();
   const { entry, game } = item;
   const [busy, setBusy] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const running = useRunningGames((s) => game.id in s.games);
   const download = useDownloads((s) =>
     s.items.find((d) => d.download.gameId === entry.gameId && d.download.queuePosition !== null),
@@ -115,22 +118,39 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
     );
   }
 
+  // GOG and Epic games are installed by Cove (install dialog); Steam games by Steam.
+  const ownInstall = entry.source === "gog" || entry.source === "epic";
   return (
-    <Button
-      variant="secondary"
-      size={size}
-      icon={Download}
-      iconOnly={iconOnly}
-      label={iconOnly ? t.play.installTitle(game.title) : t.play.install}
-      disabled={busy}
-      className={className}
-      onClick={() =>
-        void run(async () => {
-          await api.downloads.enqueueDownload(game.id);
-          toast(t.play.handedOff(game.title, SOURCE_LABELS[entry.source]));
-          invalidateQueries();
-        })
-      }
-    />
+    <>
+      <Button
+        variant="secondary"
+        size={size}
+        icon={Download}
+        iconOnly={iconOnly}
+        label={iconOnly ? t.play.installTitle(game.title) : t.play.install}
+        disabled={busy}
+        className={className}
+        onClick={() => {
+          if (ownInstall) {
+            setInstalling(true);
+            return;
+          }
+          void run(async () => {
+            await api.downloads.enqueueDownload(game.id);
+            toast(t.play.handedOff(game.title, SOURCE_LABELS[entry.source]));
+            invalidateQueries();
+          });
+        }}
+      />
+      {installing && (
+        <StoreInstallDialog
+          item={item}
+          open
+          onClose={() => {
+            setInstalling(false);
+          }}
+        />
+      )}
+    </>
   );
 }

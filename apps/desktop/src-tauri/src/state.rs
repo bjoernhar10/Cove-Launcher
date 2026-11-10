@@ -31,6 +31,8 @@ pub struct AppState {
     pub login_flows: Arc<LoginFlows>,
     pub cove_achievements: Arc<CoveAchievements>,
     pub downloads: Arc<DownloadManager>,
+    /// "Spiel verschieben" in the background.
+    pub mover: Arc<crate::mover::Mover>,
     /// Opens a URL in the system browser.
     pub open_url: OpenUrl,
 }
@@ -51,6 +53,9 @@ pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
         library: LibrarySettings {
             scan_folders: Vec::new(),
             scan_on_startup: false,
+            game_folders: vec![games_dir.to_string_lossy().into_owned()],
+            steam_silent_start: true,
+            epic_cloud_saves: true,
         },
         downloads: DownloadSettings {
             directory: games_dir.to_string_lossy().into_owned(),

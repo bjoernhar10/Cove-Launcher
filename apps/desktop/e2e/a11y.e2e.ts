@@ -2,11 +2,13 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { openCove } from "./app.ts";
 
-/** Every page of Cove, checked in light and dark mode. */
+/** Every page of Cove (dark only). */
 const PAGES = [
   "/",
   "/library",
   "/library/game-0",
+  "/library/game-0?tab=settings",
+  "/library/game-3?tab=settings",
   "/catalogue",
   "/catalogue/igdb-1",
   "/downloads",

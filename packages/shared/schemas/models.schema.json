@@ -664,6 +664,43 @@
       ],
       "type": "object"
     },
+    "DlcOption": {
+      "additionalProperties": false,
+      "description": "One DLC in the install dialog.",
+      "properties": {
+        "downloadBytes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "GOG product id or Epic app name.",
+          "type": "string"
+        },
+        "installBytes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "selected": {
+          "description": "Ticked: installed with the game (remembers the last choice for this game).",
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "downloadBytes",
+        "installBytes",
+        "selected"
+      ],
+      "type": "object"
+    },
     "Download": {
       "additionalProperties": false,
       "properties": {
@@ -686,6 +723,13 @@
           ]
         },
         "executablePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extra": {
+          "description": "itch.io extra (soundtrack …) of the game: its file name; null for the game itself.",
           "type": [
             "string",
             "null"
@@ -759,7 +803,8 @@
         "fileName",
         "checksumVerified",
         "installPath",
-        "executablePath"
+        "executablePath",
+        "extra"
       ],
       "type": "object"
     },
@@ -883,6 +928,37 @@
         "script"
       ],
       "type": "string"
+    },
+    "FolderInfo": {
+      "additionalProperties": false,
+      "description": "A folder the user may install into (install dialog).",
+      "properties": {
+        "freeBytes": {
+          "description": "Free space on its drive, null if unknown.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "needsAdmin": {
+          "description": "Windows: below \"Program Files\", which needs admin rights.",
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string"
+        },
+        "writable": {
+          "description": "Cove may create files there (or create the folder).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "freeBytes",
+        "writable",
+        "needsAdmin"
+      ],
+      "type": "object"
     },
     "Game": {
       "additionalProperties": false,
@@ -1039,6 +1115,38 @@
       "description": "Stable game identifier (store-independent, assigned by the core).",
       "type": "string"
     },
+    "GameMoveProgress": {
+      "additionalProperties": false,
+      "description": "Event `game-move-progress` while a game folder is moved.",
+      "properties": {
+        "copiedBytes": {
+          "type": "number"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "status": {
+          "$ref": "#/definitions/MoveStatus"
+        },
+        "totalBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "gameId",
+        "status",
+        "copiedBytes",
+        "totalBytes",
+        "error"
+      ],
+      "type": "object"
+    },
     "GameState": {
       "enum": [
         "running",
@@ -1072,6 +1180,27 @@
         "state",
         "startedAt",
         "sessionSeconds"
+      ],
+      "type": "object"
+    },
+    "GameUpdateInfo": {
+      "additionalProperties": false,
+      "description": "Update state of a store game Cove installed (GOG, Epic).",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "installedVersion": {
+          "type": "string"
+        },
+        "latestVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "available",
+        "installedVersion",
+        "latestVersion"
       ],
       "type": "object"
     },
@@ -1161,6 +1290,76 @@
       ],
       "type": "object"
     },
+    "InstallPreview": {
+      "additionalProperties": false,
+      "description": "Sizes shown in the install dialog before a download starts.",
+      "properties": {
+        "dlcs": {
+          "description": "Owned DLCs that can be installed with the game (GOG, Epic); sizes above are the game alone.",
+          "items": {
+            "$ref": "#/definitions/DlcOption"
+          },
+          "type": "array"
+        },
+        "downloadBytes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "installBytes": {
+          "description": "Size after the install; null when it is only known after unpacking.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "launcherOnly": {
+          "description": "Why Cove can't install it and the store's launcher must (anti-cheat, third-party launcher).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "downloadBytes",
+        "installBytes",
+        "launcherOnly",
+        "dlcs"
+      ],
+      "type": "object"
+    },
+    "InstallTarget": {
+      "additionalProperties": false,
+      "description": "Where the install dialog puts a game.",
+      "properties": {
+        "excludedDlcs": {
+          "description": "DLCs left out (ids from `InstallPreview.dlcs`); kept for later updates.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "folder": {
+          "description": "Games folder; Cove creates a subfolder named after the game.",
+          "type": "string"
+        },
+        "makeDefault": {
+          "description": "\"Diesen Ordner als Standard verwenden\".",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "folder",
+        "makeDefault"
+      ],
+      "type": "object"
+    },
     "IsoDate": {
       "description": "Calendar date, e.g. `2026-11-03`.",
       "type": "string"
@@ -1230,6 +1429,10 @@
     "ItchUpload": {
       "additionalProperties": false,
       "properties": {
+        "extra": {
+          "description": "Not the game itself (soundtrack, artbook …): offered as an extra.",
+          "type": "boolean"
+        },
         "fileName": {
           "type": "string"
         },
@@ -1253,7 +1456,8 @@
         "uploadId",
         "fileName",
         "sizeBytes",
-        "platforms"
+        "platforms",
+        "extra"
       ],
       "type": "object"
     },
@@ -1317,6 +1521,16 @@
       ],
       "type": "object"
     },
+    "LaunchVia": {
+      "description": "How a game is started: by Cove itself or through a store client.",
+      "enum": [
+        "direct",
+        "steam",
+        "epicLauncher",
+        "gogGalaxy"
+      ],
+      "type": "string"
+    },
     "LibraryEntry": {
       "additionalProperties": false,
       "description": "A game in the user's library.",
@@ -1364,6 +1578,10 @@
         "installed": {
           "type": "boolean"
         },
+        "installedByCove": {
+          "description": "Installed by Cove's download manager: Cove may move and uninstall it.",
+          "type": "boolean"
+        },
         "lastPlayedAt": {
           "anyOf": [
             {
@@ -1376,6 +1594,17 @@
         },
         "launchOptions": {
           "$ref": "#/definitions/LaunchOptions"
+        },
+        "launchVia": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LaunchVia"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How \"Spielen\" starts the game; null when it can't be started yet."
         },
         "matchStatus": {
           "$ref": "#/definitions/MatchStatus"
@@ -1409,7 +1638,9 @@
         "achievements",
         "launchOptions",
         "catalogId",
-        "matchStatus"
+        "matchStatus",
+        "launchVia",
+        "installedByCove"
       ],
       "type": "object"
     },
@@ -1450,6 +1681,17 @@
     "LibrarySettings": {
       "additionalProperties": false,
       "properties": {
+        "epicCloudSaves": {
+          "description": "Sync Epic cloud saves before and after playing (games Cove installed).",
+          "type": "boolean"
+        },
+        "gameFolders": {
+          "description": "Folders games are installed into (e.g. one per drive). The default is `downloads.directory`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "scanFolders": {
           "items": {
             "type": "string"
@@ -1458,11 +1700,18 @@
         },
         "scanOnStartup": {
           "type": "boolean"
+        },
+        "steamSilentStart": {
+          "description": "Start Steam with `-silent` (tray only) before a Steam game starts.",
+          "type": "boolean"
         }
       },
       "required": [
         "scanFolders",
-        "scanOnStartup"
+        "scanOnStartup",
+        "gameFolders",
+        "steamSilentStart",
+        "epicCloudSaves"
       ],
       "type": "object"
     },
@@ -1577,6 +1826,15 @@
         "pending",
         "matched",
         "rejected"
+      ],
+      "type": "string"
+    },
+    "MoveStatus": {
+      "enum": [
+        "copying",
+        "verifying",
+        "completed",
+        "failed"
       ],
       "type": "string"
     },
@@ -2356,6 +2614,48 @@
       ],
       "type": "string"
     },
+    "StoreDlc": {
+      "additionalProperties": false,
+      "description": "A DLC of a store game as the store sees it (Steam: managed in Steam itself).",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "installed": {
+          "description": "Installed on this computer.",
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "installed"
+      ],
+      "type": "object"
+    },
+    "StoreDlcList": {
+      "additionalProperties": false,
+      "properties": {
+        "dlcs": {
+          "items": {
+            "$ref": "#/definitions/StoreDlc"
+          },
+          "type": "array"
+        },
+        "total": {
+          "description": "All DLCs of the game; the list is cut off for games with hundreds.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dlcs",
+        "total"
+      ],
+      "type": "object"
+    },
     "StoreProblem": {
       "additionalProperties": false,
       "properties": {
@@ -2435,6 +2735,14 @@
         "system",
         "light",
         "dark"
+      ],
+      "type": "string"
+    },
+    "UninstallMethod": {
+      "description": "What `game_uninstall` did: Cove deleted the folder, or Steam asks and removes the game.",
+      "enum": [
+        "removed",
+        "steam"
       ],
       "type": "string"
     },

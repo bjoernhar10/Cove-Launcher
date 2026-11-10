@@ -127,7 +127,14 @@ export interface LibraryEntry {
   /** Linked catalogue entry (e.g. `igdb-1942`), null if not matched. */
   catalogId: string | null;
   matchStatus: MatchStatus;
+  /** How "Spielen" starts the game; null when it can't be started yet. */
+  launchVia: LaunchVia | null;
+  /** Installed by Cove's download manager: Cove may move and uninstall it. */
+  installedByCove: boolean;
 }
+
+/** How a game is started: by Cove itself or through a store client. */
+export type LaunchVia = "direct" | "steam" | "epicLauncher" | "gogGalaxy";
 
 /**
  * Catalogue matching state of a library game:
@@ -215,6 +222,87 @@ export interface Download {
   /** Game folder after a successful install. */
   installPath: string | null;
   executablePath: string | null;
+  /** itch.io extra (soundtrack …) of the game: its file name; null for the game itself. */
+  extra: string | null;
+}
+
+/** A folder the user may install into (install dialog). */
+export interface FolderInfo {
+  path: string;
+  /** Free space on its drive, null if unknown. */
+  freeBytes: number | null;
+  /** Cove may create files there (or create the folder). */
+  writable: boolean;
+  /** Windows: below "Program Files", which needs admin rights. */
+  needsAdmin: boolean;
+}
+
+/** Sizes shown in the install dialog before a download starts. */
+export interface InstallPreview {
+  title: string;
+  downloadBytes: number | null;
+  /** Size after the install; null when it is only known after unpacking. */
+  installBytes: number | null;
+  /** Why Cove can't install it and the store's launcher must (anti-cheat, third-party launcher). */
+  launcherOnly: string | null;
+  /** Owned DLCs that can be installed with the game (GOG, Epic); sizes above are the game alone. */
+  dlcs: DlcOption[];
+}
+
+/** One DLC in the install dialog. */
+export interface DlcOption {
+  /** GOG product id or Epic app name. */
+  id: string;
+  title: string;
+  downloadBytes: number | null;
+  installBytes: number | null;
+  /** Ticked: installed with the game (remembers the last choice for this game). */
+  selected: boolean;
+}
+
+/** Where the install dialog puts a game. */
+export interface InstallTarget {
+  /** Games folder; Cove creates a subfolder named after the game. */
+  folder: string;
+  /** "Diesen Ordner als Standard verwenden". */
+  makeDefault: boolean;
+  /** DLCs left out (ids from `InstallPreview.dlcs`); kept for later updates. */
+  excludedDlcs?: string[];
+}
+
+export type MoveStatus = "copying" | "verifying" | "completed" | "failed";
+
+/** Event `game-move-progress` while a game folder is moved. */
+export interface GameMoveProgress {
+  gameId: GameId;
+  status: MoveStatus;
+  copiedBytes: number;
+  totalBytes: number;
+  error: string | null;
+}
+
+/** Update state of a store game Cove installed (GOG, Epic). */
+export interface GameUpdateInfo {
+  available: boolean;
+  installedVersion: string;
+  latestVersion: string;
+}
+
+/** What `game_uninstall` did: Cove deleted the folder, or Steam asks and removes the game. */
+export type UninstallMethod = "removed" | "steam";
+
+/** A DLC of a store game as the store sees it (Steam: managed in Steam itself). */
+export interface StoreDlc {
+  id: string;
+  title: string;
+  /** Installed on this computer. */
+  installed: boolean;
+}
+
+export interface StoreDlcList {
+  dlcs: StoreDlc[];
+  /** All DLCs of the game; the list is cut off for games with hundreds. */
+  total: number;
 }
 
 /** Event `download-progress`, at most about 4 per second and download. */
@@ -255,6 +343,8 @@ export interface ItchUpload {
   fileName: string;
   sizeBytes: number | null;
   platforms: Platform[];
+  /** Not the game itself (soundtrack, artbook …): offered as an extra. */
+  extra: boolean;
 }
 
 /** Download joined with its game metadata. */
@@ -535,6 +625,12 @@ export interface AppearanceSettings {
 export interface LibrarySettings {
   scanFolders: string[];
   scanOnStartup: boolean;
+  /** Folders games are installed into (e.g. one per drive). The default is `downloads.directory`. */
+  gameFolders: string[];
+  /** Start Steam with `-silent` (tray only) before a Steam game starts. */
+  steamSilentStart: boolean;
+  /** Sync Epic cloud saves before and after playing (games Cove installed). */
+  epicCloudSaves: boolean;
 }
 
 export interface DownloadSettings {

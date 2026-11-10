@@ -4,6 +4,7 @@ import type {
   CatalogSort,
   CompatibilityTool,
   Genre,
+  LaunchVia,
   Platform,
   StoreSource,
 } from "@cove/shared";
@@ -25,6 +26,9 @@ export const SORT_LABELS: Record<CatalogSort, string> = localized((m) => m.label
 
 
 export const ACCENT_LABELS: Record<AccentColor, string> = localized((m) => m.labels.accent);
+
+/** How a game starts: "Direkt", "Über Steam" … */
+export const LAUNCH_VIA_LABELS: Record<LaunchVia, string> = localized((m) => m.game.launchVia);
 
 export const COMPAT_LABELS: Record<CompatibilityTool, string> = localized((m) => m.labels.compat);
 

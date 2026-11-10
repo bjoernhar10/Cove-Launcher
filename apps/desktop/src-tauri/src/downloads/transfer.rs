@@ -45,7 +45,7 @@ pub struct Remote {
     pub file_name: Option<String>,
 }
 
-fn http_error(error: reqwest::Error) -> AppError {
+pub(crate) fn http_error(error: reqwest::Error) -> AppError {
     // Signed download links (itch.io) must not end up in messages or logs.
     let error = error.without_url();
     if error.is_timeout() || error.is_connect() {
@@ -61,7 +61,7 @@ fn http_error(error: reqwest::Error) -> AppError {
     }
 }
 
-fn status_error(status: StatusCode) -> AppError {
+pub(crate) fn status_error(status: StatusCode) -> AppError {
     match status.as_u16() {
         404 | 410 => AppError::Download(tr!(
             "Die Datei gibt es unter diesem Link nicht (mehr).",

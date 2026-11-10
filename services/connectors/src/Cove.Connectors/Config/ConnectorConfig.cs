@@ -4,7 +4,12 @@ using System.Text.Json.Serialization;
 namespace Cove.Connectors.Config;
 
 /// <param name="CoverUrl">Portrait library artwork; <c>{appId}</c> is replaced. The game icon is the fallback.</param>
-public sealed record SteamConfig(string OpenIdEndpoint, string PrivacySettingsUrl, string? CoverUrl = null);
+public sealed record SteamConfig(
+    string OpenIdEndpoint,
+    string PrivacySettingsUrl,
+    string? CoverUrl = null,
+    string AppDetailsUrl = "https://store.steampowered.com/api/appdetails?appids={appId}&filters=basic&l={language}",
+    string StoreItemsUrl = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?input_json={input}");
 
 public sealed record GogConfig(
     string ClientId,
@@ -13,7 +18,12 @@ public sealed record GogConfig(
     string TokenUrl,
     string RedirectUri,
     string UserDataUrl,
-    string OwnedProductsUrl);
+    string OwnedProductsUrl,
+    string OwnedIdsUrl,
+    string BuildsUrl,
+    string MetaUrl,
+    string SecureLinkUrl,
+    string ProductDownloadsUrl);
 
 public sealed record EpicConfig(
     string ClientId,
@@ -23,7 +33,11 @@ public sealed record EpicConfig(
     string TokenUrl,
     string LibraryUrl,
     string PlaytimeUrl,
-    string CatalogUrl);
+    string CatalogUrl,
+    string AssetsUrl,
+    string ExchangeUrl,
+    string OwnershipTokenUrl,
+    string SavesUrl);
 
 /// <summary>Store endpoints and client ids (Config/connectors.json, embedded).</summary>
 public sealed record ConnectorConfig(SteamConfig Steam, GogConfig Gog, EpicConfig Epic)

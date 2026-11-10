@@ -1,3 +1,4 @@
+import { formatBytes } from "./lib/format.ts";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App.tsx";
@@ -13,6 +14,14 @@ beforeEach(() => {
   ]);
   usePreferences.setState({ accent: "blue", sidebarCollapsed: false, libraryView: "grid", libraryGroup: "all" });
 });
+
+/** "Installieren" is enabled once the folder was checked. */
+async function clickInstall(container: HTMLElement): Promise<void> {
+  await waitFor(() => {
+    expect(within(container).getByRole<HTMLButtonElement>("button", { name: "Installieren" }).disabled).toBe(false);
+  });
+  fireEvent.click(within(container).getByRole("button", { name: "Installieren" }));
+}
 
 function renderAt(path: string) {
   window.location.hash = `#${path}`;
@@ -114,6 +123,32 @@ describe("Settings", () => {
     expect(document.documentElement.dataset.accent).toBe("teal");
     await waitFor(() => {
       expect(core.settings.appearance).toEqual({ theme: "dark", accent: "teal" });
+    });
+  });
+
+  it("manages games folders and silent Steam in the library settings", async () => {
+    core.pickedFolder = "/mnt/ssd/Games";
+    renderAt("/settings/library");
+    expect(await screen.findByText("/home/u/Games")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Ordner hinzufügen" }));
+    expect(await screen.findByText("/mnt/ssd/Games")).toBeDefined();
+    await waitFor(() => {
+      expect(core.settings.library.gameFolders).toEqual(["/home/u/Games", "/mnt/ssd/Games"]);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "/mnt/ssd/Games als Standard verwenden" }));
+    await waitFor(() => {
+      expect(core.settings.downloads.directory).toBe("/mnt/ssd/Games");
+    });
+    fireEvent.click(screen.getByRole("button", { name: "/home/u/Games aus der Liste entfernen" }));
+    await waitFor(() => {
+      expect(core.settings.library.gameFolders).toEqual(["/mnt/ssd/Games"]);
+    });
+
+    const steam = screen.getByRole("switch", { name: "Steam unsichtbar im Hintergrund starten" });
+    expect(steam.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(steam);
+    await waitFor(() => {
+      expect(core.settings.library.steamSilentStart).toBe(false);
     });
   });
 
@@ -348,10 +383,62 @@ describe("Downloads", () => {
     expect(await within(dialog).findByText("Das ist kein gültiger Link.")).toBeDefined();
     fireEvent.change(within(dialog).getByLabelText("Link"), { target: { value: "https://example.com/lantern.zip" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Herunterladen" }));
+    // Install dialog: sizes, default games folder, free space.
+    const install = await screen.findByRole("dialog", { name: "lantern.zip installieren" });
+    expect(await within(install).findByText("Wird beim Entpacken ermittelt")).toBeDefined();
+    expect(await within(install).findByText(/frei auf diesem Laufwerk/)).toBeDefined();
+    expect(within(install).getByText("Wird installiert in /home/u/Games/lantern.zip")).toBeDefined();
+    expect(within(install).queryByLabelText("Diesen Ordner als Standard verwenden")).toBeNull();
+    await clickInstall(install);
     await waitFor(() => {
       expect(core.downloads).toHaveLength(1);
     });
+    expect(core.calls.find((c) => c.command === "downloads_add_url")?.args).toMatchObject({
+      target: { folder: "/home/u/Games", makeDefault: false },
+    });
     expect(await screen.findByText("lantern.zip")).toBeDefined();
+  });
+
+  it("blocks installs without enough space and offers another folder", async () => {
+    core.freeBytes["/home/u/Games"] = 1_000_000_000;
+    core.pickedFolder = "/mnt/big/Games";
+    renderAt("/downloads");
+    fireEvent.click(await screen.findByRole("button", { name: "Download per Link" }));
+    const dialog = await screen.findByRole("dialog", { name: "Download per Link" });
+    fireEvent.change(within(dialog).getByLabelText("Link"), { target: { value: "https://example.com/big.zip" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Herunterladen" }));
+    const install = await screen.findByRole("dialog", { name: "big.zip installieren" });
+    expect(await within(install).findByText(/Nicht genug Speicherplatz/)).toBeDefined();
+    expect(within(install).getByRole<HTMLButtonElement>("button", { name: "Installieren" }).disabled).toBe(true);
+
+    fireEvent.click(within(install).getByRole("button", { name: "Ändern" }));
+    expect(await within(install).findByText("Wird installiert in /mnt/big/Games/big.zip")).toBeDefined();
+    await waitFor(() => {
+      expect(within(install).getByRole<HTMLButtonElement>("button", { name: "Installieren" }).disabled).toBe(false);
+    });
+    fireEvent.click(within(install).getByLabelText("Diesen Ordner als Standard verwenden"));
+    fireEvent.click(within(install).getByRole("button", { name: "Installieren" }));
+    await waitFor(() => {
+      expect(core.calls.find((c) => c.command === "downloads_add_url")?.args).toMatchObject({
+        target: { folder: "/mnt/big/Games", makeDefault: true },
+      });
+    });
+  });
+
+  it("warns about Program Files and read-only folders", async () => {
+    core.settings.downloads.directory = "C:\\Program Files\\Games";
+    core.settings.library.gameFolders = ["C:\\Program Files\\Games", "/readonly/games"];
+    renderAt("/downloads");
+    fireEvent.click(await screen.findByRole("button", { name: "Download per Link" }));
+    const dialog = await screen.findByRole("dialog", { name: "Download per Link" });
+    fireEvent.change(within(dialog).getByLabelText("Link"), { target: { value: "https://example.com/x.zip" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Herunterladen" }));
+    const install = await screen.findByRole("dialog", { name: "x.zip installieren" });
+    expect(await within(install).findByText(/braucht Administrator-Rechte/)).toBeDefined();
+    expect(within(install).getByText("Wird installiert in C:\\Program Files\\Games\\x.zip")).toBeDefined();
+    fireEvent.change(within(install).getByLabelText("Zielordner"), { target: { value: "/readonly/games" } });
+    expect(await within(install).findByText(/darf in diesen Ordner nicht schreiben/)).toBeDefined();
+    expect(within(install).getByRole<HTMLButtonElement>("button", { name: "Installieren" }).disabled).toBe(true);
   });
 
   it("hands store installs to the client and shows that", async () => {
@@ -373,8 +460,67 @@ describe("Downloads", () => {
     const dialog = await screen.findByRole("dialog", { name: "Von itch.io herunterladen" });
     fireEvent.click(await within(dialog).findByRole("button", { name: "Zeta" }));
     fireEvent.click(await within(dialog).findByRole("button", { name: "Herunterladen" }));
+    expect(await within(dialog).findByText("Zeta installieren")).toBeDefined();
+    expect(await within(dialog).findByText("Wird beim Entpacken ermittelt")).toBeDefined();
+    // The soundtrack is no game file of its own, but an extra to tick.
+    expect(within(dialog).queryByText("zeta-soundtrack.zip")).toBeNull();
+    expect(within(dialog).getByText("0 von 1 Extras werden mitgeladen")).toBeDefined();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Extras auswählen" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /zeta-soundtrack\.zip/ }));
+    await clickInstall(dialog);
     await waitFor(() => {
       expect(core.downloads[0]?.download.origin).toBe("itch");
+    });
+    expect(core.itchExtras).toEqual([[101]]);
+  });
+
+  it("names itch.io extras in the download list", async () => {
+    const extra = fakeDownload("x1", "Zeta", { origin: "itch", queuePosition: 0, status: "downloading", totalBytes: 10, downloadedBytes: 5 });
+    extra.download.extra = "zeta-soundtrack.zip";
+    core.downloads = [extra];
+    renderAt("/downloads");
+    expect(await screen.findByRole("link", { name: "Zeta: Extra zeta-soundtrack.zip" })).toBeDefined();
+  });
+
+  it("changes the DLCs of an Epic game Cove installed", async () => {
+    core.accounts.epic = { ...core.accounts.epic, status: "connected", connected: true };
+    core.library = [fakeItem("epic-sugar", "Sugar", { source: "epic", storeGameId: "Sugar", installedByCove: true })];
+    core.dlcs["epic-sugar"] = [
+      { id: "SugarIsland", title: "Sugar Island", downloadBytes: 1_000_000_000, installBytes: 2_000_000_000, selected: true },
+      { id: "NightMarket", title: "Night Market", downloadBytes: 500_000_000, installBytes: 500_000_000, selected: false },
+    ];
+    renderAt("/library/epic-sugar?tab=settings");
+    const section = await screen.findByRole("region", { name: "DLCs" });
+    fireEvent.click(within(section).getByRole("button", { name: "DLCs ändern" }));
+    const dialog = await screen.findByRole("dialog", { name: "DLCs von Sugar" });
+    const apply = await within(dialog).findByRole<HTMLButtonElement>("button", { name: "Übernehmen" });
+    expect(apply.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Sugar Island/ }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Night Market/ }));
+    expect(apply.disabled).toBe(false);
+    fireEvent.click(apply);
+    await waitFor(() => {
+      expect(core.downloads[0]?.download.id).toBe("up-epic-sugar");
+    });
+    expect(core.dlcs["epic-sugar"].map((d) => d.selected)).toEqual([false, true]);
+  });
+
+  it("lists Steam DLCs and opens Steam to change them", async () => {
+    core.library = [fakeItem("steam-620", "Portal 2", { source: "steam", storeGameId: "620" })];
+    core.steamDlcs["steam-620"] = {
+      dlcs: [
+        { id: "651", title: "Peer Review", installed: true },
+        { id: "652", title: "Art Pack", installed: false },
+      ],
+      total: 2,
+    };
+    renderAt("/library/steam-620?tab=settings");
+    const section = await screen.findByRole("region", { name: "DLCs" });
+    expect(await within(section).findByText("Peer Review")).toBeDefined();
+    expect(within(section).getAllByText("Installiert")).toHaveLength(1);
+    fireEvent.click(within(section).getByRole("button", { name: "In Steam verwalten" }));
+    await waitFor(() => {
+      expect(core.openedUrls).toEqual(["steam://nav/games/details/620"]);
     });
   });
 
@@ -382,6 +528,175 @@ describe("Downloads", () => {
     renderAt("/downloads");
     fireEvent.click(await screen.findByRole("button", { name: "Von itch.io" }));
     expect(await screen.findByText("itch.io ist nicht verbunden")).toBeDefined();
+  });
+});
+
+describe("GOG installs", () => {
+  it("installs a GOG game through the install dialog", async () => {
+    core.accounts.gog = { ...core.accounts.gog, status: "connected", connected: true };
+    core.library = [fakeItem("gog-100", "Saltmarsh", { source: "gog", storeGameId: "100", installed: false, installPath: null, executablePath: null })];
+    renderAt("/library/gog-100");
+    fireEvent.click(await screen.findByRole("button", { name: "Installieren" }));
+    const dialog = await screen.findByRole("dialog", { name: "Saltmarsh installieren" });
+    expect(await within(dialog).findByText("Wird installiert in /home/u/Games/Saltmarsh")).toBeDefined();
+    expect(within(dialog).queryByText("Wird beim Entpacken ermittelt")).toBeNull();
+    await clickInstall(dialog);
+    await waitFor(() => {
+      expect(core.downloads[0]?.download.origin).toBe("gog");
+    });
+    expect(core.calls.find((c) => c.command === "downloads_enqueue")?.args).toMatchObject({
+      gameId: "gog-100",
+      target: { folder: "/home/u/Games", makeDefault: false },
+    });
+  });
+
+  it("asks to sign in to GOG first", async () => {
+    core.library = [fakeItem("gog-100", "Saltmarsh", { source: "gog", storeGameId: "100", installed: false, installPath: null, executablePath: null })];
+    renderAt("/library/gog-100");
+    fireEvent.click(await screen.findByRole("button", { name: "Installieren" }));
+    const dialog = await screen.findByRole("dialog", { name: "Saltmarsh installieren" });
+    expect(await within(dialog).findByText("Du bist nicht bei GOG angemeldet.")).toBeDefined();
+    expect(core.downloads).toHaveLength(0);
+  });
+
+  it("updates a GOG game Cove installed", async () => {
+    core.gogUpdate = { available: true, installedVersion: "1.0", latestVersion: "1.1" };
+    core.library = [fakeItem("gog-100", "Saltmarsh", { source: "gog", storeGameId: "100", installedByCove: true })];
+    renderAt("/library/gog-100?tab=settings");
+    const section = await screen.findByRole("region", { name: "Updates" });
+    expect(await within(section).findByText(/Version 1.1 ist verfügbar/)).toBeDefined();
+    fireEvent.click(within(section).getByRole("button", { name: "Aktualisieren" }));
+    await waitFor(() => {
+      expect(core.downloads[0]?.download.id).toBe("up-gog-100");
+    });
+    // Cove-installed GOG games can be moved and uninstalled, too.
+    expect(screen.getByRole("region", { name: "Spiel verschieben" })).toBeDefined();
+    expect(screen.getByRole("region", { name: "Deinstallieren" })).toBeDefined();
+  });
+});
+
+describe("Epic installs", () => {
+  const sugar = () => fakeItem("epic-sugar", "Sugar", { source: "epic", storeGameId: "Sugar", installed: false, installPath: null, executablePath: null });
+
+  it("installs an Epic game through the install dialog", async () => {
+    core.accounts.epic = { ...core.accounts.epic, status: "connected", connected: true };
+    core.library = [sugar()];
+    core.dlcs["epic-sugar"] = [
+      { id: "SugarIsland", title: "Sugar Island", downloadBytes: 1_000_000_000, installBytes: 2_000_000_000, selected: true },
+      { id: "NightMarket", title: "Night Market", downloadBytes: 500_000_000, installBytes: 500_000_000, selected: false },
+    ];
+    renderAt("/library/epic-sugar");
+    fireEvent.click(await screen.findByRole("button", { name: "Installieren" }));
+    const dialog = await screen.findByRole("dialog", { name: "Sugar installieren" });
+    // The last choice is ticked; the sizes include the ticked DLCs.
+    expect(await within(dialog).findByText("1 von 2 DLCs werden mitinstalliert")).toBeTruthy();
+    expect(within(dialog).getByText(formatBytes(9_500_000_000 + 1_000_000_000))).toBeTruthy();
+    const choose = within(dialog).getByRole("button", { name: "DLCs auswählen" });
+    expect(choose.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(choose);
+    const island = within(dialog).getByRole("checkbox", { name: /Sugar Island/ });
+    const market = within(dialog).getByRole("checkbox", { name: /Night Market/ });
+    expect([(island as HTMLInputElement).checked, (market as HTMLInputElement).checked]).toEqual([true, false]);
+    fireEvent.click(island);
+    fireEvent.click(market);
+    expect(within(dialog).getByText("1 von 2 DLCs werden mitinstalliert")).toBeTruthy();
+    expect(within(dialog).getByText(formatBytes(9_500_000_000 + 500_000_000))).toBeTruthy();
+    await clickInstall(dialog);
+    await waitFor(() => {
+      expect(core.downloads[0]?.download.origin).toBe("epic");
+    });
+    expect(core.installTargets["epic-sugar"]?.excludedDlcs).toEqual(["SugarIsland"]);
+  });
+
+  it("sends anti-cheat games to the Epic Launcher", async () => {
+    core.accounts.epic = { ...core.accounts.epic, status: "connected", connected: true };
+    core.launcherOnly["epic-sugar"] = "Dieses Spiel muss über den Epic Launcher gestartet werden (es nutzt einen Anti-Cheat-Schutz).";
+    core.library = [sugar()];
+    renderAt("/library/epic-sugar");
+    fireEvent.click(await screen.findByRole("button", { name: "Installieren" }));
+    const dialog = await screen.findByRole("dialog", { name: "Sugar installieren" });
+    expect(await within(dialog).findByText(/muss über den Epic Launcher gestartet werden/)).toBeDefined();
+    expect(within(dialog).queryByRole("button", { name: "Installieren" })).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Über den Epic Launcher installieren" }));
+    await waitFor(() => {
+      expect(core.downloads[0]?.download.status).toBe("handedOff");
+    });
+  });
+
+  it("offers the Epic Launcher when not signed in", async () => {
+    core.library = [sugar()];
+    renderAt("/library/epic-sugar");
+    fireEvent.click(await screen.findByRole("button", { name: "Installieren" }));
+    const dialog = await screen.findByRole("dialog", { name: "Sugar installieren" });
+    expect(await within(dialog).findByText("Du bist nicht bei Epic Games angemeldet.")).toBeDefined();
+    expect(within(dialog).getByRole("button", { name: "Über den Epic Launcher installieren" })).toBeDefined();
+  });
+
+  it("switches cloud saves off in the settings", async () => {
+    renderAt("/settings/library");
+    const toggle = await screen.findByRole("switch", { name: "Epic-Cloud-Spielstände synchronisieren" });
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(core.settings.library.epicCloudSaves).toBe(false);
+    });
+  });
+});
+
+describe("Installed games", () => {
+  it("shows how a game starts", async () => {
+    core.library = [
+      fakeItem("steam-620", "Portal 2", { source: "steam", storeGameId: "620" }),
+      fakeItem("lantern", "Lantern"),
+    ];
+    renderAt("/library/steam-620");
+    expect((await screen.findAllByText("Über Steam")).length).toBeGreaterThan(0);
+    renderAt("/library/lantern");
+    expect((await screen.findAllByText("Direkt")).length).toBeGreaterThan(0);
+  });
+
+  it("moves a game into another games folder", async () => {
+    core.settings.library.gameFolders = ["/home/u/Games", "/mnt/ssd/Games"];
+    core.library = [fakeItem("lantern", "Lantern", { installPath: "/home/u/Games/Lantern", executablePath: "/home/u/Games/Lantern/run" })];
+    renderAt("/library/lantern?tab=settings");
+    const section = await screen.findByRole("region", { name: "Spiel verschieben" });
+    // The game's own folder is not offered.
+    await waitFor(() => {
+      expect(within(section).getByLabelText<HTMLSelectElement>("Zielordner").value).toBe("/mnt/ssd/Games");
+    });
+    fireEvent.click(within(section).getByRole("button", { name: "Verschieben" }));
+    await waitFor(() => {
+      expect(core.moves).toEqual([{ gameId: "lantern", folder: "/mnt/ssd/Games" }]);
+    });
+    expect(await within(section).findByRole("progressbar")).toBeDefined();
+    await act(async () => {
+      await emitCoreEvent("game-move-progress", { gameId: "lantern", status: "completed", copiedBytes: 0, totalBytes: 0, error: null });
+    });
+    expect((await screen.findAllByText("„Lantern“ wurde verschoben")).length).toBeGreaterThan(0);
+  });
+
+  it("uninstalls games Cove installed after asking, and Steam games through Steam", async () => {
+    core.library = [
+      fakeItem("lantern", "Lantern", { installedByCove: true }),
+      fakeItem("handmade", "Hand Made"),
+      fakeItem("steam-620", "Portal 2", { source: "steam", storeGameId: "620" }),
+    ];
+    renderAt("/library/handmade?tab=settings");
+    await screen.findByRole("region", { name: "Spiel verschieben" });
+    expect(screen.queryByRole("region", { name: "Deinstallieren" })).toBeNull();
+
+    renderAt("/library/lantern?tab=settings");
+    const section = await screen.findByRole("region", { name: "Deinstallieren" });
+    fireEvent.click(within(section).getByRole("button", { name: "Deinstallieren" }));
+    const confirm = await screen.findByRole("dialog", { name: "„Lantern“ deinstallieren?" });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Deinstallieren" }));
+    expect((await screen.findAllByText("„Lantern“ wurde deinstalliert")).length).toBeGreaterThan(0);
+    expect(core.library[0]?.entry.installed).toBe(false);
+
+    renderAt("/library/steam-620?tab=settings");
+    const steam = await screen.findByRole("region", { name: "Deinstallieren" });
+    expect(screen.queryByRole("region", { name: "Spiel verschieben" })).toBeNull();
+    fireEvent.click(within(steam).getByRole("button", { name: "Deinstallieren" }));
+    expect((await screen.findAllByText("Steam fragt jetzt, ob „Portal 2“ deinstalliert werden soll")).length).toBeGreaterThan(0);
   });
 });
 

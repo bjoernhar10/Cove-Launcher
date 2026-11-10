@@ -15,13 +15,14 @@ use crate::models::{
     CatalogCredentials, CatalogFilter, CatalogGameDetails, CatalogPage, CatalogProviderId,
     CatalogSort, CatalogStatus, ComponentVersion, ConnectorLoginFinished, ConnectorLoginStart,
     CoveAchievement, DownloadItem, DownloadStatus, Game, GameId, ImportSummary, LaunchResult,
-    LibraryItem, LibraryMatchEvent, LibraryUpdate, LocalStoreGame, ManualGameInput, MatchCandidate,
-    Platform, PlaytimeStats, PluginInfo, Recommendation, RunningGame, ScanCandidate, StoreAccount,
-    StoreSource, SyncPhase, SyncProgress, UserProfile,
+    LaunchVia, LibraryItem, LibraryMatchEvent, LibraryUpdate, LocalStoreGame, ManualGameInput,
+    MatchCandidate, Platform, PlaytimeStats, PluginInfo, Recommendation, RunningGame,
+    ScanCandidate, StoreAccount, StoreSource, SyncPhase, SyncProgress, UserProfile,
 };
 use crate::models::{
-    DirectDownloadInput, ItchGame, ItchStatus, ItchUpload, PluginGameInput, PluginManifestPreview,
-    PluginPermission, ServiceStatus, UpdateCheck,
+    DirectDownloadInput, FolderInfo, GameUpdateInfo, InstallPreview, InstallTarget, ItchGame,
+    ItchStatus, ItchUpload, PluginGameInput, PluginManifestPreview, PluginPermission,
+    ServiceStatus, UninstallMethod, UpdateCheck,
 };
 use crate::scanner;
 use crate::sidecar::SidecarStatus;
@@ -34,6 +35,7 @@ pub const LIBRARY_MATCH_CHANGED: &str = "library-match-changed";
 pub const DOWNLOAD_PROGRESS: &str = "download-progress";
 pub const STORE_SYNC_PROGRESS: &str = "store-sync-progress";
 pub const ACHIEVEMENT_UNLOCKED: &str = "achievement-unlocked";
+pub const GAME_MOVE_PROGRESS: &str = "game-move-progress";
 
 /// Pause between catalogue matches of imported games (proxy: 60 requests/min per IP).
 const MATCH_PACING: Duration = Duration::from_millis(1100);
@@ -152,7 +154,135 @@ pub async fn achievements_recent(
 #[tauri::command]
 pub async fn game_launch(state: State<'_, AppState>, game_id: String) -> AppResult<LaunchResult> {
     let item = db::library::require(&state.pool, &game_id).await?;
+    if item.entry.launch_via == Some(LaunchVia::Steam) {
+        steam_in_background(&state).await?;
+    }
+    if item.entry.source == StoreSource::Epic && item.entry.installed_by_cove {
+        let args = state.downloads.epic_launch_args(&item, &state.host).await?;
+        return state.launcher.launch_with(&item, &state.host, args);
+    }
     state.launcher.launch(&item, &state.host)
+}
+
+/// Starts Steam silently (tray only) first, when the user wants that.
+async fn steam_in_background(state: &AppState) -> AppResult<()> {
+    let settings = db::settings::load(&state.pool, &state.defaults).await?;
+    if settings.library.steam_silent_start {
+        crate::steam::ensure_running(state.host.home.clone()).await?;
+    }
+    Ok(())
+}
+
+/// DLCs of a Steam game; which ones Steam installs is changed in Steam
+/// (`game_manage_dlcs`).
+#[tauri::command]
+pub async fn game_dlcs(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<crate::models::StoreDlcList> {
+    let app_id = steam_app(&state, &game_id).await?;
+    state.stores.steam_dlcs(&app_id).await
+}
+
+/// Opens the game in Steam, where its DLCs are ticked under Properties → DLC.
+#[tauri::command]
+pub async fn game_manage_dlcs(state: State<'_, AppState>, game_id: String) -> AppResult<()> {
+    let app_id = steam_app(&state, &game_id).await?;
+    steam_in_background(&state).await?;
+    let id = percent_encoding::utf8_percent_encode(&app_id, percent_encoding::NON_ALPHANUMERIC);
+    (state.open_url)(&format!("steam://nav/games/details/{id}")).map_err(|_| {
+        AppError::Launch(tr!(
+            "Steam konnte nicht geöffnet werden. Ist Steam installiert?",
+            "Steam could not be opened. Is Steam installed?"
+        ))
+    })
+}
+
+async fn steam_app(state: &AppState, game_id: &str) -> AppResult<String> {
+    let item = db::library::require(&state.pool, game_id).await?;
+    match (item.entry.source, item.entry.store_game_id) {
+        (StoreSource::Steam, Some(app_id)) => Ok(app_id),
+        _ => Err(AppError::InvalidInput(tr!(
+            "Die DLC-Liste gibt es nur für Steam-Spiele.",
+            "The DLC list is only available for Steam games."
+        ))),
+    }
+}
+
+/// Steam: Steam's uninstall dialog. Games Cove installed: deletes the game folder.
+#[tauri::command]
+pub async fn game_uninstall<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<UninstallMethod> {
+    if state
+        .launcher
+        .running()
+        .iter()
+        .any(|r| r.game_id == game_id)
+    {
+        return Err(AppError::AlreadyRunning(game_id));
+    }
+    let item = db::library::require(&state.pool, &game_id).await?;
+    let entry = &item.entry;
+    if let (StoreSource::Steam, Some(app_id)) = (entry.source, entry.store_game_id.clone()) {
+        steam_in_background(&state).await?;
+        let id = percent_encoding::utf8_percent_encode(&app_id, percent_encoding::NON_ALPHANUMERIC);
+        (state.open_url)(&format!("steam://uninstall/{id}")).map_err(|_| {
+            AppError::Launch(tr!(
+                "Steam konnte nicht geöffnet werden. Ist Steam installiert?",
+                "Steam could not be opened. Is Steam installed?"
+            ))
+        })?;
+        state.downloads.watch_uninstall(game_id, app_id);
+        return Ok(UninstallMethod::Steam);
+    }
+    let folder = entry
+        .install_path
+        .clone()
+        .filter(|_| entry.installed)
+        .ok_or_else(|| {
+            AppError::InvalidInput(tr!(
+                "Dieses Spiel ist nicht installiert.",
+                "This game isn't installed."
+            ))
+        })?;
+    if !entry.installed_by_cove {
+        return Err(AppError::InvalidInput(tr!(
+            "Cove hat dieses Spiel nicht installiert. Deinstalliere es dort, wo du es installiert hast.",
+            "Cove didn't install this game. Uninstall it where you installed it."
+        )));
+    }
+    let path = std::path::PathBuf::from(&folder);
+    tokio::task::spawn_blocking(move || match std::fs::remove_dir_all(&path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    })
+    .await
+    .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))??;
+    db::library::mark_uninstalled(&state.pool, &game_id).await?;
+    downloads_changed(&app, &state).await?;
+    Ok(UninstallMethod::Removed)
+}
+
+/// Moves the game folder into `folder` in the background (`game-move-progress`).
+#[tauri::command]
+pub async fn game_move(
+    state: State<'_, AppState>,
+    game_id: String,
+    folder: String,
+) -> AppResult<()> {
+    if state
+        .launcher
+        .running()
+        .iter()
+        .any(|r| r.game_id == game_id)
+    {
+        return Err(AppError::AlreadyRunning(game_id));
+    }
+    let item = db::library::require(&state.pool, &game_id).await?;
+    state.mover.start(&item, &folder)
 }
 
 #[tauri::command]
@@ -349,7 +479,29 @@ pub async fn downloads_list(state: State<'_, AppState>) -> AppResult<Vec<Downloa
 
 /// Store games: hands the installation to the store's client.
 #[tauri::command]
-pub async fn downloads_enqueue(state: State<'_, AppState>, game_id: String) -> AppResult<()> {
+pub async fn downloads_enqueue(
+    state: State<'_, AppState>,
+    game_id: String,
+    target: Option<InstallTarget>,
+) -> AppResult<()> {
+    let item = db::library::require(&state.pool, &game_id).await?;
+    // Epic without a target: the game stays with the Epic Launcher (anti-cheat …).
+    let own_install = item.entry.source == StoreSource::Gog
+        || (item.entry.source == StoreSource::Epic && target.is_some());
+    if own_install {
+        let target = target.ok_or_else(|| {
+            AppError::InvalidInput(tr!(
+                "Bitte wähle einen Zielordner.",
+                "Please choose a target folder."
+            ))
+        })?;
+        state.downloads.install_store(&game_id, &target).await?;
+        return Ok(());
+    }
+    if item.entry.source == StoreSource::Steam {
+        // Only Steam's install dialog shows up, not its main window.
+        steam_in_background(&state).await?;
+    }
     state.downloads.hand_off(&game_id).await
 }
 
@@ -364,11 +516,71 @@ pub async fn downloads_set_status(
 }
 
 #[tauri::command]
+pub async fn downloads_preview_store(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<InstallPreview> {
+    state.downloads.preview_store(&game_id).await
+}
+
+#[tauri::command]
+pub async fn game_update_check(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<GameUpdateInfo> {
+    state.downloads.check_update(&game_id).await
+}
+
+#[tauri::command]
+pub async fn game_update(state: State<'_, AppState>, game_id: String) -> AppResult<()> {
+    update_game(&state, &game_id, None).await
+}
+
+/// "DLCs ändern" for GOG/Epic games Cove installed: new choice, then an update.
+#[tauri::command]
+pub async fn game_set_dlcs(
+    state: State<'_, AppState>,
+    game_id: String,
+    excluded_dlcs: Vec<String>,
+) -> AppResult<()> {
+    update_game(&state, &game_id, Some(&excluded_dlcs)).await
+}
+
+async fn update_game(
+    state: &AppState,
+    game_id: &str,
+    excluded_dlcs: Option<&[String]>,
+) -> AppResult<()> {
+    if state
+        .launcher
+        .running()
+        .iter()
+        .any(|r| r.game_id == game_id)
+    {
+        return Err(AppError::AlreadyRunning(game_id.to_owned()));
+    }
+    match excluded_dlcs {
+        Some(excluded) => state.downloads.change_dlcs(game_id, excluded).await,
+        None => state.downloads.update_store(game_id).await,
+    }
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn downloads_preview_url(
+    state: State<'_, AppState>,
+    input: DirectDownloadInput,
+) -> AppResult<InstallPreview> {
+    state.downloads.preview_url(&input).await
+}
+
+#[tauri::command]
 pub async fn downloads_add_url(
     state: State<'_, AppState>,
     input: DirectDownloadInput,
+    target: InstallTarget,
 ) -> AppResult<DownloadItem> {
-    let id = state.downloads.add_url(&input).await?;
+    let id = state.downloads.add_url(&input, &target).await?;
     db::downloads::get(&state.pool, &id).await
 }
 
@@ -379,10 +591,21 @@ pub async fn downloads_add_itch(
     upload_id: i64,
     download_key_id: Option<i64>,
     title: String,
+    target: InstallTarget,
+    extras: Vec<i64>,
 ) -> AppResult<DownloadItem> {
     let id = state
         .downloads
-        .add_itch(game_id, upload_id, download_key_id, &title)
+        .add_itch(
+            &db::downloads::ItchChoice {
+                game_id,
+                upload_id,
+                download_key_id,
+                extras,
+            },
+            &title,
+            &target,
+        )
         .await?;
     db::downloads::get(&state.pool, &id).await
 }
@@ -465,6 +688,38 @@ pub fn system_profile() -> UserProfile {
         display_name,
         avatar_url: None,
     }
+}
+
+/// Native folder picker; None when the user cancels.
+#[tauri::command]
+pub async fn system_pick_folder<R: Runtime>(
+    app: AppHandle<R>,
+    default_path: Option<String>,
+) -> AppResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let mut dialog = app.dialog().file();
+    if let Some(dir) = default_path
+        .map(std::path::PathBuf::from)
+        .and_then(|p| p.ancestors().find(|a| a.is_dir()).map(Path::to_path_buf))
+    {
+        dialog = dialog.set_directory(dir);
+    }
+    dialog.pick_folder(move |picked| {
+        let _ = tx.send(picked);
+    });
+    let picked = rx.await.ok().flatten();
+    Ok(picked
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned()))
+}
+
+/// Free space, write access and the "Program Files" warning for the install dialog.
+#[tauri::command]
+pub async fn system_folder_info(path: String) -> AppResult<FolderInfo> {
+    tokio::task::spawn_blocking(move || crate::folders::info(&path))
+        .await
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?
 }
 
 #[tauri::command]

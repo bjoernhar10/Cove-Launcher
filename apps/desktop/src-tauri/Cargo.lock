@@ -778,7 +778,7 @@ checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
 name = "cove"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -788,11 +788,13 @@ dependencies = [
  "getrandom 0.4.3",
  "jsonschema",
  "keyring",
+ "md-5 0.11.0",
  "percent-encoding",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
  "sevenz-rust2",
+ "sha1 0.11.0",
  "sha2 0.11.1",
  "shlex",
  "sqlx",
@@ -808,6 +810,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "winreg",
  "wiremock",
  "zip 7.4.0",
 ]
@@ -2789,6 +2792,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "md-5"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
+dependencies = [
+ "cfg-if",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4533,6 +4546,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.1",
+ "digest 0.11.3",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4812,14 +4836,14 @@ dependencies = [
  "hmac",
  "itoa",
  "log",
- "md-5",
+ "md-5 0.10.6",
  "memchr",
  "once_cell",
  "percent-encoding",
  "rand 0.8.8",
  "rsa",
  "serde",
- "sha1",
+ "sha1 0.10.7",
  "sha2 0.10.9",
  "smallvec",
  "sqlx-core",
@@ -4852,7 +4876,7 @@ dependencies = [
  "home",
  "itoa",
  "log",
- "md-5",
+ "md-5 0.10.6",
  "memchr",
  "once_cell",
  "rand 0.8.8",
@@ -7028,7 +7052,7 @@ dependencies = [
  "rand 0.8.8",
  "serde",
  "serde_repr",
- "sha1",
+ "sha1 0.10.7",
  "static_assertions",
  "tokio",
  "tracing",

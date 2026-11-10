@@ -10,12 +10,12 @@ import type {
   UpdateCheck,
   UpdateProgress,
 } from "@cove/shared";
-import { Check, ChevronRight, Download, ExternalLink, FolderOpen, FolderSearch, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Download, ExternalLink, FolderOpen, FolderPlus, FolderSearch, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { Navigate, NavLink, useParams } from "react-router";
 import { api } from "../../api/index.ts";
 import { Button } from "../../components/ui/Button.tsx";
-import { EmptyState, ErrorState, ProgressBar } from "../../components/ui/Feedback.tsx";
+import { Badge, EmptyState, ErrorState, ProgressBar } from "../../components/ui/Feedback.tsx";
 import { Field, Input, Select, SettingRow, Switch } from "../../components/ui/Field.tsx";
 import { Page } from "../../components/ui/Page.tsx";
 import { useCatalogStatus } from "../../hooks/useCatalog.ts";
@@ -219,9 +219,67 @@ function LibraryTab() {
     setFolder("");
   }
 
+  async function addGameFolder(): Promise<void> {
+    try {
+      const picked = await api.system.pickFolder(settings?.downloads.directory ?? null);
+      if (!picked) return;
+      const info = await api.system.folderInfo(picked);
+      if (!info.writable) {
+        toast(t.install.notWritable, "danger");
+        return;
+      }
+      save((s) => ({ ...s, library: { ...s.library, gameFolders: [...s.library.gameFolders.filter((f) => f !== info.path), info.path] } }));
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+    }
+  }
+
   return (
     <Panel title={t.settings.tabs.library} description={t.settings.libraryHint}>
-      <h3 className="mb-3 text-sm font-medium text-fg">{t.settings.scanFolders}</h3>
+      <h3 className="text-sm font-medium text-fg">{t.settings.gameFolders}</h3>
+      <p className="mt-1 mb-3 text-sm text-fg-muted">{t.settings.gameFoldersHint}</p>
+      <ul className="rounded-lg border border-border">
+        {lib.gameFolders.map((path) => {
+          const isDefault = path === settings.downloads.directory;
+          return (
+            <li key={path} className="flex items-center gap-3 border-b border-border py-2 pr-2 pl-4 last:border-b-0">
+              <FolderOpen aria-hidden className="text-fg-subtle" />
+              <span className="min-w-0 flex-1 truncate text-sm text-fg">{path}</span>
+              {isDefault ? (
+                <Badge>{t.settings.defaultFolder}</Badge>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={t.settings.makeDefaultFolder(path)}
+                    onClick={() => {
+                      save((s) => ({ ...s, downloads: { ...s.downloads, directory: path } }));
+                    }}
+                  >
+                    {t.settings.defaultFolder}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    icon={Trash2}
+                    label={t.settings.removeGameFolder(path)}
+                    onClick={() => {
+                      save((s) => ({ ...s, library: { ...s.library, gameFolders: s.library.gameFolders.filter((p) => p !== path) } }));
+                    }}
+                  />
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <Button className="mt-3" icon={FolderPlus} onClick={() => void addGameFolder()}>
+        {t.settings.addGameFolder}
+      </Button>
+
+      <h3 className="mt-8 mb-3 text-sm font-medium text-fg">{t.settings.scanFolders}</h3>
       {lib.scanFolders.length === 0 ? (
         <div className="rounded-lg border border-border">
           <EmptyState compact icon={FolderOpen} title={t.settings.noFolders} description={t.settings.noFoldersHint} />
@@ -283,6 +341,27 @@ function LibraryTab() {
           </SettingRow>
         </Group>
       </div>
+      <h3 className="mt-8 mb-3 text-sm font-medium text-fg">{t.settings.stores}</h3>
+      <Group>
+        <SettingRow title={t.settings.steamSilent} description={t.settings.steamSilentHint}>
+          <Switch
+            label={t.settings.steamSilent}
+            checked={lib.steamSilentStart}
+            onChange={(steamSilentStart) => {
+              save((s) => ({ ...s, library: { ...s.library, steamSilentStart } }));
+            }}
+          />
+        </SettingRow>
+        <SettingRow title={t.settings.epicCloudSaves} description={t.settings.epicCloudSavesHint}>
+          <Switch
+            label={t.settings.epicCloudSaves}
+            checked={lib.epicCloudSaves}
+            onChange={(epicCloudSaves) => {
+              save((s) => ({ ...s, library: { ...s.library, epicCloudSaves } }));
+            }}
+          />
+        </SettingRow>
+      </Group>
     </Panel>
   );
 }
@@ -529,18 +608,6 @@ function DownloadsTab() {
   return (
     <Panel title={t.settings.tabs.downloads}>
       <div className="flex max-w-xl flex-col gap-8">
-        <Field label={t.settings.targetFolder} description={t.settings.targetFolderHint}>
-          {(props) => (
-            <Input
-              {...props}
-              spellCheck={false}
-              value={d.directory}
-              onChange={(e) => {
-                set({ directory: e.target.value });
-              }}
-            />
-          )}
-        </Field>
         <Group>
           <SettingRow title={t.settings.limitBandwidth} description={t.settings.limitBandwidthHint}>
             <Switch

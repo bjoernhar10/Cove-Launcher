@@ -31,7 +31,7 @@ pub async fn set_json<T: Serialize + Sync>(
 
 /// Stored settings, section by section, falling back to `defaults`.
 pub async fn load(pool: &SqlitePool, defaults: &AppSettings) -> AppResult<AppSettings> {
-    Ok(AppSettings {
+    let mut settings = AppSettings {
         general: get_json(pool, "general")
             .await?
             .unwrap_or_else(|| defaults.general.clone()),
@@ -47,7 +47,24 @@ pub async fn load(pool: &SqlitePool, defaults: &AppSettings) -> AppResult<AppSet
         catalog: get_json(pool, "catalog")
             .await?
             .unwrap_or_else(|| defaults.catalog.clone()),
-    })
+    };
+    normalize(&mut settings);
+    Ok(settings)
+}
+
+/// The default games folder (`downloads.directory`) is always the first games
+/// folder; empty and duplicate entries are dropped.
+pub fn normalize(settings: &mut AppSettings) {
+    let default = settings.downloads.directory.trim().to_owned();
+    let mut folders: Vec<String> = Vec::with_capacity(settings.library.game_folders.len() + 1);
+    for folder in std::iter::once(default).chain(settings.library.game_folders.drain(..)) {
+        let folder = folder.trim().to_owned();
+        if !folder.is_empty() && !folders.contains(&folder) {
+            folders.push(folder);
+        }
+    }
+    settings.library.game_folders = folders;
+    settings.library.scan_folders.dedup();
 }
 
 pub fn validate(settings: &AppSettings) -> AppResult<()> {
@@ -102,11 +119,11 @@ pub fn validate(settings: &AppSettings) -> AppResult<()> {
 
 pub async fn save(pool: &SqlitePool, settings: &AppSettings) -> AppResult<()> {
     validate(settings)?;
-    let mut library = settings.library.clone();
-    library.scan_folders.dedup();
+    let mut settings = settings.clone();
+    normalize(&mut settings);
     set_json(pool, "general", &settings.general).await?;
     set_json(pool, "appearance", &settings.appearance).await?;
-    set_json(pool, "library", &library).await?;
+    set_json(pool, "library", &settings.library).await?;
     set_json(pool, "downloads", &settings.downloads).await?;
     set_json(pool, "catalog", &settings.catalog).await?;
     Ok(())
@@ -135,6 +152,9 @@ pub(crate) mod tests {
             library: LibrarySettings {
                 scan_folders: vec![],
                 scan_on_startup: true,
+                game_folders: vec!["/home/u/Games".into()],
+                steam_silent_start: true,
+                epic_cloud_saves: true,
             },
             downloads: DownloadSettings {
                 directory: "/home/u/Games".into(),
@@ -156,8 +176,27 @@ pub(crate) mod tests {
         changed.appearance.theme = "dark".into();
         changed.library.scan_folders = vec!["/a".into(), "/b".into()];
         changed.downloads.directory = "/mnt/games".into();
+        changed.library.game_folders = vec!["/home/u/Games".into(), "/mnt/games".into()];
         save(&pool, &changed).await.unwrap();
-        assert_eq!(load(&pool, &defaults()).await.unwrap(), changed);
+        let loaded = load(&pool, &defaults()).await.unwrap();
+        // The default folder moves to the front.
+        assert_eq!(loaded.library.game_folders, ["/mnt/games", "/home/u/Games"]);
+        assert_eq!(loaded.downloads, changed.downloads);
+    }
+
+    #[tokio::test]
+    async fn older_library_settings_get_games_folders_and_silent_steam() {
+        let pool = open_in_memory().await.unwrap();
+        sqlx::query(
+            "INSERT INTO settings VALUES ('library', '{\"scanFolders\": [], \"scanOnStartup\": false}')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let loaded = load(&pool, &defaults()).await.unwrap();
+        assert_eq!(loaded.library.game_folders, ["/home/u/Games"]);
+        assert!(loaded.library.steam_silent_start);
+        assert!(!loaded.library.scan_on_startup);
     }
 
     #[tokio::test]

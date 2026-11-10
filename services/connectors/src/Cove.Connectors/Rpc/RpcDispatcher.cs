@@ -22,9 +22,22 @@ public sealed class RpcDispatcher
 
     private readonly Dictionary<string, IStoreConnector> _connectors;
 
-    public RpcDispatcher(IEnumerable<IStoreConnector> connectors)
+    private readonly GogContent? _gogContent;
+
+    private readonly EpicContent? _epicContent;
+
+    private readonly SteamContent? _steamContent;
+
+    public RpcDispatcher(
+        IEnumerable<IStoreConnector> connectors,
+        GogContent? gogContent = null,
+        EpicContent? epicContent = null,
+        SteamContent? steamContent = null)
     {
         _connectors = connectors.ToDictionary(c => c.Id, StringComparer.Ordinal);
+        _gogContent = gogContent;
+        _epicContent = epicContent;
+        _steamContent = steamContent;
     }
 
     /// <summary>Production wiring: shared HttpClient and the embedded config.</summary>
@@ -35,7 +48,7 @@ public sealed class RpcDispatcher
             new SteamConnector(http, config.Steam),
             new GogConnector(http, config.Gog),
             new EpicConnector(http, config.Epic),
-        ]);
+        ], new GogContent(http, config.Gog), new EpicContent(http, config.Epic), new SteamContent(http, config.Steam));
     }
 
     /// <summary>Handles one raw input line. Returns the serialized response, or null for notifications.</summary>
@@ -97,6 +110,15 @@ public sealed class RpcDispatcher
     private IStoreConnector Connector(string store) =>
         _connectors.GetValueOrDefault(store)
             ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, Texts.T($"Unbekannter Store: {store}", $"Unknown store: {store}"));
+
+    private EpicContent EpicContent() =>
+        _epicContent ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, "Epic downloads are not set up.");
+
+    private GogContent GogContent() =>
+        _gogContent ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, "GOG downloads are not set up.");
+
+    private SteamContent SteamContent() =>
+        _steamContent ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, "Steam DLC lists are not set up.");
 
     private static JsonNode? Node<T>(T value, JsonTypeInfo<T> type) => JsonSerializer.SerializeToNode(value, type);
 
@@ -171,6 +193,55 @@ public sealed class RpcDispatcher
                         ? Local.LocalDetection.DetectAll(env)
                         : Connector(args.Store).DetectLocal(env);
                     return Node(new LocalResult(games), ctx.LocalResult);
+                }
+
+            case "steam.dlcs":
+                {
+                    var args = Params(p, ctx.SteamDlcParams);
+                    var env = new LocalEnvironment(args.Home, args.ProgramData, OperatingSystem.IsWindows());
+                    var dlcs = await SteamContent().DlcsAsync(args.AppId, env, ct).ConfigureAwait(false);
+                    return Node(dlcs, ctx.SteamDlcs);
+                }
+
+            case "gog.plan":
+                {
+                    var args = Params(p, ctx.GogPlanParams);
+                    var plan = await GogContent().PlanAsync(args.Session, args.ProductId, args.Platform, args.Language, ct).ConfigureAwait(false);
+                    return Node(plan, ctx.GogInstallPlan);
+                }
+
+            case "gog.latest":
+                {
+                    var args = Params(p, ctx.GogPlanParams);
+                    var latest = await GogContent().LatestAsync(args.Session, args.ProductId, args.Platform, args.Language, ct).ConfigureAwait(false);
+                    return Node(latest, ctx.GogLatest);
+                }
+
+            case "epic.installInfo":
+                {
+                    var args = Params(p, ctx.EpicAppParams);
+                    var info = await EpicContent().InstallInfoAsync(args.Session, args.AppName, args.Platform ?? "windows", ct).ConfigureAwait(false);
+                    return Node(info, ctx.EpicInstallInfo);
+                }
+
+            case "epic.launch":
+                {
+                    var args = Params(p, ctx.EpicAppParams);
+                    var launch = await EpicContent().LaunchAsync(args.Session, args.AppName, args.OwnershipToken, ct).ConfigureAwait(false);
+                    return Node(launch, ctx.EpicLaunch);
+                }
+
+            case "epic.saves":
+                {
+                    var args = Params(p, ctx.EpicAppParams);
+                    return Node(await EpicContent().SavesAsync(args.Session, args.AppName, ct).ConfigureAwait(false), ctx.EpicSaves);
+                }
+
+            case "epic.saveWriteLinks":
+                {
+                    var args = Params(p, ctx.EpicAppParams);
+                    var links = await EpicContent().WriteLinksAsync(args.Session, args.AppName, args.Paths ?? [], ct).ConfigureAwait(false);
+                    return Node(links, ctx.EpicWriteLinks);
                 }
 
             default:

@@ -203,6 +203,21 @@ pub struct LibraryEntry {
     pub launch_options: LaunchOptions,
     pub catalog_id: Option<String>,
     pub match_status: MatchStatus,
+    /// How "Spielen" starts the game; null when it can't be started yet.
+    pub launch_via: Option<LaunchVia>,
+    /// Installed by Cove's download manager: Cove may move and uninstall it.
+    pub installed_by_cove: bool,
+}
+
+/// How a game is started, shown per game ("Direkt", "Über Steam" …).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LaunchVia {
+    /// Cove starts the executable itself.
+    Direct,
+    Steam,
+    EpicLauncher,
+    GogGalaxy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -371,6 +386,8 @@ pub struct Download {
     pub checksum_verified: bool,
     pub install_path: Option<String>,
     pub executable_path: Option<String>,
+    /// itch.io extra (soundtrack …) of the game: its file name; null for the game itself.
+    pub extra: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -614,6 +631,20 @@ pub struct AppearanceSettings {
 pub struct LibrarySettings {
     pub scan_folders: Vec<String>,
     pub scan_on_startup: bool,
+    /// Folders games are installed into (one per drive, like Steam libraries).
+    /// The default one is `downloads.directory`; it is always part of this list.
+    #[serde(default)]
+    pub game_folders: Vec<String>,
+    /// Start Steam with `-silent` (tray only) before a Steam game starts.
+    #[serde(default = "default_true")]
+    pub steam_silent_start: bool,
+    /// Sync Epic cloud saves before and after playing (games Cove installed).
+    #[serde(default = "default_true")]
+    pub epic_cloud_saves: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -931,6 +962,116 @@ pub fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
+/// A folder the user may install into (install dialog).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderInfo {
+    pub path: String,
+    /// Free space on its drive, null if unknown.
+    pub free_bytes: Option<i64>,
+    /// Cove may create files there (or create the folder).
+    pub writable: bool,
+    /// Windows: below "Program Files", which needs admin rights.
+    pub needs_admin: bool,
+}
+
+/// Sizes shown in the install dialog before a download starts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallPreview {
+    pub title: String,
+    pub download_bytes: Option<i64>,
+    /// Size after the install; null when it is only known after unpacking.
+    pub install_bytes: Option<i64>,
+    /// Why Cove can't install it and the store's launcher must (anti-cheat, third-party launcher).
+    pub launcher_only: Option<String>,
+    /// Owned DLCs that can be installed with the game (GOG, Epic); sizes above are the game alone.
+    pub dlcs: Vec<DlcOption>,
+}
+
+/// One DLC in the install dialog.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DlcOption {
+    /// GOG product id or Epic app name.
+    pub id: String,
+    pub title: String,
+    pub download_bytes: Option<i64>,
+    pub install_bytes: Option<i64>,
+    /// Ticked: installed with the game (remembers the last choice for this game).
+    pub selected: bool,
+}
+
+/// Where the install dialog puts a game.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallTarget {
+    /// Games folder; Cove creates a subfolder named after the game.
+    pub folder: String,
+    /// "Diesen Ordner als Standard verwenden".
+    pub make_default: bool,
+    /// DLCs left out (ids from `InstallPreview.dlcs`); kept for later updates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub excluded_dlcs: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum MoveStatus {
+    Copying,
+    Verifying,
+    Completed,
+    Failed,
+}
+
+/// Event `game-move-progress` while a game folder is moved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameMoveProgress {
+    pub game_id: GameId,
+    pub status: MoveStatus,
+    pub copied_bytes: i64,
+    pub total_bytes: i64,
+    pub error: Option<String>,
+}
+
+/// Update state of a store game Cove installed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameUpdateInfo {
+    pub available: bool,
+    pub installed_version: String,
+    pub latest_version: String,
+}
+
+/// What `game_uninstall` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UninstallMethod {
+    /// Cove deleted the game folder.
+    Removed,
+    /// Steam asks the user and removes the game; Cove notices it in the app manifests.
+    Steam,
+}
+
+/// A DLC of a store game as the store sees it (Steam: managed in Steam itself).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreDlc {
+    pub id: String,
+    pub title: String,
+    /// Installed on this computer.
+    pub installed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreDlcList {
+    pub dlcs: Vec<StoreDlc>,
+    /// All DLCs of the game; the list is cut off for games with hundreds.
+    pub total: i64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DownloadProgress<'a> {
@@ -973,6 +1114,8 @@ pub struct ItchUpload {
     pub file_name: String,
     pub size_bytes: Option<i64>,
     pub platforms: Vec<Platform>,
+    /// Not the game itself (soundtrack, artbook …): offered as an extra.
+    pub extra: bool,
 }
 
 // ───────────── updates ─────────────

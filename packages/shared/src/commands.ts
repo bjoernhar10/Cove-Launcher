@@ -50,6 +50,13 @@ import type {
   SyncProgress,
   AchievementsSyncSummary,
   CoveAchievement,
+  FolderInfo,
+  GameMoveProgress,
+  GameUpdateInfo,
+  InstallPreview,
+  InstallTarget,
+  StoreDlcList,
+  UninstallMethod,
 } from "./models.ts";
 
 type NoArgs = Record<string, never>;
@@ -68,6 +75,20 @@ export interface CoveCommands {
   game_launch: { args: { gameId: GameId }; result: LaunchResult };
   game_stop: { args: { gameId: GameId }; result: null };
   game_running_list: { args: NoArgs; result: RunningGame[] };
+  /** Steam: opens Steam's uninstall dialog. Games Cove installed: deletes the game folder. */
+  game_uninstall: { args: { gameId: GameId }; result: UninstallMethod };
+  /** DLCs of a Steam game (installed ones marked). */
+  game_dlcs: { args: { gameId: GameId }; result: StoreDlcList };
+  /** Opens the game in Steam, where its DLCs are ticked under Properties → DLC. */
+  game_manage_dlcs: { args: { gameId: GameId }; result: null };
+  /** Moves the game folder into another games folder; progress arrives as `game-move-progress`. */
+  game_move: { args: { gameId: GameId; folder: string }; result: null };
+  /** Installed and newest version of a GOG or Epic game Cove installed. */
+  game_update_check: { args: { gameId: GameId }; result: GameUpdateInfo };
+  /** Queues the update (only changed parts are downloaded). */
+  game_update: { args: { gameId: GameId }; result: null };
+  /** "DLCs ändern" (GOG/Epic games Cove installed): stores the choice and queues an update. */
+  game_set_dlcs: { args: { gameId: GameId; excludedDlcs: string[] }; result: null };
   settings_get: { args: NoArgs; result: AppSettings };
   settings_update: { args: { settings: AppSettings }; result: AppSettings };
   connectors_list: { args: NoArgs; result: StoreAccount[] };
@@ -102,11 +123,19 @@ export interface CoveCommands {
   plugin_define_achievements: { args: { pluginId: string; achievements: unknown[] }; result: number };
   plugin_library_add: { args: { pluginId: string; game: PluginGameInput }; result: LibraryItem };
   downloads_list: { args: NoArgs; result: DownloadItem[] };
-  /** Store games: hands the installation over to Steam/GOG/Epic. */
-  downloads_enqueue: { args: { gameId: GameId }; result: null };
-  downloads_add_url: { args: { input: DirectDownloadInput }; result: DownloadItem };
+  /**
+   * Store games: GOG and Epic games are installed by Cove into `target` (install dialog).
+   * Steam installs, and Epic installs without `target` (anti-cheat …), go to the store's client.
+   */
+  downloads_enqueue: { args: { gameId: GameId; target: InstallTarget | null }; result: null };
+  /** Sizes for the install dialog of a GOG or Epic game (reads the store's build manifest). */
+  downloads_preview_store: { args: { gameId: GameId }; result: InstallPreview };
+  /** Sizes for the install dialog (asks the server for the file size). */
+  downloads_preview_url: { args: { input: DirectDownloadInput }; result: InstallPreview };
+  downloads_add_url: { args: { input: DirectDownloadInput; target: InstallTarget }; result: DownloadItem };
   downloads_add_itch: {
-    args: { gameId: number; uploadId: number; downloadKeyId: number | null; title: string };
+    /** `extras`: upload ids of extras (soundtrack …) for the game's "Extras" folder. */
+    args: { gameId: number; uploadId: number; downloadKeyId: number | null; title: string; target: InstallTarget; extras: number[] };
     result: DownloadItem;
   };
   itch_status: { args: NoArgs; result: ItchStatus };
@@ -121,6 +150,10 @@ export interface CoveCommands {
   downloads_clear_history: { args: NoArgs; result: null };
   system_profile: { args: NoArgs; result: UserProfile };
   system_about: { args: NoArgs; result: AboutInfo };
+  /** Native folder picker; null when the user cancels. */
+  system_pick_folder: { args: { defaultPath: string | null }; result: string | null };
+  /** Free space, write access and the "Program Files" warning for a folder. */
+  system_folder_info: { args: { path: string }; result: FolderInfo };
   /** Asks the release server for a newer version (signed `latest.json`). */
   updates_check: { args: NoArgs; result: UpdateCheck };
   /** Downloads, verifies and installs the update, then restarts Cove. */
@@ -154,6 +187,7 @@ export interface CoveEvents {
   "store-sync-progress": SyncProgress;
   "achievement-unlocked": CoveAchievement;
   "update-progress": UpdateProgress;
+  "game-move-progress": GameMoveProgress;
 }
 
 export type CoveEvent = keyof CoveEvents;
