@@ -27,7 +27,9 @@ use super::extract::safe_relative;
 use super::limiter::RateLimiter;
 use super::transfer::{http_error, status_error, Control, Outcome, Progress};
 use crate::error::{AppError, AppResult};
-use format::{read_chunk, ChunkInfo, FileEntry, Guid, Manifest, FLAG_EXECUTABLE};
+#[cfg(unix)]
+use format::FLAG_EXECUTABLE;
+use format::{read_chunk, ChunkInfo, FileEntry, Guid, Manifest};
 
 const PARALLEL: usize = 8;
 const RETRIES: u32 = 3;

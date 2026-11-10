@@ -126,6 +126,7 @@ fn copy_file(
     std::fs::set_permissions(to, std::fs::metadata(from)?.permissions())
 }
 
+#[cfg_attr(not(unix), allow(clippy::unnecessary_wraps))] // symlinks only exist on Unix
 fn link(target: &Path, at: &Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
