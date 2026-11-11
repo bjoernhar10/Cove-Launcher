@@ -1,6 +1,6 @@
 # Cove
 
-A calm, universal desktop game launcher for **Linux and Windows** (macOS later).
+A calm, universal desktop game launcher for **Linux, Windows and macOS** (Apple Silicon).
 Cove brings your games from Steam, GOG, Epic, itch.io and your own folders together in **one**
 tidy library, launches them (on Linux optionally through Proton or Wine) and keeps track of
 playtime and achievements. No ads, no social feed, no accounts of its own.
@@ -57,7 +57,7 @@ playtime and achievements. No ads, no social feed, no accounts of its own.
   fully usable with the keyboard, WCAG 2.1 AA contrast.
 - **German and English:** the whole app, including error messages and recommendation reasons,
   follows the language chosen in Settings (new installs start in the system language).
-- **Updates** through the signed Tauri updater (Windows and AppImage; `.deb`/`.rpm` installs are
+- **Updates** through the signed Tauri updater (Windows, macOS and AppImage; `.deb`/`.rpm` installs are
   updated by the package manager).
 
 ## Install

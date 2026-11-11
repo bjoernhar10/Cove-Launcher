@@ -1,6 +1,6 @@
 # Cove: Notes for Claude
 
-Cove is a universal desktop game launcher for Linux and Windows (macOS later).
+Cove is a universal desktop game launcher for Linux, Windows and macOS (Apple Silicon).
 It brings games from every store and local games together in one calm, tidy library.
 Architecture details: `docs/architecture.md`.
 
