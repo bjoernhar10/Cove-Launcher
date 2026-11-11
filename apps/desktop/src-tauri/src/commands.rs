@@ -36,6 +36,7 @@ pub const DOWNLOAD_PROGRESS: &str = "download-progress";
 pub const STORE_SYNC_PROGRESS: &str = "store-sync-progress";
 pub const ACHIEVEMENT_UNLOCKED: &str = "achievement-unlocked";
 pub const GAME_MOVE_PROGRESS: &str = "game-move-progress";
+pub const PROTON_PROGRESS: &str = "proton-progress";
 
 /// Pause between catalogue matches of imported games (proxy: 60 requests/min per IP).
 const MATCH_PACING: Duration = Duration::from_millis(1100);
@@ -110,7 +111,17 @@ pub async fn library_update(
             )));
         }
     }
-    db::library::update(&state.pool, &game_id, &patch).await
+    let item = db::library::update(&state.pool, &game_id, &patch).await?;
+    // A Proton build the user just picked is installed right away (Linux).
+    if patch.launch_options.is_some() && state.host.platform == Platform::Linux {
+        let settings = db::settings::load(&state.pool, &state.defaults).await?;
+        if let Some(id) =
+            crate::proton::wanted(&item.entry.launch_options, &settings.library.default_proton)
+        {
+            state.proton.prepare(&id);
+        }
+    }
+    Ok(item)
 }
 
 #[tauri::command]
@@ -199,11 +210,67 @@ pub async fn game_launch(state: State<'_, AppState>, game_id: String) -> AppResu
     if item.entry.launch_via == Some(LaunchVia::Steam) {
         steam_in_background(&state).await?;
     }
+    let host = launch_host(&state, &item).await?;
     if item.entry.source == StoreSource::Epic && item.entry.installed_by_cove {
-        let args = state.downloads.epic_launch_args(&item, &state.host).await?;
-        return state.launcher.launch_with(&item, &state.host, args);
+        let args = state.downloads.epic_launch_args(&item, &host).await?;
+        return state.launcher.launch_with(&item, &host, args);
     }
-    state.launcher.launch(&item, &state.host)
+    state.launcher.launch(&item, &host)
+}
+
+/// The host for a launch. A Windows game on Linux gets its Proton build
+/// first: a GE-Proton build that is missing is downloaded before it starts.
+async fn launch_host(state: &AppState, item: &LibraryItem) -> AppResult<crate::launcher::HostEnv> {
+    let host = state.proton.host(&state.host).await?;
+    let windows_exe = item.entry.executable_path.as_deref().is_some_and(|p| {
+        Path::new(p)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("exe"))
+    });
+    if host.platform != Platform::Linux || !windows_exe {
+        return Ok(host);
+    }
+    let Some(id) = crate::proton::wanted(&item.entry.launch_options, &host.default_proton) else {
+        return Ok(host);
+    };
+    state.proton.ensure(&id).await?;
+    state.proton.host(&state.host).await
+}
+
+/// Proton builds: GE-Proton releases, Cove's installs and Steam's builds.
+#[tauri::command]
+pub async fn proton_list(state: State<'_, AppState>) -> AppResult<crate::models::ProtonOverview> {
+    state.proton.overview(false).await
+}
+
+/// Loads the release list again and installs a new "latest" in the background.
+#[tauri::command]
+pub async fn proton_check(state: State<'_, AppState>) -> AppResult<crate::models::ProtonOverview> {
+    let overview = state.proton.overview(true).await?;
+    let proton = state.proton.clone();
+    let may_clean = state.launcher.running().is_empty();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = proton.check_updates(false, may_clean).await {
+            eprintln!("[cove] Proton-Update: {error}");
+        }
+    });
+    Ok(overview)
+}
+
+/// Starts installing a GE-Proton build (progress: `proton-progress`).
+#[tauri::command]
+pub async fn proton_install(state: State<'_, AppState>, version_id: String) -> AppResult<()> {
+    if version_id == crate::proton::LATEST {
+        state.proton.prepare(&version_id);
+        return Ok(());
+    }
+    state.proton.start_install(&version_id, false).map(|_| ())
+}
+
+/// Deletes a GE-Proton build no game uses.
+#[tauri::command]
+pub async fn proton_remove(state: State<'_, AppState>, version_id: String) -> AppResult<()> {
+    state.proton.remove(&version_id).await
 }
 
 /// Starts Steam silently (tray only) first, when the user wants that.
@@ -416,8 +483,15 @@ pub async fn settings_update(
     state: State<'_, AppState>,
     settings: AppSettings,
 ) -> AppResult<AppSettings> {
+    let before = db::settings::load(&state.pool, &state.defaults).await?;
     db::settings::save(&state.pool, &settings).await?;
     crate::i18n::set_language(&settings.general.language);
+    // A new default Proton build is installed right away (Linux).
+    if state.host.platform == Platform::Linux
+        && before.library.default_proton != settings.library.default_proton
+    {
+        state.proton.prepare(&settings.library.default_proton);
+    }
     // Bandwidth limit and parallel downloads apply at once.
     state.downloads.wake();
     db::settings::load(&state.pool, &state.defaults).await

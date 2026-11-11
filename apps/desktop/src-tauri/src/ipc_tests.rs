@@ -110,6 +110,15 @@ async fn app_with(
             Arc::new(|_| {}),
         )),
         open_url: Arc::new(|_| Ok(())),
+        // Nothing listens there: tests never talk to GitHub.
+        proton: Arc::new(crate::proton::ProtonManager::with_endpoint(
+            pool.clone(),
+            tmp.path().join("proton"),
+            None,
+            default_settings(None),
+            Arc::new(|_| {}),
+            "http://127.0.0.1:1/releases".into(),
+        )),
         // Nothing listens there: tests never talk to ProtonDB or Steam.
         protondb: Arc::new(crate::protondb::ProtonDb::with_endpoints(
             pool.clone(),
@@ -643,6 +652,87 @@ async fn proton_rating_accepts_frontend_payloads() {
     assert_eq!(offline["kind"], "storeUnavailable");
     let missing = invoke_raw(&app, "game_proton_rating", json!({ "gameId": "nope" })).unwrap_err();
     assert_eq!(missing["kind"], "notInLibrary");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn proton_commands_accept_frontend_payloads() {
+    let app = app().await;
+    // A GE-Proton build Cove installed earlier.
+    let build = app.tmp.path().join("proton/GE-Proton10-1");
+    std::fs::create_dir_all(&build).unwrap();
+    std::fs::write(build.join("proton"), b"#!/usr/bin/env python3\n").unwrap();
+
+    // GitHub is unreachable: only installed builds are listed.
+    let overview: Value = invoke(&app, "proton_list", json!({}));
+    assert_eq!(overview["offline"], true);
+    assert_eq!(overview["latest"], "GE-Proton10-1");
+    assert_eq!(
+        overview["versions"],
+        json!([{ "id": "GE-Proton10-1", "name": "GE-Proton10-1", "kind": "ge", "installed": true,
+                 "downloadBytes": null, "releasedAt": null, "games": 0, "removable": true }])
+    );
+    let checked: Value = invoke(&app, "proton_check", json!({}));
+    assert_eq!(checked["offline"], true);
+
+    // A game pinned to it keeps it.
+    let exe = app.tmp.path().join("game.exe");
+    std::fs::write(&exe, b"MZ").unwrap();
+    let added: Value = invoke(
+        &app,
+        "library_add_manual",
+        json!({ "input": { "title": "Windows Game", "executablePath": exe.to_string_lossy(), "sizeBytes": null } }),
+    );
+    let id = added["game"]["id"].clone();
+    let updated: Value = invoke(
+        &app,
+        "library_update",
+        json!({ "gameId": id, "patch": { "launchOptions": {
+            "arguments": "", "compatibilityTool": "proton", "env": [], "protonVersion": "GE-Proton10-1" } } }),
+    );
+    assert_eq!(
+        updated["entry"]["launchOptions"]["protonVersion"],
+        "GE-Proton10-1"
+    );
+    let in_use = invoke_raw(
+        &app,
+        "proton_remove",
+        json!({ "versionId": "GE-Proton10-1" }),
+    )
+    .unwrap_err();
+    assert_eq!(in_use["kind"], "invalidInput");
+    let bad = invoke_raw(
+        &app,
+        "proton_install",
+        json!({ "versionId": "../GE-Proton" }),
+    )
+    .unwrap_err();
+    assert_eq!(bad["kind"], "invalidInput");
+
+    if cfg!(target_os = "linux") {
+        // A build Steam would have installed is not there: say so instead of starting.
+        let _: Value = invoke(
+            &app,
+            "library_update",
+            json!({ "gameId": id, "patch": { "launchOptions": {
+                "arguments": "", "compatibilityTool": "proton", "env": [], "protonVersion": "steam:Proton 9.0" } } }),
+        );
+        let missing = invoke_raw(&app, "game_launch", json!({ "gameId": id })).unwrap_err();
+        assert_eq!(missing["kind"], "compatToolNotFound");
+    }
+
+    let _: Value = invoke(
+        &app,
+        "library_update",
+        json!({ "gameId": id, "patch": { "launchOptions": {
+            "arguments": "", "compatibilityTool": "wine", "env": [], "protonVersion": null } } }),
+    );
+    let removed: Value = invoke(
+        &app,
+        "proton_remove",
+        json!({ "versionId": "GE-Proton10-1" }),
+    );
+    assert_eq!(removed, Value::Null);
+    assert!(!build.exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]

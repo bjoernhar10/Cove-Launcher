@@ -21,11 +21,12 @@ import { Page } from "../../components/ui/Page.tsx";
 import { useCatalogStatus } from "../../hooks/useCatalog.ts";
 import { AccountsTab } from "./AccountsTab.tsx";
 import { PluginsTab } from "./PluginsTab.tsx";
+import { ProtonTab } from "./ProtonTab.tsx";
 import { Group, Panel, SettingsSkeleton } from "./parts.tsx";
 import { useQuery } from "../../hooks/useQuery.ts";
 import { queryClient } from "../../lib/queryClient.ts";
 import { cx } from "../../lib/cx.ts";
-import { modKeyLabel } from "../../lib/env.ts";
+import { detectPlatform, modKeyLabel } from "../../lib/env.ts";
 import { formatPercent } from "../../lib/format.ts";
 import { ACCENT_LABELS, PLATFORM_LABELS } from "../../lib/labels.ts";
 import { usePreferences } from "../../stores/preferences.ts";
@@ -33,7 +34,7 @@ import { invalidateQueries } from "../../stores/query.ts";
 import { errorMessage, toast } from "../../stores/toasts.ts";
 import { useUi } from "../../stores/ui.ts";
 
-const TABS = ["general", "appearance", "library", "accounts", "catalog", "downloads", "plugins", "about"] as const;
+const TABS = ["general", "appearance", "library", "accounts", "catalog", "downloads", "plugins", "proton", "about"] as const;
 
 type TabId = (typeof TABS)[number];
 
@@ -808,13 +809,20 @@ const PANELS: Record<TabId, () => ReactNode> = {
   catalog: CatalogTab,
   downloads: DownloadsTab,
   plugins: PluginsTab,
+  proton: ProtonTab,
   about: AboutTab,
 };
+
+/** Proton runs Windows games on Linux: its tab only exists there. */
+function visibleTabs(): readonly TabId[] {
+  return detectPlatform() === "linux" ? TABS : TABS.filter((id) => id !== "proton");
+}
 
 export function SettingsPage() {
   const t = useMessages();
   const { tab } = useParams();
-  const current = TABS.find((x) => x === tab);
+  const tabs = visibleTabs();
+  const current = tabs.find((x) => x === tab);
   if (!current) return <Navigate to="/settings/general" replace />;
   const PanelComponent = PANELS[current];
 
@@ -824,7 +832,7 @@ export function SettingsPage() {
       <div className="grid grid-cols-[200px_1fr] gap-12">
         <nav aria-label={t.game.settings}>
           <ul className="flex flex-col gap-1">
-            {TABS.map((id) => (
+            {tabs.map((id) => (
               <li key={id}>
                 <NavLink
                   to={`/settings/${id}`}

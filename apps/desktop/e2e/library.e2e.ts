@@ -93,6 +93,12 @@ test.describe("Bibliothek", () => {
     await expect(page.getByRole("list", { name: "Spiele" }).getByRole("listitem")).toHaveCount(3);
   });
 
+  test("ohne Linux gibt es keinen Proton-Bereich in den Einstellungen", async ({ page }) => {
+    await openCove(page, "/settings/general");
+    await expect(page.getByRole("link", { name: "Plugins", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Proton", exact: true })).toHaveCount(0);
+  });
+
   test("ohne Linux gibt es keine ProtonDB-Bewertung", async ({ page }) => {
     // The test browsers report Windows (Chromium) and macOS (WebKit).
     await openCove(page, "/library/game-0");
@@ -150,6 +156,27 @@ test.describe("Bibliothek", () => {
 
 test.describe("Bibliothek unter Linux", () => {
   test.use({ userAgent: LINUX_USER_AGENT });
+
+  test("ein Windows-Spiel bekommt seine Proton-Version, ganz ohne Steam", async ({ page }) => {
+    await openCove(page, "/library/game-11?tab=settings");
+    const version = page.getByLabel("Proton-Version");
+    await expect(version).toHaveValue("GE-Proton10-24");
+    await expect(page.getByText("Installiert.", { exact: true })).toBeVisible();
+    await version.selectOption("GE-Proton10-25");
+    await expect(page.getByText("Wird nach dem Speichern heruntergeladen (520 MB).")).toBeVisible();
+    await page.getByRole("button", { name: "Speichern" }).click();
+    await expect(page.getByText("Installiert.", { exact: true })).toBeVisible();
+
+    // Settings → Proton: the default for all other Windows games, and the installed builds.
+    await page.getByRole("link", { name: "Settings" }).click();
+    await page.getByRole("link", { name: "Proton", exact: true }).click();
+    await expect(page.getByLabel("Standard-Version")).toHaveValue("latest");
+    const builds = page.getByRole("list", { name: "GE-Proton" });
+    await expect(builds.getByRole("listitem").filter({ hasText: "GE-Proton10-25" }).getByText("1 Spiel")).toBeVisible();
+    await builds.getByRole("button", { name: "GE-Proton10-24 löschen" }).click();
+    await expect(page.getByText("GE-Proton10-24 gelöscht.")).toBeVisible();
+    await expect(page.getByRole("list", { name: "Von Steam installiert" }).getByText("Proton 9.0")).toBeVisible();
+  });
 
   test("die Spielseite zeigt die ProtonDB-Bewertung", async ({ page }) => {
     await openCove(page, "/library/game-0");

@@ -22,7 +22,10 @@ import type {
   ManualGameInput,
   PlaytimeStats,
   PluginInfo,
+  ProtonOverview,
+  ProtonProgress,
   ProtonRating,
+  ProtonVersionId,
   RunningGame,
   ScanCandidate,
   StoreAccount,
@@ -94,6 +97,14 @@ export interface CoveCommands {
   game_manage_dlcs: { args: { gameId: GameId }; result: null };
   /** ProtonDB's rating of the game (how well it runs on Linux); null when there is none. */
   game_proton_rating: { args: { gameId: GameId }; result: ProtonRating | null };
+  /** Linux: GE-Proton releases, installed builds and Steam's builds. */
+  proton_list: { args: NoArgs; result: ProtonOverview };
+  /** Loads the release list again; a new "latest" is installed in the background. */
+  proton_check: { args: NoArgs; result: ProtonOverview };
+  /** Starts installing a GE-Proton build (progress: `proton-progress`). */
+  proton_install: { args: { versionId: ProtonVersionId }; result: null };
+  /** Deletes a GE-Proton build no game uses. */
+  proton_remove: { args: { versionId: ProtonVersionId }; result: null };
   /** Moves the game folder into another games folder; progress arrives as `game-move-progress`. */
   game_move: { args: { gameId: GameId; folder: string }; result: null };
   /** Installed and newest version of a GOG or Epic game Cove installed. */
@@ -201,6 +212,7 @@ export interface CoveEvents {
   "achievement-unlocked": CoveAchievement;
   "update-progress": UpdateProgress;
   "game-move-progress": GameMoveProgress;
+  "proton-progress": ProtonProgress;
 }
 
 export type CoveEvent = keyof CoveEvents;

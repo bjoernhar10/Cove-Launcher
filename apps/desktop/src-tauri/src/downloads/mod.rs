@@ -2362,7 +2362,8 @@ mod tests {
             platform: crate::models::Platform::current(),
             home: None,
             compat_data_root: games.path().join("compat"),
-            proton_installs: Vec::new(),
+            protons: Vec::new(),
+            default_proton: crate::proton::LATEST.to_owned(),
         };
         let item = db::library::require(&pool, "epic-sugar").await.unwrap();
         let args = manager.epic_launch_args(&item, &host).await.unwrap();

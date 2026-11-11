@@ -95,6 +95,7 @@ struct EntryRow {
     playtime_offset_minutes: i64,
     launch_arguments: String,
     compatibility_tool: String,
+    proton_version: Option<String>,
     env: String,
     added_at: String,
     played_seconds: i64,
@@ -138,6 +139,7 @@ impl EntryRow {
                     arguments: self.launch_arguments,
                     compatibility_tool: CompatibilityTool::parse(&self.compatibility_tool),
                     env,
+                    proton_version: self.proton_version,
                 },
                 catalog_id: self.catalog_id,
                 match_status: MatchStatus::parse(&self.match_status),
@@ -153,7 +155,7 @@ fn select_entries(filter: &str) -> String {
     format!(
         "SELECT {GAME_COLUMNS}, e.source_id, e.store_game_id, e.installed, e.install_path, e.executable_path, \
            e.install_size_bytes, e.favorite, e.playtime_offset_minutes, e.launch_arguments, e.compatibility_tool, \
-           e.env, e.added_at, e.catalog_id, e.match_status, \
+           e.proton_version, e.env, e.added_at, e.catalog_id, e.match_status, \
            (SELECT COALESCE(SUM(s.duration_seconds), 0) FROM play_sessions s WHERE s.game_id = g.id) AS played_seconds, \
            (SELECT COALESCE(MAX(MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at), \
               MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at) \
@@ -521,18 +523,43 @@ pub async fn update(
                 "Variable names can't contain “=” or spaces."
             )));
         }
+        let proton_version = options
+            .proton_version
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty());
+        if proton_version
+            .is_some_and(|v| v.chars().count() > 100 || v.chars().any(char::is_control))
+        {
+            return Err(AppError::InvalidInput(tr!(
+                "Diese Proton-Version gibt es nicht.",
+                "This Proton version does not exist."
+            )));
+        }
         sqlx::query(
-            "UPDATE library_entries SET launch_arguments = ?, compatibility_tool = ?, env = ? WHERE game_id = ?",
+            "UPDATE library_entries SET launch_arguments = ?, compatibility_tool = ?, env = ?, proton_version = ? \
+             WHERE game_id = ?",
         )
         .bind(options.arguments.trim())
         .bind(options.compatibility_tool.as_str())
         .bind(serde_json::to_string(&env)?)
+        .bind(proton_version)
         .bind(game_id)
         .execute(&mut *tx)
         .await?;
     }
     tx.commit().await?;
     require(pool, game_id).await
+}
+
+/// The Proton build of every game that runs with Proton (`None` = the default).
+pub async fn proton_choices(pool: &SqlitePool) -> AppResult<Vec<Option<String>>> {
+    let rows: Vec<(Option<String>,)> = sqlx::query_as(
+        "SELECT proton_version FROM library_entries WHERE compatibility_tool = 'proton'",
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|(v,)| v).collect())
 }
 
 /// Inserts a store-owned game (connectors will use this; tests for now).
@@ -724,6 +751,7 @@ pub(crate) mod tests {
                         value: "dropped".into(),
                     },
                 ],
+                proton_version: Some(" GE-Proton10-25 ".into()),
             }),
         };
         let updated = update(&pool, &item.game.id, &patch).await.unwrap();
@@ -735,6 +763,14 @@ pub(crate) mod tests {
             CompatibilityTool::Proton
         );
         assert_eq!(updated.entry.launch_options.env.len(), 1);
+        assert_eq!(
+            updated.entry.launch_options.proton_version.as_deref(),
+            Some("GE-Proton10-25")
+        );
+        assert_eq!(
+            proton_choices(&pool).await.unwrap(),
+            [Some("GE-Proton10-25".to_owned())]
+        );
 
         let bad = LibraryUpdate {
             launch_options: Some(LaunchOptions {

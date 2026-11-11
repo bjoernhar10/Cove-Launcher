@@ -141,7 +141,6 @@ pub enum CompatibilityTool {
     #[default]
     Native,
     Proton,
-    ProtonExperimental,
     Wine,
 }
 
@@ -150,7 +149,6 @@ impl CompatibilityTool {
         match self {
             Self::Native => "native",
             Self::Proton => "proton",
-            Self::ProtonExperimental => "proton-experimental",
             Self::Wine => "wine",
         }
     }
@@ -158,7 +156,6 @@ impl CompatibilityTool {
     pub fn parse(value: &str) -> Self {
         match value {
             "proton" => Self::Proton,
-            "proton-experimental" => Self::ProtonExperimental,
             "wine" => Self::Wine,
             _ => Self::Native,
         }
@@ -177,6 +174,10 @@ pub struct LaunchOptions {
     pub arguments: String,
     pub compatibility_tool: CompatibilityTool,
     pub env: Vec<EnvVar>,
+    /// With Proton: the build to use (`proton::LATEST`, a GE-Proton release
+    /// name or `steam:<folder>`); `None` = the default from the settings.
+    #[serde(default)]
+    pub proton_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -641,10 +642,17 @@ pub struct LibrarySettings {
     /// Sync Epic cloud saves before and after playing (games Cove installed).
     #[serde(default = "default_true")]
     pub epic_cloud_saves: bool,
+    /// Proton build for games without a choice of their own (Linux).
+    #[serde(default = "default_proton")]
+    pub default_proton: String,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_proton() -> String {
+    crate::proton::LATEST.to_owned()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1075,6 +1083,71 @@ pub struct Collection {
     pub name: String,
     /// The library games in it, oldest member first.
     pub game_ids: Vec<GameId>,
+}
+
+/// Where a Proton build comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProtonKind {
+    /// GE-Proton: Cove downloads and updates it.
+    Ge,
+    /// Installed by Steam (Valve's Proton or a build in `compatibilitytools.d`).
+    Steam,
+}
+
+/// A Proton build a game can use.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtonVersion {
+    /// GE-Proton release name, or `steam:<folder>`.
+    pub id: String,
+    pub name: String,
+    pub kind: ProtonKind,
+    pub installed: bool,
+    /// Size of the download, for GE-Proton releases.
+    pub download_bytes: Option<i64>,
+    pub released_at: Option<String>,
+    /// Library games that start with this build (directly or as "latest"/default).
+    pub games: i64,
+    /// Cove may delete it: a GE-Proton build Cove installed that no game uses.
+    pub removable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProtonPhase {
+    Downloading,
+    Verifying,
+    Unpacking,
+    Done,
+    Failed,
+}
+
+/// Event `proton-progress`: one GE-Proton install, at most about 4 per second.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtonProgress {
+    pub id: String,
+    pub phase: ProtonPhase,
+    pub downloaded_bytes: i64,
+    pub total_bytes: i64,
+    /// User-facing reason when `phase` is `failed`.
+    pub error: Option<String>,
+}
+
+/// Everything the Proton settings show.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtonOverview {
+    /// GE-Proton (newest first), then Steam's builds.
+    pub versions: Vec<ProtonVersion>,
+    /// The build "latest" stands for right now.
+    pub latest: Option<String>,
+    /// When the list of GE-Proton releases was last loaded.
+    pub checked_at: Option<String>,
+    /// The release list could not be loaded (only installed builds are listed).
+    pub offline: bool,
+    pub installing: Vec<ProtonProgress>,
 }
 
 /// `ProtonDB` tier: how well a Windows game runs on Linux through Proton.

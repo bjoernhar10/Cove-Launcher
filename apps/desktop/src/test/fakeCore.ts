@@ -22,6 +22,7 @@ import type {
   DlcOption,
   GameUpdateInfo,
   InstallTarget,
+  ProtonOverview,
   ProtonRating,
   StoreDlcList,
   LaunchVia,
@@ -80,7 +81,7 @@ export function fakeItem(id: string, title: string, overrides: Partial<LibraryIt
       lastPlayedAt: "2026-11-01T10:00:00Z",
       addedAt: "2026-10-01T10:00:00Z",
       achievements: { unlocked: 0, total: 0 },
-      launchOptions: { arguments: "", compatibilityTool: "native", env: [] },
+      launchOptions: { arguments: "", compatibilityTool: "native", env: [], protonVersion: null },
       catalogId: null,
       matchStatus: "none",
       launchVia: null,
@@ -100,7 +101,7 @@ export const FAKE_SCAN: ScanCandidate[] = [
 export const DEFAULT_SETTINGS: AppSettings = {
   general: { language: "de", launchOnStartup: false, minimizeToTray: false, startPage: "home" },
   appearance: { theme: "dark", accent: "blue" },
-  library: { scanFolders: [], scanOnStartup: false, gameFolders: ["/home/u/Games"], steamSilentStart: true, epicCloudSaves: true },
+  library: { scanFolders: [], scanOnStartup: false, gameFolders: ["/home/u/Games"], steamSilentStart: true, epicCloudSaves: true, defaultProton: "latest" },
   downloads: { directory: "/home/u/Games", bandwidthLimitBytesPerSecond: null, maxConcurrent: 1 },
   catalog: { useCoveService: true },
 };
@@ -135,6 +136,32 @@ export const FAKE_COVE_ACHIEVEMENTS: CoveAchievement[] = [
   { id: "first-hour", title: "Erste Stunde", description: "Spiele insgesamt eine Stunde über Cove.", unlockedAt: "2026-11-01T10:00:00Z", current: 1, target: 1 },
   { id: "ten-hours", title: "10 Stunden", description: "Spiele insgesamt 10 Stunden über Cove.", unlockedAt: null, current: 3, target: 10 },
 ];
+
+/** Proton builds the fake core starts with: a newer GE-Proton to download, one installed, one from Steam. */
+export function fakeProton(): ProtonOverview {
+  const ge = (id: string, installed: boolean, releasedAt: string) => ({
+    id,
+    name: id,
+    kind: "ge" as const,
+    installed,
+    downloadBytes: 520_000_000,
+    releasedAt,
+    games: 0,
+    removable: false,
+  });
+  return {
+    versions: [
+      ge("GE-Proton10-25", false, "2026-11-08T12:00:00Z"),
+      ge("GE-Proton10-24", true, "2026-10-20T12:00:00Z"),
+      ge("GE-Proton9-27", false, "2025-06-01T12:00:00Z"),
+      { id: "steam:Proton 9.0", name: "Proton 9.0", kind: "steam", installed: true, downloadBytes: null, releasedAt: null, games: 0, removable: false },
+    ],
+    latest: "GE-Proton10-25",
+    checkedAt: "2026-11-11T06:00:00Z",
+    offline: false,
+    installing: [],
+  };
+}
 
 export interface FakeCore {
   library: LibraryItem[];
@@ -174,6 +201,10 @@ export interface FakeCore {
   gameDlcs: Record<string, StoreDlcList>;
   /** The user's own collections. */
   collections: Collection[];
+  /** Proton builds (Linux); `games` and `removable` are computed from the library. */
+  proton: ProtonOverview;
+  /** Proton builds the user had installed (in order). */
+  protonInstalls: string[];
   /** ProtonDB ratings (per game id); games without one have none. */
   protonRatings: Record<string, ProtonRating>;
   /** ProtonDB can't be reached. */
@@ -258,6 +289,8 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     installTargets: {},
     gameDlcs: {},
     collections: [],
+    proton: fakeProton(),
+    protonInstalls: [],
     protonRatings: {},
     protonDown: false,
     openedUrls: [],
@@ -305,6 +338,33 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     return name;
   };
 
+  /** Mirrors `ProtonManager::overview`: which builds games start with. */
+  const protonOverview = (): ProtonOverview => {
+    const used = new Map<string, number>();
+    for (const item of core.library) {
+      const options = item.entry.launchOptions;
+      if (options.compatibilityTool !== "proton") continue;
+      const wanted = options.protonVersion ?? core.settings.library.defaultProton;
+      const id = wanted === "latest" ? (core.proton.latest ?? wanted) : wanted;
+      used.set(id, (used.get(id) ?? 0) + 1);
+    }
+    return {
+      ...core.proton,
+      versions: core.proton.versions.map((v) => {
+        const games = used.get(v.id) ?? 0;
+        return { ...v, games, removable: v.kind === "ge" && v.installed && games === 0 };
+      }),
+    };
+  };
+  /** Installs a GE-Proton build at once (the core downloads it in the background). */
+  const installProton = (id: string) => {
+    const target = id === "latest" ? core.proton.latest : id;
+    const version = core.proton.versions.find((v) => v.id === target && v.kind === "ge");
+    if (!version) reject("invalidInput", "Das ist keine GE-Proton-Version.");
+    if (!version.installed) core.protonInstalls.push(version.id);
+    version.installed = true;
+  };
+
   const handlers: Handlers = {
     library_list: () => core.library,
     library_get: ({ gameId }) => find(gameId),
@@ -330,7 +390,12 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     library_update: ({ gameId, patch }) => {
       const item = require(gameId);
       if (patch.favorite !== undefined) item.entry.favorite = patch.favorite;
-      if (patch.launchOptions) item.entry.launchOptions = patch.launchOptions;
+      if (patch.launchOptions) {
+        item.entry.launchOptions = patch.launchOptions;
+        // A GE-Proton build the user just picked is installed right away.
+        const wanted = patch.launchOptions.protonVersion ?? core.settings.library.defaultProton;
+        if (patch.launchOptions.compatibilityTool === "proton" && !wanted.startsWith("steam:")) installProton(wanted);
+      }
       if (patch.executablePath) {
         item.entry.executablePath = patch.executablePath;
         item.entry.installed = true;
@@ -381,7 +446,38 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       })),
     }),
     achievements_recent: () => [],
-    game_launch: ({ gameId }) => ({ gameId, method: "process", tracked: true }),
+    game_launch: ({ gameId }) => {
+      const options = require(gameId).entry.launchOptions;
+      // A missing GE-Proton build is installed before the game starts.
+      if (options.compatibilityTool === "proton") {
+        const wanted = options.protonVersion ?? core.settings.library.defaultProton;
+        if (wanted.startsWith("steam:") && !core.proton.versions.some((v) => v.id === wanted)) {
+          reject("compatToolNotFound", `${wanted.slice(6)} wurde nicht gefunden. Ist es installiert?`);
+        }
+        if (!wanted.startsWith("steam:")) installProton(wanted);
+      }
+      return { gameId, method: "process", tracked: true };
+    },
+    proton_list: () => protonOverview(),
+    proton_check: () => {
+      core.proton.checkedAt = new Date().toISOString();
+      return protonOverview();
+    },
+    proton_install: ({ versionId }) => {
+      if (versionId.startsWith("steam:")) reject("invalidInput", "Das ist keine GE-Proton-Version.");
+      installProton(versionId);
+      return null;
+    },
+    proton_remove: ({ versionId }) => {
+      const version = protonOverview().versions.find((v) => v.id === versionId && v.installed);
+      if (!version) reject("invalidInput", `${versionId} ist nicht installiert.`);
+      if (version.kind === "steam") reject("invalidInput", "Proton-Versionen von Steam werden in Steam verwaltet.");
+      if (version.games > 0) {
+        reject("invalidInput", version.games === 1 ? `${versionId} wird noch von einem Spiel verwendet.` : `${versionId} wird noch von ${String(version.games)} Spielen verwendet.`);
+      }
+      core.proton.versions = core.proton.versions.flatMap((v) => (v.id !== versionId ? [v] : v.downloadBytes === null ? [] : [{ ...v, installed: false }]));
+      return null;
+    },
     game_stop: ({ gameId }) => {
       reject("notRunning", `${gameId} läuft nicht.`);
     },
@@ -421,6 +517,8 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     },
     settings_get: () => core.settings,
     settings_update: ({ settings }) => {
+      const proton = settings.library.defaultProton;
+      if (proton !== core.settings.library.defaultProton && !proton.startsWith("steam:")) installProton(proton);
       core.settings = settings;
       return settings;
     },

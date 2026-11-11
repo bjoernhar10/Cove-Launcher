@@ -6,6 +6,7 @@ import { api } from "../../api/index.ts";
 import { formatPercent } from "../../lib/format.ts";
 import { SOURCE_LABELS } from "../../lib/labels.ts";
 import { useDownloads } from "../../stores/downloads.ts";
+import { useProton } from "../../stores/proton.ts";
 import { invalidateQueries } from "../../stores/query.ts";
 import { useRunningGames } from "../../stores/running.ts";
 import { errorMessage, toast } from "../../stores/toasts.ts";
@@ -31,6 +32,8 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState(false);
   const running = useRunningGames((s) => game.id in s.games);
+  // A Windows game on Linux may need its Proton build first (downloaded before the start).
+  const proton = useProton((s) => Object.values(s.installs)[0]);
   const download = useDownloads((s) =>
     s.items.find((d) => d.download.gameId === entry.gameId && d.download.queuePosition !== null),
   );
@@ -70,13 +73,17 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
   }
 
   if (entry.installed) {
+    const preparing =
+      busy && proton
+        ? t.play.protonInstalling(formatPercent(proton.totalBytes > 0 ? proton.downloadedBytes / proton.totalBytes : 0))
+        : null;
     return (
       <Button
         variant="primary"
         size={size}
-        icon={Play}
+        icon={preparing ? Download : Play}
         iconOnly={iconOnly}
-        label={iconOnly ? t.play.playTitle(game.title) : t.play.play}
+        label={preparing ?? (iconOnly ? t.play.playTitle(game.title) : t.play.play)}
         disabled={busy}
         className={className}
         onClick={() =>

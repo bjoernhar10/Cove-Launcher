@@ -497,7 +497,6 @@
       "enum": [
         "native",
         "proton",
-        "proton-experimental",
         "wine"
       ],
       "type": "string"
@@ -1519,12 +1518,24 @@
             "$ref": "#/definitions/EnvVar"
           },
           "type": "array"
+        },
+        "protonVersion": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProtonVersionId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With Proton: the build to use. `\"latest\"` = always the newest GE-Proton, a GE-Proton release name (`\"GE-Proton10-25\"`), or `\"steam:<folder>\"` for a build Steam installed. null = the default (`library.defaultProton`)."
         }
       },
       "required": [
         "arguments",
         "compatibilityTool",
-        "env"
+        "env",
+        "protonVersion"
       ],
       "type": "object"
     },
@@ -1709,6 +1720,10 @@
     "LibrarySettings": {
       "additionalProperties": false,
       "properties": {
+        "defaultProton": {
+          "$ref": "#/definitions/ProtonVersionId",
+          "description": "Linux: Proton build for games without a choice of their own (`\"latest\"` by default)."
+        },
         "epicCloudSaves": {
           "description": "Sync Epic cloud saves before and after playing (games Cove installed).",
           "type": "boolean"
@@ -1739,7 +1754,8 @@
         "scanOnStartup",
         "gameFolders",
         "steamSilentStart",
-        "epicCloudSaves"
+        "epicCloudSaves",
+        "defaultProton"
       ],
       "type": "object"
     },
@@ -2079,6 +2095,106 @@
       ],
       "type": "string"
     },
+    "ProtonKind": {
+      "description": "Where a Proton build comes from: GE-Proton (Cove downloads and updates it) or Steam.",
+      "enum": [
+        "ge",
+        "steam"
+      ],
+      "type": "string"
+    },
+    "ProtonOverview": {
+      "additionalProperties": false,
+      "description": "Everything the Proton settings show.",
+      "properties": {
+        "checkedAt": {
+          "description": "When the list of GE-Proton releases was last loaded.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "installing": {
+          "items": {
+            "$ref": "#/definitions/ProtonProgress"
+          },
+          "type": "array"
+        },
+        "latest": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProtonVersionId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The build \"latest\" stands for right now."
+        },
+        "offline": {
+          "description": "The release list could not be loaded; only installed builds are listed.",
+          "type": "boolean"
+        },
+        "versions": {
+          "description": "GE-Proton (newest first), then Steam's builds.",
+          "items": {
+            "$ref": "#/definitions/ProtonVersion"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "versions",
+        "latest",
+        "checkedAt",
+        "offline",
+        "installing"
+      ],
+      "type": "object"
+    },
+    "ProtonPhase": {
+      "enum": [
+        "downloading",
+        "verifying",
+        "unpacking",
+        "done",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "ProtonProgress": {
+      "additionalProperties": false,
+      "description": "Event `proton-progress`: one GE-Proton install, at most about 4 per second.",
+      "properties": {
+        "downloadedBytes": {
+          "type": "number"
+        },
+        "error": {
+          "description": "User-facing reason when `phase` is `failed`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "$ref": "#/definitions/ProtonVersionId"
+        },
+        "phase": {
+          "$ref": "#/definitions/ProtonPhase"
+        },
+        "totalBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "phase",
+        "downloadedBytes",
+        "totalBytes",
+        "error"
+      ],
+      "type": "object"
+    },
     "ProtonRating": {
       "additionalProperties": false,
       "description": "ProtonDB's community rating of a game.",
@@ -2111,6 +2227,60 @@
         "bronze",
         "borked"
       ],
+      "type": "string"
+    },
+    "ProtonVersion": {
+      "additionalProperties": false,
+      "description": "A Proton build a game can use.",
+      "properties": {
+        "downloadBytes": {
+          "description": "Size of the download (GE-Proton releases).",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "games": {
+          "description": "Library games that start with this build (directly, as \"latest\" or as the default).",
+          "type": "number"
+        },
+        "id": {
+          "$ref": "#/definitions/ProtonVersionId"
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/definitions/ProtonKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "releasedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "removable": {
+          "description": "Cove may delete it: a GE-Proton build no game uses.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "installed",
+        "downloadBytes",
+        "releasedAt",
+        "games",
+        "removable"
+      ],
+      "type": "object"
+    },
+    "ProtonVersionId": {
+      "description": "`\"latest\"`, a GE-Proton release name or `\"steam:<folder>\"`.",
       "type": "string"
     },
     "ProvidersConfigured": {

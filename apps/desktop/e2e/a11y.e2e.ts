@@ -53,6 +53,13 @@ test.describe("WCAG 2.1 AA unter Linux", () => {
     await expectAccessible(page, "/library/game-0");
     await expect(page.getByRole("region", { name: "Linux-Kompatibilität" }).getByText("Gold", { exact: true })).toBeVisible();
   });
+
+  // Proton: the settings tab and the version of a Windows game.
+  for (const route of ["/settings/proton", "/library/game-11?tab=settings"]) {
+    test(route, async ({ page }) => {
+      await expectAccessible(page, route);
+    });
+  }
 });
 
 test("das Sammlungen-Menü ist zugänglich und mit der Tastatur bedienbar", async ({ page }) => {

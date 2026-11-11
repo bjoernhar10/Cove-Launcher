@@ -155,6 +155,7 @@ pub(crate) mod tests {
                 game_folders: vec!["/home/u/Games".into()],
                 steam_silent_start: true,
                 epic_cloud_saves: true,
+                default_proton: crate::proton::LATEST.to_owned(),
             },
             downloads: DownloadSettings {
                 directory: "/home/u/Games".into(),

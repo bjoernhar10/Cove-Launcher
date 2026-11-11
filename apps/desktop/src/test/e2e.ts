@@ -100,6 +100,13 @@ function realItem(game: Game, index: number): LibraryItem {
 const params = new URLSearchParams(window.location.search);
 const count = Number(params.get("games") ?? TITLES.length);
 const core = installFakeCore(demo ? demo.library.map(realItem) : Array.from({ length: count }, (_, i) => demoItem(i)));
+// game-11 is a Windows game that runs with Proton (a GE-Proton build of its own).
+const windowsGame = core.library.find((item) => item.game.id === "game-11");
+if (windowsGame) {
+  windowsGame.entry.executablePath = "/games/game-11/Game.exe";
+  windowsGame.entry.launchOptions = { ...windowsGame.entry.launchOptions, compatibilityTool: "proton", protonVersion: "GE-Proton10-24" };
+}
+
 // One collection of the user's own.
 core.collections = [{ id: "1", name: "Mit Freunden", gameIds: core.library.slice(1, 3).map((item) => item.game.id) }];
 

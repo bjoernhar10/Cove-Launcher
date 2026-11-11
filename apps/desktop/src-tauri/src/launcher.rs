@@ -49,8 +49,10 @@ pub struct HostEnv {
     pub home: Option<PathBuf>,
     /// Per-game Proton prefixes live below this folder.
     pub compat_data_root: PathBuf,
-    /// Proton installations found on this machine (folders containing a `proton` script).
-    pub proton_installs: Vec<PathBuf>,
+    /// Proton builds on this machine (Cove's GE-Proton and Steam's).
+    pub protons: Vec<crate::proton::ProtonBuild>,
+    /// Build for games without a choice of their own (`library.defaultProton`).
+    pub default_proton: String,
 }
 
 impl HostEnv {
@@ -58,15 +60,13 @@ impl HostEnv {
         let home = std::env::var_os("HOME")
             .or_else(|| std::env::var_os("USERPROFILE"))
             .map(PathBuf::from);
-        let proton_installs = home
-            .as_deref()
-            .map(find_proton_installs)
-            .unwrap_or_default();
         Self {
             platform: Platform::current(),
             home,
             compat_data_root,
-            proton_installs,
+            // Filled per launch by `ProtonManager::host`.
+            protons: Vec::new(),
+            default_proton: crate::proton::LATEST.to_owned(),
         }
     }
 
@@ -106,34 +106,11 @@ pub fn find_proton_installs(home: &Path) -> Vec<PathBuf> {
     found
 }
 
-fn version_key(name: &str) -> Vec<u32> {
+/// Version numbers in a name ("GE-Proton10-25" → [10, 25]).
+pub fn version_key(name: &str) -> Vec<u32> {
     name.split(|c: char| !c.is_ascii_digit())
         .filter_map(|p| p.parse().ok())
         .collect()
-}
-
-/// Picks "Proton - Experimental" or the newest numbered official Proton (falls back to any build, e.g. GE).
-pub fn pick_proton(installs: &[PathBuf], experimental: bool) -> Option<PathBuf> {
-    let name = |p: &PathBuf| {
-        p.file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default()
-    };
-    if experimental {
-        return installs
-            .iter()
-            .find(|p| name(p).to_lowercase().contains("experimental"))
-            .cloned();
-    }
-    let mut stable: Vec<&PathBuf> = installs
-        .iter()
-        .filter(|p| {
-            let n = name(p).to_lowercase();
-            !n.contains("experimental") && !n.contains("hotfix") && !version_key(&n).is_empty()
-        })
-        .collect();
-    stable.sort_by_key(|p| (name(p).starts_with("Proton "), version_key(&name(p))));
-    stable.last().map(|p| (*p).clone())
 }
 
 /// Everything about a library entry needed to start it.
@@ -290,21 +267,26 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
         match target.options.compatibility_tool {
             CompatibilityTool::Native => {
                 return Err(AppError::Launch(
-                    tr!("Das ist ein Windows-Spiel. Wähle unter Einstellungen → Kompatibilität Proton oder Wine.", "This is a Windows game. Choose Proton or Wine under Settings → Compatibility."),
+                    tr!("Das ist ein Windows-Spiel. Wähle in den Einstellungen des Spiels unter „Kompatibilität“ Proton oder Wine.", "This is a Windows game. Choose Proton or Wine under “Compatibility” in the game's settings."),
                 ))
             }
             CompatibilityTool::Wine => (PathBuf::from("wine"), vec![executable.to_owned()]),
-            tool @ (CompatibilityTool::Proton | CompatibilityTool::ProtonExperimental) => {
-                let experimental = tool == CompatibilityTool::ProtonExperimental;
-                let proton = pick_proton(&host.proton_installs, experimental).ok_or_else(|| {
-                    AppError::CompatToolNotFound(if experimental { "Proton Experimental" } else { "Proton" }.into())
+            CompatibilityTool::Proton => {
+                let wanted = crate::proton::wanted(&target.options, &host.default_proton)
+                    .unwrap_or_else(|| host.default_proton.clone());
+                let proton = crate::proton::resolve(&host.protons, &wanted).ok_or_else(|| {
+                    AppError::CompatToolNotFound(crate::proton::display_name(&wanted).to_owned())
                 })?;
                 let prefix = host.compat_data_root.join(&target.game_id);
                 env.push(("STEAM_COMPAT_DATA_PATH".into(), prefix.to_string_lossy().into_owned()));
-                if let Some(steam) = host.steam_root() {
-                    env.push(("STEAM_COMPAT_CLIENT_INSTALL_PATH".into(), steam.to_string_lossy().into_owned()));
+                // Proton runs without Steam too; Steam's folder only adds its client libraries.
+                let steam = host.steam_root().map(|p| p.to_string_lossy().into_owned());
+                env.push(("STEAM_COMPAT_CLIENT_INSTALL_PATH".into(), steam.unwrap_or_default()));
+                if let Some(dir) = &cwd {
+                    env.push(("STEAM_COMPAT_INSTALL_PATH".into(), dir.to_string_lossy().into_owned()));
                 }
-                (proton.join("proton"), vec!["run".into(), executable.to_owned()])
+                // Like Steam: Proton waits for the game, so the session ends with it.
+                (proton.path.join("proton"), vec!["waitforexitandrun".into(), executable.to_owned()])
             }
         }
     } else {
@@ -746,12 +728,20 @@ mod tests {
     use super::*;
     use crate::models::EnvVar;
 
+    /// `proton`: build ids; each lives in `/p/<id without "steam:">`.
     fn host(platform: Platform, proton: &[&str]) -> HostEnv {
         HostEnv {
             platform,
             home: None,
             compat_data_root: PathBuf::from("/data/compat"),
-            proton_installs: proton.iter().map(PathBuf::from).collect(),
+            protons: proton
+                .iter()
+                .map(|id| crate::proton::ProtonBuild {
+                    id: (*id).to_owned(),
+                    path: PathBuf::from("/p").join(crate::proton::display_name(id)),
+                })
+                .collect(),
+            default_proton: crate::proton::LATEST.to_owned(),
         }
     }
 
@@ -933,64 +923,49 @@ mod tests {
             plan(&t, &host(Platform::Linux, &[])),
             Err(AppError::CompatToolNotFound(_))
         ));
-        let protons = [
-            "/s/common/Proton 8.0",
-            "/s/common/Proton 9.0",
-            "/s/common/Proton - Experimental",
-        ];
+        let protons = ["GE-Proton9-27", "GE-Proton10-25", "steam:Proton 9.0"];
+        // Without a choice of its own the game uses the default: the newest GE-Proton.
         let LaunchPlan::Process {
             program, args, env, ..
         } = plan(&t, &host(Platform::Linux, &protons)).unwrap()
         else {
             panic!()
         };
-        assert_eq!(program, PathBuf::from("/s/common/Proton 9.0/proton"));
-        assert_eq!(args, ["run", "/g/Game.exe"]);
+        assert_eq!(program, PathBuf::from("/p/GE-Proton10-25/proton"));
+        assert_eq!(args, ["waitforexitandrun", "/g/Game.exe"]);
+        let var = |key: &str| env.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
         assert_eq!(
-            env[0],
-            (
-                "STEAM_COMPAT_DATA_PATH".to_owned(),
-                // Built with the host's separator (this test also runs on Windows).
+            var("STEAM_COMPAT_DATA_PATH"),
+            // Built with the host's separator (this test also runs on Windows).
+            Some(
                 PathBuf::from("/data/compat")
                     .join("g")
                     .to_string_lossy()
                     .into_owned()
             )
         );
+        // No Steam needed.
+        assert_eq!(var("STEAM_COMPAT_CLIENT_INSTALL_PATH").as_deref(), Some(""));
+        assert_eq!(var("STEAM_COMPAT_INSTALL_PATH").as_deref(), Some("/g"));
 
-        t.options.compatibility_tool = CompatibilityTool::ProtonExperimental;
-        let LaunchPlan::Process { program, .. } =
-            plan(&t, &host(Platform::Linux, &protons)).unwrap()
-        else {
-            panic!()
-        };
-        assert_eq!(
-            program,
-            PathBuf::from("/s/common/Proton - Experimental/proton")
-        );
-    }
-
-    #[test]
-    fn picks_newest_official_proton() {
-        let installs: Vec<PathBuf> = [
-            "Proton 7.0",
-            "Proton 10.0",
-            "Proton 9.0",
-            "GE-Proton9-20",
-            "Proton Hotfix",
-        ]
-        .iter()
-        .map(PathBuf::from)
-        .collect();
-        assert_eq!(
-            pick_proton(&installs, false),
-            Some(PathBuf::from("Proton 10.0"))
-        );
-        assert_eq!(pick_proton(&installs, true), None);
-        assert_eq!(
-            pick_proton(&[PathBuf::from("GE-Proton9-20")], false),
-            Some(PathBuf::from("GE-Proton9-20"))
-        );
+        // A build of its own: a pinned GE-Proton or one from Steam.
+        for (version, expected) in [
+            ("GE-Proton9-27", "/p/GE-Proton9-27/proton"),
+            ("steam:Proton 9.0", "/p/Proton 9.0/proton"),
+        ] {
+            t.options.proton_version = Some(version.into());
+            let LaunchPlan::Process { program, .. } =
+                plan(&t, &host(Platform::Linux, &protons)).unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(program, PathBuf::from(expected));
+        }
+        t.options.proton_version = Some("steam:Proton - Experimental".into());
+        assert!(matches!(
+            plan(&t, &host(Platform::Linux, &protons)),
+            Err(AppError::CompatToolNotFound(name)) if name == "Proton - Experimental"
+        ));
     }
 
     #[test]

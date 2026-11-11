@@ -161,6 +161,15 @@ characters and unique without regard to case. In the UI they are chips next to t
 My Library; a game is put into collections from a small menu (right-click on the game, or the
 "Sammlungen" button on its page).
 
+### Proton (Linux)
+
+Windows games on Linux run with Proton, without Steam (`proton.rs`). Cove downloads GE-Proton
+from its GitHub releases, checks the SHA-512 checksum and unpacks it into its own folder; the
+builds Steam installed are offered as well. Each game picks a build (or uses the default from the
+settings); "latest" always means the newest GE-Proton and is kept up to date in the background. A
+build that is missing is installed when the user picks it, and at the latest before the game
+starts. Old builds that were only installed for "latest" are removed once no game needs them.
+
 ### ProtonDB rating (Linux)
 
 On Linux the game page shows how well a game runs with Proton (`protondb.rs`, command

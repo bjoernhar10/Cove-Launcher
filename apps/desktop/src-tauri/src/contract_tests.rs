@@ -290,6 +290,45 @@ async fn core_responses_match_shared_schema() {
             },
         );
     }
+    let progress = crate::models::ProtonProgress {
+        id: "GE-Proton10-25".into(),
+        phase: crate::models::ProtonPhase::Downloading,
+        downloaded_bytes: 100,
+        total_bytes: 500,
+        error: None,
+    };
+    assert_valid("ProtonProgress", &progress);
+    assert_valid(
+        "ProtonOverview",
+        &crate::models::ProtonOverview {
+            versions: vec![
+                crate::models::ProtonVersion {
+                    id: "GE-Proton10-25".into(),
+                    name: "GE-Proton10-25".into(),
+                    kind: crate::models::ProtonKind::Ge,
+                    installed: false,
+                    download_bytes: Some(500),
+                    released_at: Some("2026-10-01T00:00:00Z".into()),
+                    games: 0,
+                    removable: false,
+                },
+                crate::models::ProtonVersion {
+                    id: "steam:Proton 9.0".into(),
+                    name: "Proton 9.0".into(),
+                    kind: crate::models::ProtonKind::Steam,
+                    installed: true,
+                    download_bytes: None,
+                    released_at: None,
+                    games: 2,
+                    removable: false,
+                },
+            ],
+            latest: Some("GE-Proton10-25".into()),
+            checked_at: Some("2026-11-11T08:00:00Z".into()),
+            offline: false,
+            installing: vec![progress],
+        },
+    );
     assert_valid(
         "Collection",
         &crate::models::Collection {

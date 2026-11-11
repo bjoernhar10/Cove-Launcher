@@ -5,6 +5,7 @@ import { AddGameDialog } from "../../features/AddGameDialog.tsx";
 import { api } from "../../api/index.ts";
 import { useDownloads } from "../../stores/downloads.ts";
 import { useMoves } from "../../stores/moves.ts";
+import { useProton } from "../../stores/proton.ts";
 import { invalidateQueries } from "../../stores/query.ts";
 import { toast } from "../../stores/toasts.ts";
 import { syncAppearanceWithCore } from "../../stores/preferences.ts";
@@ -19,11 +20,13 @@ export function AppShell() {
   const connectDownloads = useDownloads((s) => s.connect);
   const connectRunning = useRunningGames((s) => s.connect);
   const connectMoves = useMoves((s) => s.connect);
+  const connectProton = useProton((s) => s.connect);
   const location = useLocation();
 
   useEffect(() => connectDownloads(), [connectDownloads]);
   useEffect(() => connectRunning(), [connectRunning]);
   useEffect(() => connectMoves(), [connectMoves]);
+  useEffect(() => connectProton(), [connectProton]);
   useEffect(() => syncAppearanceWithCore(), []);
   useEffect(
     () =>

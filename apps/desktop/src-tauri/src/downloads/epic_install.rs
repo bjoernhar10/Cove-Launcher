@@ -312,7 +312,7 @@ impl DownloadManager {
             saves::UserDirs::windows()?
         } else {
             match item.entry.launch_options.compatibility_tool {
-                CompatibilityTool::Proton | CompatibilityTool::ProtonExperimental => {
+                CompatibilityTool::Proton => {
                     saves::UserDirs::proton(&host.compat_data_root.join(&item.game.id))
                 }
                 CompatibilityTool::Wine => {

@@ -1,10 +1,11 @@
 import { locale, useMessages } from "../i18n/index.ts";
-import type { Achievement, CompatibilityTool, EnvVar, LaunchOptions, LibraryItem } from "@cove/shared";
+import type { Achievement, CompatibilityTool, EnvVar, LaunchOptions, LibraryItem, ProtonVersionId } from "@cove/shared";
 import { ArrowLeft, Compass, ExternalLink, FolderInput, PackageOpen, Library, Link2, Lock, PackageMinus, Plus, RefreshCw, Star, Trash2, Trophy } from "lucide-react";
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api, CoveError } from "../api/index.ts";
 import { CollectionsButton } from "../features/CollectionMenu.tsx";
+import { DEFAULT_OPTION, ProtonSelect, ProtonStatus } from "../features/ProtonPicker.tsx";
 import { DlcDialog } from "../features/DlcDialog.tsx";
 import { MatchDialog } from "../features/MatchDialog.tsx";
 import { ProtonRating } from "../features/ProtonRating.tsx";
@@ -586,6 +587,62 @@ function RemoveFromLibrary({ item }: { item: LibraryItem }) {
   );
 }
 
+/** Linux: which Proton build the game starts with (null = the default from the settings). */
+function ProtonField({
+  value,
+  pending,
+  onChange,
+}: {
+  value: ProtonVersionId | null;
+  pending: boolean;
+  onChange: (value: ProtonVersionId | null) => void;
+}) {
+  const t = useMessages();
+  const overview = useQuery("proton", api.proton.overview);
+  const settings = useQuery("settings", api.settings.getSettings);
+  if (overview.status === "error") {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-sm font-medium text-fg">{t.proton.version}</p>
+        <p className="text-sm text-fg-muted">{overview.error}</p>
+        <div>
+          <Button size="sm" onClick={overview.retry}>
+            {t.common.retry}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  if (overview.status !== "success" || settings.status !== "success") {
+    return (
+      <LoadingRegion label={t.proton.loading} className="flex flex-col gap-2">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-9 w-full" />
+      </LoadingRegion>
+    );
+  }
+  const defaultId = settings.data.library.defaultProton;
+  const effective = value ?? defaultId;
+  return (
+    <div className="flex flex-col gap-2">
+      <Field label={t.proton.version} description={t.proton.versionHint}>
+        {(props) => (
+          <ProtonSelect
+            {...props}
+            overview={overview.data}
+            defaultId={defaultId}
+            value={value ?? DEFAULT_OPTION}
+            onChange={(next) => {
+              onChange(next === DEFAULT_OPTION ? null : next);
+            }}
+          />
+        )}
+      </Field>
+      <ProtonStatus id={effective} overview={overview.data} pending={pending} />
+    </div>
+  );
+}
+
 function LaunchSettings({ item }: { item: LibraryItem }) {
   const t = useMessages();
   const [draft, setDraft] = useState<LaunchOptions>(item.entry.launchOptions);
@@ -677,6 +734,20 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
             />
           )}
         </Field>
+      )}
+
+      {isLinux && draft.compatibilityTool === "proton" && (
+        <ProtonField
+          value={draft.protonVersion}
+          // Saving installs a missing build; until then it "will be downloaded".
+          pending={
+            draft.protonVersion !== item.entry.launchOptions.protonVersion ||
+            item.entry.launchOptions.compatibilityTool !== "proton"
+          }
+          onChange={(protonVersion) => {
+            setDraft((d) => ({ ...d, protonVersion }));
+          }}
+        />
       )}
 
       <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">

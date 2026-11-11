@@ -809,6 +809,99 @@ describe("Epic installs", () => {
   });
 });
 
+describe("Proton (Linux)", () => {
+  /** Tidewater as a Windows game. */
+  function windowsGame(protonVersion: string | null = null): void {
+    core.library = [
+      fakeItem("tidewater", "Tidewater", {
+        executablePath: "/games/tidewater/Tidewater.exe",
+        launchOptions: { arguments: "", compatibilityTool: "proton", env: [], protonVersion },
+      }),
+    ];
+  }
+
+  it("picks a Proton version per game and installs it when saved", async () => {
+    windowsGame();
+    renderAt("/library/tidewater?tab=settings");
+    const select = await screen.findByLabelText<HTMLSelectElement>("Proton-Version");
+    expect(select.value).toBe("");
+    expect(within(select).getByRole("option", { name: "Standard (GE-Proton – immer die neueste (GE-Proton10-25))" })).toBeDefined();
+    expect(within(select).getByRole("option", { name: "GE-Proton10-24 · installiert" })).toBeDefined();
+    expect(within(select).getByRole("option", { name: "Proton 9.0 (Steam)" })).toBeDefined();
+    // The newest GE-Proton is not there yet: it comes with the first start.
+    expect(screen.getByText("Noch nicht installiert. Cove lädt sie beim nächsten Start eines Spiels herunter.")).toBeDefined();
+
+    fireEvent.change(select, { target: { value: "GE-Proton10-24" } });
+    expect(await screen.findByText("Installiert.")).toBeDefined();
+    fireEvent.change(select, { target: { value: "GE-Proton9-27" } });
+    expect(await screen.findByText("Wird nach dem Speichern heruntergeladen (520 MB).")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => {
+      expect(core.library[0]?.entry.launchOptions.protonVersion).toBe("GE-Proton9-27");
+    });
+    expect(core.protonInstalls).toEqual(["GE-Proton9-27"]);
+  });
+
+  it("shows the install of a Proton build while it runs", async () => {
+    windowsGame("GE-Proton10-25");
+    renderAt("/library/tidewater?tab=settings");
+    await screen.findByLabelText("Proton-Version");
+    await act(() => emitCoreEvent("proton-progress", { id: "GE-Proton10-25", phase: "downloading", downloadedBytes: 130_000_000, totalBytes: 520_000_000, error: null }));
+    expect(await screen.findByText("Wird heruntergeladen … 25 %")).toBeDefined();
+    expect(screen.getByRole("progressbar", { name: "GE-Proton10-25 wird installiert" })).toBeDefined();
+    await act(() => emitCoreEvent("proton-progress", { id: "GE-Proton10-25", phase: "failed", downloadedBytes: 0, totalBytes: 520_000_000, error: "Offline – Der Server ist nicht erreichbar." }));
+    expect(await screen.findByText("GE-Proton10-25 konnte nicht installiert werden: Offline – Der Server ist nicht erreichbar.")).toBeDefined();
+    expect(screen.queryByRole("progressbar", { name: "GE-Proton10-25 wird installiert" })).toBeNull();
+  });
+
+  it("installs a missing build before a game starts", async () => {
+    windowsGame();
+    renderAt("/library/tidewater");
+    fireEvent.click(await screen.findByRole("button", { name: "Spielen" }));
+    expect(await screen.findByText("„Tidewater“ wird gestartet …")).toBeDefined();
+    expect(core.protonInstalls).toEqual(["GE-Proton10-25"]);
+  });
+
+  it("manages Proton versions in the settings", async () => {
+    windowsGame("GE-Proton10-24");
+    renderAt("/settings/proton");
+    const select = await screen.findByLabelText<HTMLSelectElement>("Standard-Version");
+    expect(select.value).toBe("latest");
+    const list = screen.getByRole("list", { name: "GE-Proton" });
+    const row = (name: string) => within(list).getByText(name).closest("li") ?? document.body;
+    expect(within(row("GE-Proton10-25")).getByText("Neueste")).toBeDefined();
+    expect(within(row("GE-Proton10-24")).getByText(/1 Spiel/)).toBeDefined();
+    // Used by a game: it can't be deleted.
+    expect(within(row("GE-Proton10-24")).queryByRole("button", { name: "GE-Proton10-24 löschen" })).toBeNull();
+
+    fireEvent.click(within(row("GE-Proton9-27")).getByRole("button", { name: "GE-Proton9-27 installieren" }));
+    await waitFor(() => {
+      expect(core.protonInstalls).toEqual(["GE-Proton9-27"]);
+    });
+    fireEvent.click(await within(row("GE-Proton9-27")).findByRole("button", { name: "GE-Proton9-27 löschen" }));
+    expect(await screen.findByText("GE-Proton9-27 gelöscht.")).toBeDefined();
+    expect(core.proton.versions.find((v) => v.id === "GE-Proton9-27")?.installed).toBe(false);
+
+    // A new default is installed right away.
+    fireEvent.change(select, { target: { value: "GE-Proton10-25" } });
+    await waitFor(() => {
+      expect(core.settings.library.defaultProton).toBe("GE-Proton10-25");
+    });
+    expect(core.protonInstalls).toEqual(["GE-Proton9-27", "GE-Proton10-25"]);
+    expect(screen.getByRole("list", { name: "Von Steam installiert" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Nach Updates suchen" }));
+    expect(await screen.findByText("Die Liste ist aktuell.")).toBeDefined();
+  });
+
+  it("says when the list could not be loaded", async () => {
+    core.proton = { versions: [], latest: null, checkedAt: null, offline: true, installing: [] };
+    renderAt("/settings/proton");
+    expect(await screen.findByText("Keine Proton-Versionen")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Nach Updates suchen" })).toBeDefined();
+  });
+});
+
 describe("Installed games", () => {
   it("shows how a game starts", async () => {
     core.library = [

@@ -16,6 +16,7 @@ mod launcher;
 mod models;
 mod mover;
 mod plugins;
+mod proton;
 mod protondb;
 mod recommend;
 mod scanner;
@@ -55,6 +56,10 @@ macro_rules! cove_handlers {
             $crate::commands::collections_rename,
             $crate::commands::collections_delete,
             $crate::commands::collections_set_game,
+            $crate::commands::proton_list,
+            $crate::commands::proton_check,
+            $crate::commands::proton_install,
+            $crate::commands::proton_remove,
             $crate::commands::library_achievements,
             $crate::commands::library_playtime,
             $crate::commands::achievements_recent,
@@ -232,6 +237,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
     ));
 
     let downloads = build_downloads(app, &pool, &defaults, &stores, open_url.clone());
+    let proton = build_proton(app, &pool, &data_dir, &host, &defaults);
 
     Ok(AppState {
         recommender,
@@ -242,6 +248,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         cove_achievements,
         open_url: open_url.clone(),
         protondb: Arc::new(protondb::ProtonDb::new(pool.clone())),
+        proton,
         launcher: Launcher::new(pool.clone(), emit, open_url, Timing::default()),
         defaults,
         catalog,
@@ -249,6 +256,27 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         pool,
         plugins,
     })
+}
+
+/// Linux: shortly after the start and then every few hours, a newer GE-Proton
+/// is installed for the games that use "latest". Old builds are only removed
+/// while no game runs.
+fn keep_proton_up_to_date<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    if models::Platform::current() != models::Platform::Linux {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        loop {
+            if let Some(state) = app.try_state::<AppState>() {
+                let may_clean = state.launcher.running().is_empty();
+                if let Err(error) = state.proton.check_updates(false, may_clean).await {
+                    eprintln!("[cove] Proton-Update: {error}");
+                }
+            }
+            tokio::time::sleep(proton::CHECK_INTERVAL).await;
+        }
+    });
 }
 
 /// After a session: Epic cloud saves of games Cove installed go up (in the background).
@@ -265,6 +293,25 @@ fn after_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, game_id: String) 
 }
 
 /// "Spiel verschieben", reporting progress as `game-move-progress`.
+fn build_proton(
+    app: &tauri::App,
+    pool: &sqlx::SqlitePool,
+    data_dir: &std::path::Path,
+    host: &HostEnv,
+    defaults: &models::AppSettings,
+) -> Arc<proton::ProtonManager> {
+    let handle = app.handle().clone();
+    Arc::new(proton::ProtonManager::new(
+        pool.clone(),
+        data_dir.join("proton"),
+        host.home.clone(),
+        defaults.clone(),
+        Arc::new(move |progress| {
+            let _ = handle.emit(commands::PROTON_PROGRESS, progress);
+        }),
+    ))
+}
+
 fn build_mover(app: &tauri::App, pool: &sqlx::SqlitePool) -> Arc<mover::Mover> {
     let handle = app.handle().clone();
     Arc::new(mover::Mover::new(
@@ -457,6 +504,7 @@ pub fn run() {
             app.manage(updates::UpdaterRegistered);
             // After `manage`: the download hooks look up the state.
             downloads.start();
+            keep_proton_up_to_date(app.handle().clone());
             Ok(())
         })
         .invoke_handler(cove_handlers!())

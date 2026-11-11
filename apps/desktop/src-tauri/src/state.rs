@@ -37,6 +37,8 @@ pub struct AppState {
     pub open_url: OpenUrl,
     /// Linux compatibility ratings.
     pub protondb: Arc<crate::protondb::ProtonDb>,
+    /// Proton builds: GE-Proton downloads and updates, Steam's builds.
+    pub proton: Arc<crate::proton::ProtonManager>,
 }
 
 pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
@@ -58,6 +60,7 @@ pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
             game_folders: vec![games_dir.to_string_lossy().into_owned()],
             steam_silent_start: true,
             epic_cloud_saves: true,
+            default_proton: crate::proton::LATEST.to_owned(),
         },
         downloads: DownloadSettings {
             directory: games_dir.to_string_lossy().into_owned(),

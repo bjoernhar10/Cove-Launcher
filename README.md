@@ -45,6 +45,9 @@ playtime and achievements. No ads, no social feed, no accounts of its own.
   Cove starts it silently (tray only) first, so no Steam window shows up.
 - **Collections:** your own groups like "With friends" or "Started", next to the store groups in
   the library. Right-click a game to put it into one or several.
+- **Proton without Steam (Linux):** pick the Proton version per game or as the default, from
+  GE-Proton releases and the versions Steam installed. Cove downloads a missing version right
+  away and keeps "always the newest" up to date by itself.
 - **Linux compatibility:** on Linux every game page shows its ProtonDB rating (Platinum to Borked)
   with the number of reports. Games from other stores are rated through their Steam version.
 - **Achievements** from the stores plus Cove's own (and plugin) achievements.

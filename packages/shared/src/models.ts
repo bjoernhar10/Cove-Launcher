@@ -85,7 +85,7 @@ export interface GameFeatures {
   keywords: string[];
 }
 
-export type CompatibilityTool = "native" | "proton" | "proton-experimental" | "wine";
+export type CompatibilityTool = "native" | "proton" | "wine";
 
 export interface EnvVar {
   key: string;
@@ -98,6 +98,12 @@ export interface LaunchOptions {
   /** Linux only: how Windows binaries are run. */
   compatibilityTool: CompatibilityTool;
   env: EnvVar[];
+  /**
+   * With Proton: the build to use. `"latest"` = always the newest GE-Proton, a GE-Proton
+   * release name (`"GE-Proton10-25"`), or `"steam:<folder>"` for a build Steam installed.
+   * null = the default (`library.defaultProton`).
+   */
+  protonVersion: ProtonVersionId | null;
 }
 
 export interface AchievementProgress {
@@ -309,6 +315,52 @@ export interface Collection {
   name: string;
   /** The library games in it, oldest member first. */
   gameIds: GameId[];
+}
+
+/** `"latest"`, a GE-Proton release name or `"steam:<folder>"`. */
+export type ProtonVersionId = string;
+
+/** Where a Proton build comes from: GE-Proton (Cove downloads and updates it) or Steam. */
+export type ProtonKind = "ge" | "steam";
+
+/** A Proton build a game can use. */
+export interface ProtonVersion {
+  id: ProtonVersionId;
+  name: string;
+  kind: ProtonKind;
+  installed: boolean;
+  /** Size of the download (GE-Proton releases). */
+  downloadBytes: number | null;
+  releasedAt: string | null;
+  /** Library games that start with this build (directly, as "latest" or as the default). */
+  games: number;
+  /** Cove may delete it: a GE-Proton build no game uses. */
+  removable: boolean;
+}
+
+export type ProtonPhase = "downloading" | "verifying" | "unpacking" | "done" | "failed";
+
+/** Event `proton-progress`: one GE-Proton install, at most about 4 per second. */
+export interface ProtonProgress {
+  id: ProtonVersionId;
+  phase: ProtonPhase;
+  downloadedBytes: number;
+  totalBytes: number;
+  /** User-facing reason when `phase` is `failed`. */
+  error: string | null;
+}
+
+/** Everything the Proton settings show. */
+export interface ProtonOverview {
+  /** GE-Proton (newest first), then Steam's builds. */
+  versions: ProtonVersion[];
+  /** The build "latest" stands for right now. */
+  latest: ProtonVersionId | null;
+  /** When the list of GE-Proton releases was last loaded. */
+  checkedAt: string | null;
+  /** The release list could not be loaded; only installed builds are listed. */
+  offline: boolean;
+  installing: ProtonProgress[];
 }
 
 /** ProtonDB tier: how well a Windows game runs on Linux through Proton. */
@@ -655,6 +707,8 @@ export interface LibrarySettings {
   steamSilentStart: boolean;
   /** Sync Epic cloud saves before and after playing (games Cove installed). */
   epicCloudSaves: boolean;
+  /** Linux: Proton build for games without a choice of their own (`"latest"` by default). */
+  defaultProton: ProtonVersionId;
 }
 
 export interface DownloadSettings {
