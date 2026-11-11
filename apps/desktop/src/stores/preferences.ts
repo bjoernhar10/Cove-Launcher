@@ -1,11 +1,18 @@
-import type { AccentColor, StoreSource } from "@cove/shared";
+import type { AccentColor, CollectionId, StoreSource } from "@cove/shared";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { api } from "../api/index.ts";
 import { isLanguage, setLanguage } from "../i18n/index.ts";
 
 export type LibraryView = "grid" | "list";
-export type LibraryGroup = "all" | "installed" | "favorites" | StoreSource;
+/** The fixed groups of the library. */
+export type BuiltinGroup = "all" | "installed" | "favorites" | StoreSource;
+/** A fixed group or one of the user's collections (`collection:<id>`). */
+export type LibraryGroup = BuiltinGroup | `collection:${string}`;
+
+export function collectionGroup(id: CollectionId): LibraryGroup {
+  return `collection:${id}`;
+}
 
 interface PreferencesState {
   accent: AccentColor;

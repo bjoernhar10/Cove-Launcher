@@ -1067,6 +1067,38 @@ pub struct StoreDlc {
     pub unlock_only: bool,
 }
 
+/// One of the user's own collections ("Mit Freunden", "Angefangen" ...).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Collection {
+    pub id: String,
+    pub name: String,
+    /// The library games in it, oldest member first.
+    pub game_ids: Vec<GameId>,
+}
+
+/// `ProtonDB` tier: how well a Windows game runs on Linux through Proton.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProtonTier {
+    Platinum,
+    Gold,
+    Silver,
+    Bronze,
+    Borked,
+}
+
+/// `ProtonDB`'s community rating of a game.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtonRating {
+    pub tier: ProtonTier,
+    /// Number of user reports behind the tier.
+    pub reports: u32,
+    /// The Steam app the rating belongs to (`ProtonDB` rates Steam versions).
+    pub steam_app_id: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreDlcList {

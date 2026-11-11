@@ -6,6 +6,7 @@ import type {
   AppErrorKind,
   AppSettings,
   CatalogPage,
+  Collection,
   ConnectableStore,
   CoveAchievement,
   LocalStoreGame,
@@ -21,6 +22,7 @@ import type {
   DlcOption,
   GameUpdateInfo,
   InstallTarget,
+  ProtonRating,
   StoreDlcList,
   LaunchVia,
   LibraryItem,
@@ -170,6 +172,12 @@ export interface FakeCore {
   installTargets: Record<string, InstallTarget>;
   /** DLC lists of store games (per game id). */
   gameDlcs: Record<string, StoreDlcList>;
+  /** The user's own collections. */
+  collections: Collection[];
+  /** ProtonDB ratings (per game id); games without one have none. */
+  protonRatings: Record<string, ProtonRating>;
+  /** ProtonDB can't be reached. */
+  protonDown: boolean;
   /** URLs Cove asked the system to open (steam:// …). */
   openedUrls: string[];
   /** Upload ids of extras sent with itch.io downloads. */
@@ -249,6 +257,9 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     dlcs: {},
     installTargets: {},
     gameDlcs: {},
+    collections: [],
+    protonRatings: {},
+    protonDown: false,
     openedUrls: [],
     itchExtras: [],
   };
@@ -280,6 +291,18 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     const item = find(gameId);
     if (!item) reject("notInLibrary", `„${gameId}“ ist nicht in deiner Bibliothek.`);
     return item;
+  };
+
+  const collection = (id: string) => core.collections.find((c) => c.id === id) ?? reject("invalidInput", "Diese Sammlung gibt es nicht mehr.");
+  /** Mirrors `db::collections::checked_name` in the Rust core. */
+  const collectionName = (raw: string, except?: string) => {
+    const name = raw.trim().split(/\s+/).join(" ");
+    if (!name) reject("invalidInput", "Bitte gib der Sammlung einen Namen.");
+    if (Array.from(name).length > 50) reject("invalidInput", "Der Name ist zu lang (höchstens 50 Zeichen).");
+    if (core.collections.some((c) => c.id !== except && c.name.toLowerCase() === name.toLowerCase())) {
+      reject("invalidInput", `Eine Sammlung „${name}“ gibt es schon.`);
+    }
+    return name;
   };
 
   const handlers: Handlers = {
@@ -319,6 +342,33 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       if (path === "/nope") reject("invalidInput", "„/nope“ ist kein Ordner.");
       return FAKE_SCAN;
     },
+    collections_list: () =>
+      core.collections
+        .map((c) => ({ ...c, gameIds: c.gameIds.filter((id) => find(id) !== null) }))
+        .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())),
+    collections_create: ({ name }) => {
+      const next = String(Math.max(0, ...core.collections.map((c) => Number(c.id))) + 1);
+      const created: Collection = { id: next, name: collectionName(name), gameIds: [] };
+      core.collections.push(created);
+      return created;
+    },
+    collections_rename: ({ collectionId, name }) => {
+      const target = collection(collectionId);
+      target.name = collectionName(name, collectionId);
+      return target;
+    },
+    collections_delete: ({ collectionId }) => {
+      collection(collectionId);
+      core.collections = core.collections.filter((c) => c.id !== collectionId);
+      return null;
+    },
+    collections_set_game: ({ collectionId, gameId, member }) => {
+      const target = collection(collectionId);
+      if (member) require(gameId);
+      target.gameIds = target.gameIds.filter((id) => id !== gameId);
+      if (member) target.gameIds.push(gameId);
+      return null;
+    },
     library_achievements: () => [],
     library_playtime: ({ gameId }) => ({
       gameId,
@@ -340,6 +390,11 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       const item = require(gameId);
       if (item.entry.source === "manual") reject("invalidInput", "Die DLC-Liste gibt es nur für Steam-, GOG- und Epic-Spiele.");
       return core.gameDlcs[gameId] ?? { dlcs: [], total: 0 };
+    },
+    game_proton_rating: ({ gameId }) => {
+      require(gameId);
+      if (core.protonDown) reject("storeUnavailable", "ProtonDB ist gerade nicht erreichbar. Versuch es später noch einmal.");
+      return core.protonRatings[gameId] ?? null;
     },
     game_manage_dlcs: ({ gameId }) => {
       const item = require(gameId);

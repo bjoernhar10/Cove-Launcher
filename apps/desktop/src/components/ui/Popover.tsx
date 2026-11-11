@@ -87,13 +87,13 @@ export function CheckOption({ label, checked, onChange }: CheckOptionProps) {
     <label className="flex h-8 cursor-pointer items-center gap-3 rounded-md px-2 text-sm text-fg hover:bg-hover">
       <input
         type="checkbox"
-        className="size-4"
+        className="size-4 shrink-0"
         checked={checked}
         onChange={(e) => {
           onChange(e.target.checked);
         }}
       />
-      {label}
+      <span className="min-w-0 truncate">{label}</span>
     </label>
   );
 }

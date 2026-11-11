@@ -4,8 +4,10 @@ import { ArrowLeft, Compass, ExternalLink, FolderInput, PackageOpen, Library, Li
 import { useState, type SyntheticEvent, type ReactNode } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api, CoveError } from "../api/index.ts";
+import { CollectionsButton } from "../features/CollectionMenu.tsx";
 import { DlcDialog } from "../features/DlcDialog.tsx";
 import { MatchDialog } from "../features/MatchDialog.tsx";
+import { ProtonRating } from "../features/ProtonRating.tsx";
 import { GameCover } from "../components/game/GameCover.tsx";
 import { PlayButton } from "../components/game/PlayButton.tsx";
 import { PlaytimeChart } from "../components/game/PlaytimeChart.tsx";
@@ -64,27 +66,30 @@ function Overview({ item }: { item: LibraryItem }) {
             </>
           )}
         </section>
-        <section aria-label={t.game.info}>
-          <h2 className="mb-3 text-base font-semibold text-fg">{t.game.info}</h2>
-          <dl className="m-0 rounded-lg border border-border px-4 text-sm">
-            {[
-              [t.library.colSource, SOURCE_LABELS[entry.source]],
-              [t.game.launchViaLabel, entry.launchVia ? LAUNCH_VIA_LABELS[entry.launchVia] : "—"],
-              [t.game.status, entry.installed ? t.library.installed : t.library.notInstalled],
-              [t.game.location, entry.installPath ?? "—"],
-              [t.game.size, entry.installSizeBytes === null ? "—" : formatBytes(entry.installSizeBytes)],
-              [t.game.added, formatDate(entry.addedAt)],
-              [t.detail.developer, game.developer],
-            ].map(([label, value]) => (
-              <div key={label} className="flex justify-between gap-4 border-b border-border py-3 last:border-b-0">
-                <dt className="text-fg-subtle">{label}</dt>
-                <dd className="m-0 min-w-0 truncate text-right text-fg" title={value}>
-                  {value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </section>
+        <div className="flex flex-col gap-8">
+          {detectPlatform() === "linux" && <ProtonRating item={item} />}
+          <section aria-label={t.game.info}>
+            <h2 className="mb-3 text-base font-semibold text-fg">{t.game.info}</h2>
+            <dl className="m-0 rounded-lg border border-border px-4 text-sm">
+              {[
+                [t.library.colSource, SOURCE_LABELS[entry.source]],
+                [t.game.launchViaLabel, entry.launchVia ? LAUNCH_VIA_LABELS[entry.launchVia] : "—"],
+                [t.game.status, entry.installed ? t.library.installed : t.library.notInstalled],
+                [t.game.location, entry.installPath ?? "—"],
+                [t.game.size, entry.installSizeBytes === null ? "—" : formatBytes(entry.installSizeBytes)],
+                [t.game.added, formatDate(entry.addedAt)],
+                [t.detail.developer, game.developer],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between gap-4 border-b border-border py-3 last:border-b-0">
+                  <dt className="text-fg-subtle">{label}</dt>
+                  <dd className="m-0 min-w-0 truncate text-right text-fg" title={value}>
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        </div>
       </div>
       {entry.source !== "manual" && entry.storeGameId && <GameDlcs item={item} />}
     </div>
@@ -824,7 +829,7 @@ export function LibraryDetailPage() {
               </div>
               <h1 className="mt-3 text-xl font-semibold tracking-tight text-fg">{query.data.game.title}</h1>
               <p className="mt-1 text-sm text-fg-muted">{query.data.game.summary}</p>
-              <div className="mt-6 flex items-center gap-2">
+              <div className="mt-6 flex flex-wrap items-center gap-2">
                 <PlayButton item={query.data} />
                 <Button
                   aria-pressed={query.data.entry.favorite}
@@ -836,6 +841,7 @@ export function LibraryDetailPage() {
                 >
                   {query.data.entry.favorite ? t.game.favorite : t.library.favorite}
                 </Button>
+                <CollectionsButton game={query.data.game} />
                 {query.data.entry.catalogId && (
                   <ButtonLink to={`/catalogue/${query.data.entry.catalogId}`} variant="ghost">
                     {t.game.cataloguePage}

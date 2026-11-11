@@ -11,3 +11,6 @@ export async function openCove(page: Page, route = "/", params: Record<string, s
 export function toasts(page: Page) {
   return page.getByRole("status").filter({ hasText: /\S/ });
 }
+
+/** The test browsers report Windows and macOS; this makes the page see Linux (`detectPlatform`). */
+export const LINUX_USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";

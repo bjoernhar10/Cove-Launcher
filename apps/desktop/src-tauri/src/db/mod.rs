@@ -3,6 +3,7 @@
 
 pub mod achievements;
 pub mod catalog_cache;
+pub mod collections;
 pub mod downloads;
 pub mod library;
 pub mod sessions;

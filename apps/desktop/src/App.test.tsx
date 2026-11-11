@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App.tsx";
 import { usePreferences } from "./stores/preferences.ts";
+import { invalidateQueries } from "./stores/query.ts";
 import { emitCoreEvent, fakeDownload, fakeItem, fakePlugin, installFakeCore, type FakeCore } from "./test/fakeCore.ts";
 
 let core: FakeCore;
@@ -51,6 +52,116 @@ describe("App shell", () => {
     renderAt("/");
     fireEvent.click(screen.getByRole("button", { name: /Seitenleiste einklappen/ }));
     expect(usePreferences.getState().sidebarCollapsed).toBe(true);
+  });
+});
+
+describe("Collections", () => {
+  it("creates a collection, fills it by right-click and filters the library by it", async () => {
+    renderAt("/library");
+    const groups = await screen.findByRole("navigation", { name: "Gruppierung" });
+    fireEvent.click(await within(groups).findByRole("button", { name: "Neue Sammlung" }));
+    const dialog = await screen.findByRole("dialog", { name: "Neue Sammlung" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "  Mit   Freunden " } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Anlegen" }));
+
+    // The new collection is selected and still empty.
+    const chip = await within(groups).findByRole("button", { name: /Mit Freunden/ });
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    expect(await screen.findByText("Diese Sammlung ist noch leer")).toBeDefined();
+
+    fireEvent.click(within(groups).getByRole("button", { name: /Alle/ }));
+    const list = await screen.findByRole("list", { name: "Spiele" });
+    fireEvent.contextMenu(within(list).getByRole("link", { name: "Tidewater" }), { clientX: 120, clientY: 160 });
+    const menu = await screen.findByRole("dialog", { name: "Sammlungen für Tidewater" });
+    fireEvent.click(await within(menu).findByRole("checkbox", { name: "Mit Freunden" }));
+    await waitFor(() => {
+      expect(core.collections).toEqual([{ id: "1", name: "Mit Freunden", gameIds: ["tidewater"] }]);
+    });
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Sammlungen für Tidewater" })).toBeNull();
+    });
+
+    fireEvent.click(within(groups).getByRole("button", { name: /Mit Freunden/ }));
+    await waitFor(() => {
+      expect(within(screen.getByRole("list", { name: "Spiele" })).queryByRole("link", { name: "Orbit" })).toBeNull();
+    });
+    expect(within(screen.getByRole("list", { name: "Spiele" })).getByRole("link", { name: "Tidewater" })).toBeDefined();
+    expect(usePreferences.getState().libraryGroup).toBe("collection:1");
+  });
+
+  it("renames and deletes a collection; the games stay in the library", async () => {
+    core.collections = [
+      { id: "1", name: "Angefangen", gameIds: ["tidewater"] },
+      { id: "2", name: "Mit Freunden", gameIds: [] },
+    ];
+    usePreferences.setState({ libraryGroup: "collection:1" });
+    renderAt("/library");
+    const groups = await screen.findByRole("navigation", { name: "Gruppierung" });
+    expect((await within(groups).findByRole("button", { name: /Angefangen/ })).getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sammlung umbenennen" }));
+    const rename = await screen.findByRole("dialog", { name: "Sammlung umbenennen" });
+    const input = within(rename).getByLabelText<HTMLInputElement>("Name");
+    expect(input.value).toBe("Angefangen");
+    fireEvent.change(input, { target: { value: "mit freunden" } });
+    fireEvent.click(within(rename).getByRole("button", { name: "Speichern" }));
+    expect(await within(rename).findByText("Eine Sammlung „mit freunden“ gibt es schon.")).toBeDefined();
+    fireEvent.change(input, { target: { value: "Durchgespielt" } });
+    fireEvent.click(within(rename).getByRole("button", { name: "Speichern" }));
+    expect(await within(groups).findByRole("button", { name: /Durchgespielt/ })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sammlung löschen" }));
+    const confirm = await screen.findByRole("dialog", { name: "Sammlung „Durchgespielt“ löschen?" });
+    expect(within(confirm).getByText("Die Spiele bleiben in deiner Bibliothek.")).toBeDefined();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Sammlung löschen" }));
+    expect(await screen.findByText("Sammlung „Durchgespielt“ gelöscht.")).toBeDefined();
+    expect(core.collections.map((c) => c.name)).toEqual(["Mit Freunden"]);
+    expect(core.library).toHaveLength(2);
+    await waitFor(() => {
+      expect(within(groups).getByRole("button", { name: /Alle/ }).getAttribute("aria-pressed")).toBe("true");
+    });
+    expect(within(groups).queryByRole("button", { name: /Durchgespielt/ })).toBeNull();
+  });
+
+  it("puts a game into collections from its page", async () => {
+    core.collections = [{ id: "1", name: "Angefangen", gameIds: [] }];
+    renderAt("/library/tidewater");
+    fireEvent.click(await screen.findByRole("button", { name: "Sammlungen" }));
+    const menu = await screen.findByRole("dialog", { name: "Sammlungen für Tidewater" });
+    fireEvent.click(await within(menu).findByRole("checkbox", { name: "Angefangen" }));
+
+    // A new collection made here gets the game right away.
+    const create = within(menu).getByRole<HTMLButtonElement>("button", { name: "Anlegen" });
+    expect(create.disabled).toBe(true);
+    fireEvent.change(within(menu).getByLabelText("Name der neuen Sammlung"), { target: { value: "Koop" } });
+    fireEvent.click(create);
+    expect(await within(menu).findByRole<HTMLInputElement>("checkbox", { name: "Koop" })).toHaveProperty("checked", true);
+    expect(core.collections).toEqual([
+      { id: "1", name: "Angefangen", gameIds: ["tidewater"] },
+      { id: "2", name: "Koop", gameIds: ["tidewater"] },
+    ]);
+    expect(await screen.findByRole("button", { name: /Sammlungen\s*2/ })).toBeDefined();
+
+    // A name that is taken is explained in the menu.
+    fireEvent.change(within(menu).getByLabelText("Name der neuen Sammlung"), { target: { value: "koop" } });
+    fireEvent.click(create);
+    expect(await within(menu).findByText("Eine Sammlung „koop“ gibt es schon.")).toBeDefined();
+
+    fireEvent.click(within(menu).getByRole("checkbox", { name: "Angefangen" }));
+    await waitFor(() => {
+      expect(core.collections[0]?.gameIds).toEqual([]);
+    });
+  });
+
+  it("shows the whole library when the remembered collection is gone", async () => {
+    usePreferences.setState({ libraryGroup: "collection:99" });
+    renderAt("/library");
+    const list = await screen.findByRole("list", { name: "Spiele" });
+    expect(within(list).getByRole("link", { name: "Orbit" })).toBeDefined();
+    const groups = screen.getByRole("navigation", { name: "Gruppierung" });
+    await within(groups).findByRole("button", { name: "Neue Sammlung" });
+    expect(within(groups).getByRole("button", { name: /Alle/ }).getAttribute("aria-pressed")).toBe("true");
   });
 });
 
@@ -540,6 +651,44 @@ describe("Downloads", () => {
     expect(within(section).getByText("Welche DLCs mitinstalliert werden, wählst du beim Installieren über Cove.")).toBeDefined();
     expect(within(section).queryByRole("button", { name: "DLCs ändern" })).toBeNull();
     expect(within(section).queryByRole("button", { name: "In Steam verwalten" })).toBeNull();
+  });
+
+  it("shows the ProtonDB rating of a game and opens its page", async () => {
+    core.library = [fakeItem("gog-100", "Saltmarsh", { source: "gog", storeGameId: "100" })];
+    core.protonRatings["gog-100"] = { tier: "gold", reports: 2107, steamAppId: "1245620" };
+    renderAt("/library/gog-100");
+    const section = await screen.findByRole("region", { name: "Linux-Kompatibilität" });
+    expect(await within(section).findByText("Gold")).toBeDefined();
+    expect(within(section).getByText("Läuft nach kleinen Anpassungen einwandfrei.")).toBeDefined();
+    expect(within(section).getByText("2.107 Berichte auf ProtonDB")).toBeDefined();
+    expect(within(section).getByText("Die Bewertung gilt für die Steam-Version des Spiels.")).toBeDefined();
+    fireEvent.click(within(section).getByRole("button", { name: "Auf ProtonDB ansehen" }));
+    await waitFor(() => {
+      expect(core.calls).toContainEqual({
+        command: "plugin:opener|open_url",
+        args: expect.objectContaining({ url: "https://www.protondb.com/app/1245620" }) as unknown,
+      });
+    });
+  });
+
+  it("says so when ProtonDB has no rating, and offers a retry when it can't be reached", async () => {
+    core.library = [fakeItem("steam-620", "Portal 2", { source: "steam", storeGameId: "620" })];
+    core.protonDown = true;
+    renderAt("/library/steam-620");
+    const section = await screen.findByRole("region", { name: "Linux-Kompatibilität" });
+    expect(await within(section).findByText("ProtonDB ist gerade nicht erreichbar. Versuch es später noch einmal.")).toBeDefined();
+    core.protonDown = false;
+    fireEvent.click(within(section).getByRole("button", { name: "Erneut versuchen" }));
+    expect(await within(section).findByText("Zu diesem Spiel gibt es auf ProtonDB noch keine Bewertung.")).toBeDefined();
+    expect(within(section).queryByRole("button", { name: "Auf ProtonDB ansehen" })).toBeNull();
+    // A Steam game is rated as it is: no note about another version.
+    core.protonRatings["steam-620"] = { tier: "platinum", reports: 1, steamAppId: "620" };
+    act(() => {
+      invalidateQueries();
+    });
+    expect(await within(section).findByText("Platin")).toBeDefined();
+    expect(within(section).getByText("1 Bericht auf ProtonDB")).toBeDefined();
+    expect(within(section).queryByText("Die Bewertung gilt für die Steam-Version des Spiels.")).toBeNull();
   });
 
   it("asks to connect itch.io first", async () => {

@@ -465,6 +465,34 @@
       ],
       "type": "object"
     },
+    "Collection": {
+      "additionalProperties": false,
+      "description": "One of the user's own collections (\"Mit Freunden\", \"Angefangen\" ...). A game can be in several.",
+      "properties": {
+        "gameIds": {
+          "description": "The library games in it, oldest member first.",
+          "items": {
+            "$ref": "#/definitions/GameId"
+          },
+          "type": "array"
+        },
+        "id": {
+          "$ref": "#/definitions/CollectionId"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "gameIds"
+      ],
+      "type": "object"
+    },
+    "CollectionId": {
+      "type": "string"
+    },
     "CompatibilityTool": {
       "enum": [
         "native",
@@ -2048,6 +2076,40 @@
         "disabled",
         "needsApproval",
         "invalid"
+      ],
+      "type": "string"
+    },
+    "ProtonRating": {
+      "additionalProperties": false,
+      "description": "ProtonDB's community rating of a game.",
+      "properties": {
+        "reports": {
+          "description": "Number of user reports behind the tier.",
+          "type": "number"
+        },
+        "steamAppId": {
+          "description": "The Steam app the rating belongs to (ProtonDB rates Steam versions).",
+          "type": "string"
+        },
+        "tier": {
+          "$ref": "#/definitions/ProtonTier"
+        }
+      },
+      "required": [
+        "tier",
+        "reports",
+        "steamAppId"
+      ],
+      "type": "object"
+    },
+    "ProtonTier": {
+      "description": "ProtonDB tier: how well a Windows game runs on Linux through Proton.",
+      "enum": [
+        "platinum",
+        "gold",
+        "silver",
+        "bronze",
+        "borked"
       ],
       "type": "string"
     },

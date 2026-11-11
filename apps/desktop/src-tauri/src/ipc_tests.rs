@@ -110,6 +110,12 @@ async fn app_with(
             Arc::new(|_| {}),
         )),
         open_url: Arc::new(|_| Ok(())),
+        // Nothing listens there: tests never talk to ProtonDB or Steam.
+        protondb: Arc::new(crate::protondb::ProtonDb::with_endpoints(
+            pool.clone(),
+            "http://127.0.0.1:1".into(),
+            "http://127.0.0.1:1".into(),
+        )),
         downloads: Arc::new(crate::downloads::DownloadManager::new(
             pool.clone(),
             default_settings(None),
@@ -529,6 +535,114 @@ async fn download_commands_accept_frontend_payloads() {
     )
     .unwrap_err();
     assert_eq!(moved["kind"], "invalidInput");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn collection_commands_accept_frontend_payloads() {
+    let app = app().await;
+    let exe = app.tmp.path().join("hand-made");
+    std::fs::write(&exe, b"#!/bin/sh\n").unwrap();
+    let game: Value = invoke(
+        &app,
+        "library_add_manual",
+        json!({ "input": { "title": "Hand Made", "executablePath": exe.to_string_lossy(), "sizeBytes": null } }),
+    );
+    let game_id = game["game"]["id"].clone();
+
+    let none: Value = invoke(&app, "collections_list", json!({}));
+    assert_eq!(none, json!([]));
+    let created: Value = invoke(&app, "collections_create", json!({ "name": "Koop" }));
+    let id = created["id"].clone();
+    assert_eq!(created, json!({ "id": id, "name": "Koop", "gameIds": [] }));
+    let taken = invoke_raw(&app, "collections_create", json!({ "name": "koop" })).unwrap_err();
+    assert_eq!(taken["kind"], "invalidInput");
+    assert_eq!(taken["message"], "Eine Sammlung „koop“ gibt es schon.");
+
+    let _: Value = invoke(
+        &app,
+        "collections_set_game",
+        json!({ "collectionId": id, "gameId": game_id, "member": true }),
+    );
+    let renamed: Value = invoke(
+        &app,
+        "collections_rename",
+        json!({ "collectionId": id, "name": "Mit Freunden" }),
+    );
+    assert_eq!(
+        renamed,
+        json!({ "id": id, "name": "Mit Freunden", "gameIds": [game_id] })
+    );
+    let listed: Value = invoke(&app, "collections_list", json!({}));
+    assert_eq!(listed, json!([renamed]));
+
+    let unknown = invoke_raw(
+        &app,
+        "collections_set_game",
+        json!({ "collectionId": id, "gameId": "nope", "member": true }),
+    )
+    .unwrap_err();
+    assert_eq!(unknown["kind"], "notInLibrary");
+    let _: Value = invoke(
+        &app,
+        "collections_set_game",
+        json!({ "collectionId": id, "gameId": game_id, "member": false }),
+    );
+    let _: Value = invoke(&app, "collections_delete", json!({ "collectionId": id }));
+    let gone = invoke_raw(&app, "collections_delete", json!({ "collectionId": id })).unwrap_err();
+    assert_eq!(gone["kind"], "invalidInput");
+    let empty: Value = invoke(&app, "collections_list", json!({}));
+    assert_eq!(empty, json!([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn proton_rating_accepts_frontend_payloads() {
+    use tauri::Manager;
+
+    let app = app().await;
+    let add = |title: &str| -> Value {
+        let exe = app.tmp.path().join(title);
+        std::fs::write(&exe, b"#!/bin/sh\n").unwrap();
+        invoke(
+            &app,
+            "library_add_manual",
+            json!({ "input": { "title": title, "executablePath": exe.to_string_lossy(), "sizeBytes": null } }),
+        )
+    };
+    let rated = add("Hand Made");
+    let unknown = add("Never Heard");
+
+    // What an earlier lookup left in the cache: the Steam app of that title and its rating.
+    let pool = app.webview.state::<AppState>().pool.clone();
+    for (key, value) in [
+        ("protondb:steam-app:hand made", r#""13""#),
+        (
+            "protondb:rating:13",
+            r#"{"tier":"gold","reports":12,"steamAppId":"13"}"#,
+        ),
+    ] {
+        crate::db::catalog_cache::put(&pool, "protondb", key, value)
+            .await
+            .unwrap();
+    }
+
+    let rating: Value = invoke(
+        &app,
+        "game_proton_rating",
+        json!({ "gameId": rated["game"]["id"] }),
+    );
+    assert_eq!(
+        rating,
+        json!({ "tier": "gold", "reports": 12, "steamAppId": "13" })
+    );
+    let offline = invoke_raw(
+        &app,
+        "game_proton_rating",
+        json!({ "gameId": unknown["game"]["id"] }),
+    )
+    .unwrap_err();
+    assert_eq!(offline["kind"], "storeUnavailable");
+    let missing = invoke_raw(&app, "game_proton_rating", json!({ "gameId": "nope" })).unwrap_err();
+    assert_eq!(missing["kind"], "notInLibrary");
 }
 
 #[tokio::test(flavor = "multi_thread")]

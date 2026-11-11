@@ -274,6 +274,30 @@ async fn core_responses_match_shared_schema() {
         &AppError::RecommenderUnavailable("startet nicht".into()),
     );
     assert_valid("AppErrorPayload", &AppError::NotRunning("g".into()));
+    for tier in [
+        crate::models::ProtonTier::Platinum,
+        crate::models::ProtonTier::Gold,
+        crate::models::ProtonTier::Silver,
+        crate::models::ProtonTier::Bronze,
+        crate::models::ProtonTier::Borked,
+    ] {
+        assert_valid(
+            "ProtonRating",
+            &crate::models::ProtonRating {
+                tier,
+                reports: 2107,
+                steam_app_id: "1245620".into(),
+            },
+        );
+    }
+    assert_valid(
+        "Collection",
+        &crate::models::Collection {
+            id: "3".into(),
+            name: "Mit Freunden".into(),
+            game_ids: vec!["steam-620".into()],
+        },
+    );
     assert_valid(
         "AppErrorPayload",
         &AppError::CompatToolNotFound("Proton".into()),

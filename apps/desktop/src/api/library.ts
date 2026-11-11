@@ -12,6 +12,7 @@ import type {
   ManualGameInput,
   MatchCandidate,
   PlaytimeStats,
+  ProtonRating,
   RunningGame,
   ScanCandidate,
   StoreDlcList,
@@ -93,6 +94,11 @@ export function gameDlcs(gameId: GameId): Promise<StoreDlcList> {
 /** Opens the game in Steam to tick or untick its DLCs. */
 export async function manageDlcs(gameId: GameId): Promise<void> {
   await call("game_manage_dlcs", { gameId });
+}
+
+/** ProtonDB's rating of the game (Linux); null when there is none. */
+export function protonRating(gameId: GameId): Promise<ProtonRating | null> {
+  return call("game_proton_rating", { gameId });
 }
 
 /** Moves the game folder into another games folder; progress via `subscribeMoveProgress`. */

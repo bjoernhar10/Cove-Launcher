@@ -9,6 +9,8 @@ import type {
   UpdateProgress,
   Achievement,
   AchievementUnlock,
+  Collection,
+  CollectionId,
   AppSettings,
   DownloadItem,
   DownloadStatus,
@@ -20,6 +22,7 @@ import type {
   ManualGameInput,
   PlaytimeStats,
   PluginInfo,
+  ProtonRating,
   RunningGame,
   ScanCandidate,
   StoreAccount,
@@ -69,6 +72,14 @@ export interface CoveCommands {
   library_remove: { args: { gameId: GameId }; result: null };
   library_update: { args: { gameId: GameId; patch: LibraryUpdate }; result: LibraryItem };
   library_scan_folder: { args: { path: string }; result: ScanCandidate[] };
+  /** The user's own collections, by name. */
+  collections_list: { args: NoArgs; result: Collection[] };
+  collections_create: { args: { name: string }; result: Collection };
+  collections_rename: { args: { collectionId: CollectionId; name: string }; result: Collection };
+  /** Deletes the collection; its games stay in the library. */
+  collections_delete: { args: { collectionId: CollectionId }; result: null };
+  /** Puts a library game into a collection (`member: true`) or takes it out. */
+  collections_set_game: { args: { collectionId: CollectionId; gameId: GameId; member: boolean }; result: null };
   library_achievements: { args: { gameId: GameId }; result: Achievement[] };
   library_playtime: { args: { gameId: GameId }; result: PlaytimeStats };
   achievements_recent: { args: { limit: number }; result: AchievementUnlock[] };
@@ -81,6 +92,8 @@ export interface CoveCommands {
   game_dlcs: { args: { gameId: GameId }; result: StoreDlcList };
   /** Opens the game in Steam, where its DLCs are ticked under Properties → DLC. */
   game_manage_dlcs: { args: { gameId: GameId }; result: null };
+  /** ProtonDB's rating of the game (how well it runs on Linux); null when there is none. */
+  game_proton_rating: { args: { gameId: GameId }; result: ProtonRating | null };
   /** Moves the game folder into another games folder; progress arrives as `game-move-progress`. */
   game_move: { args: { gameId: GameId; folder: string }; result: null };
   /** Installed and newest version of a GOG or Epic game Cove installed. */

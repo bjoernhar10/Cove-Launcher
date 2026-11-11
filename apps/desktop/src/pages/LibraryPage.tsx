@@ -1,7 +1,7 @@
 import { localized, useMessages } from "../i18n/index.ts";
-import type { LibraryItem } from "@cove/shared";
-import { LayoutGrid, Library, List, Plus, Star } from "lucide-react";
-import { memo, useCallback, useMemo, useRef } from "react";
+import type { Collection, LibraryItem } from "@cove/shared";
+import { Folder, LayoutGrid, Library, List, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { memo, useCallback, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Link } from "react-router";
 import { api } from "../api/index.ts";
 import { AchievementMeter } from "../components/game/AchievementMeter.tsx";
@@ -13,34 +13,53 @@ import { Button, ButtonLink } from "../components/ui/Button.tsx";
 import { EmptyState, ErrorState, LoadingRegion, Skeleton } from "../components/ui/Feedback.tsx";
 import { Page, PageHeader } from "../components/ui/Page.tsx";
 import { Segmented } from "../components/ui/Segmented.tsx";
+import { CollectionNameDialog, DeleteCollectionDialog } from "../features/CollectionDialogs.tsx";
+import { CollectionMenu, type MenuAnchor } from "../features/CollectionMenu.tsx";
 import { useMainVirtualizer, VIRTUALIZE_FROM } from "../hooks/useMainVirtualizer.ts";
 import { useQuery } from "../hooks/useQuery.ts";
 import { cx } from "../lib/cx.ts";
 import { formatNumber, formatPlaytime, formatRelative } from "../lib/format.ts";
 import { SOURCE_LABELS } from "../lib/labels.ts";
-import { usePreferences, type LibraryGroup } from "../stores/preferences.ts";
+import { collectionGroup, usePreferences, type BuiltinGroup, type LibraryGroup } from "../stores/preferences.ts";
 import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 import { useUi } from "../stores/ui.ts";
 
-const GROUPS: LibraryGroup[] = ["all", "installed", "favorites", "steam", "gog", "epic", "manual"];
+const GROUPS: BuiltinGroup[] = ["all", "installed", "favorites", "steam", "gog", "epic", "manual"];
 
-function groupLabel(group: LibraryGroup): string {
+function isBuiltin(group: LibraryGroup): group is BuiltinGroup {
+  return !group.startsWith("collection:");
+}
+
+function groupLabel(group: BuiltinGroup): string {
   return group === "all" || group === "installed" || group === "favorites" ? GROUP_LABELS[group] : SOURCE_LABELS[group];
 }
 
 const GROUP_LABELS = localized((m) => m.library.groups);
 
-function matchesGroup(item: LibraryItem, group: LibraryGroup): boolean {
+function matchesGroup(item: LibraryItem, group: BuiltinGroup): boolean {
   if (group === "all") return true;
   if (group === "installed") return item.entry.installed;
   if (group === "favorites") return item.entry.favorite;
   return item.entry.source === group;
 }
 
-const EMPTY_GROUP: Record<LibraryGroup, { title: string; description: string }> = localized((m) => m.library.emptyGroup);
+const EMPTY_GROUP: Record<BuiltinGroup, { title: string; description: string }> = localized((m) => m.library.emptyGroup);
+
+const CHIP = "inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm transition-colors duration-150 ease-out";
+const CHIP_IDLE = "text-fg-muted hover:bg-hover hover:text-fg";
 
 type FavoriteHandler = (item: LibraryItem, favorite: boolean) => void;
+/** Opens the collections menu of a game (right-click or the context-menu key). */
+type MenuHandler = (item: LibraryItem, anchor: MenuAnchor) => void;
+
+/** Where a context menu opens: at the pointer, or at the element when the keyboard asked for it. */
+function menuAnchor(event: MouseEvent<HTMLElement>): MenuAnchor {
+  if (event.clientX !== 0 || event.clientY !== 0) return { x: event.clientX, y: event.clientY };
+  const target = event.target instanceof HTMLElement ? event.target : event.currentTarget;
+  const rect = target.getBoundingClientRect();
+  return { x: rect.left + 16, y: rect.top + 16 };
+}
 
 function FavoriteButton({ item, onToggle }: { item: LibraryItem; onToggle: FavoriteHandler }) {
   const t = useMessages();
@@ -64,11 +83,23 @@ function FavoriteButton({ item, onToggle }: { item: LibraryItem; onToggle: Favor
   );
 }
 
-const GridCard = memo(function GridCard({ item, onFavorite }: { item: LibraryItem; onFavorite: FavoriteHandler }) {
+interface GameRowProps {
+  item: LibraryItem;
+  onFavorite: FavoriteHandler;
+  onMenu: MenuHandler;
+}
+
+const GridCard = memo(function GridCard({ item, onFavorite, onMenu }: GameRowProps) {
   const t = useMessages();
   const { game, entry } = item;
   return (
-    <div className="group relative">
+    <div
+      className="group relative"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onMenu(item, menuAnchor(event));
+      }}
+    >
       <Link to={`/library/${game.id}`} aria-label={game.title} className="block rounded-lg focus-visible:outline-offset-4">
         <GameCover game={game} className="border border-border transition-colors duration-150 ease-out group-hover:border-border-strong" />
       </Link>
@@ -94,11 +125,18 @@ const GridCard = memo(function GridCard({ item, onFavorite }: { item: LibraryIte
 /** Height of one list row in px (40px thumbnail + 2 × 8px padding + 1px border). */
 const LIST_ROW_HEIGHT = 57;
 
-const ListRow = memo(function ListRow({ item, onFavorite }: { item: LibraryItem; onFavorite: FavoriteHandler }) {
+const ListRow = memo(function ListRow({ item, onFavorite, onMenu }: GameRowProps) {
   const t = useMessages();
   const { game, entry } = item;
   return (
-    <tr style={{ height: LIST_ROW_HEIGHT }} className="border-b border-border transition-colors duration-150 ease-out last:border-b-0 hover:bg-hover">
+    <tr
+      style={{ height: LIST_ROW_HEIGHT }}
+      className="border-b border-border transition-colors duration-150 ease-out last:border-b-0 hover:bg-hover"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onMenu(item, menuAnchor(event));
+      }}
+    >
       <td className="py-2 pr-4 pl-4">
         <Link to={`/library/${game.id}`} className="flex items-center gap-3 rounded-md">
           <GameCover game={game} aspect="square" showTitle={false} className="w-10 shrink-0 rounded-md" />
@@ -124,7 +162,7 @@ const ListRow = memo(function ListRow({ item, onFavorite }: { item: LibraryItem;
   );
 });
 
-function LibraryTable({ items, onFavorite }: { items: LibraryItem[]; onFavorite: FavoriteHandler }) {
+function LibraryTable({ items, onFavorite, onMenu }: { items: LibraryItem[]; onFavorite: FavoriteHandler; onMenu: MenuHandler }) {
   const t = useMessages();
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const virtual = items.length > VIRTUALIZE_FROM;
@@ -154,7 +192,7 @@ function LibraryTable({ items, onFavorite }: { items: LibraryItem[]; onFavorite:
         <tbody ref={bodyRef}>
           {before > 0 && <tr aria-hidden style={{ height: before }} />}
           {visible.map((item) => (
-            <ListRow key={item.game.id} item={item} onFavorite={onFavorite} />
+            <ListRow key={item.game.id} item={item} onFavorite={onFavorite} onMenu={onMenu} />
           ))}
           {after > 0 && <tr aria-hidden style={{ height: after }} />}
         </tbody>
@@ -168,9 +206,24 @@ export function LibraryPage() {
   const query = useQuery("library", api.library.listLibrary);
   const view = usePreferences((s) => s.libraryView);
   const setView = usePreferences((s) => s.setLibraryView);
-  const group = usePreferences((s) => s.libraryGroup);
+  const collectionsQuery = useQuery("collections", api.collections.list);
+  const storedGroup = usePreferences((s) => s.libraryGroup);
   const setGroup = usePreferences((s) => s.setLibraryGroup);
   const openAddGame = useUi((s) => s.openAddGame);
+  const [menu, setMenu] = useState<{ item: LibraryItem; anchor: MenuAnchor } | null>(null);
+  const [naming, setNaming] = useState<{ collection: Collection | null } | null>(null);
+  const [deleting, setDeleting] = useState<Collection | null>(null);
+
+  const collections = useMemo(
+    () => (collectionsQuery.status === "success" ? collectionsQuery.data : []),
+    [collectionsQuery.status, collectionsQuery.data],
+  );
+  const collection = collections.find((c) => collectionGroup(c.id) === storedGroup) ?? null;
+  // A stored collection that is gone (or not loaded yet) shows the whole library.
+  const group: BuiltinGroup = isBuiltin(storedGroup) ? storedGroup : "all";
+  const openMenu = useCallback<MenuHandler>((item, anchor) => {
+    setMenu({ item, anchor });
+  }, []);
 
   const { update } = query;
   const setFavorite = useCallback<FavoriteHandler>(
@@ -190,15 +243,19 @@ export function LibraryPage() {
   );
 
   const all = useMemo(() => (query.status === "success" ? query.data : []), [query.status, query.data]);
-  const items = useMemo(() => all.filter((i) => matchesGroup(i, group)), [all, group]);
+  const items = useMemo(() => {
+    if (!collection) return all.filter((i) => matchesGroup(i, group));
+    const members = new Set(collection.gameIds);
+    return all.filter((i) => members.has(i.game.id));
+  }, [all, group, collection]);
   const counts = useMemo(() => {
-    const result = {} as Record<LibraryGroup, number>;
+    const result = {} as Record<BuiltinGroup, number>;
     for (const g of GROUPS) result[g] = all.filter((i) => matchesGroup(i, g)).length;
     return result;
   }, [all]);
   const cells = useMemo(
-    () => items.map((item) => ({ key: item.game.id, node: <GridCard item={item} onFavorite={setFavorite} /> })),
-    [items, setFavorite],
+    () => items.map((item) => ({ key: item.game.id, node: <GridCard item={item} onFavorite={setFavorite} onMenu={openMenu} /> })),
+    [items, setFavorite, openMenu],
   );
   const addButton = (
     <Button
@@ -234,10 +291,10 @@ export function LibraryPage() {
         />
       ) : (
         <>
-          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-            <nav aria-label={t.library.grouping} className="flex flex-wrap gap-1">
+          <div className="mb-8 flex items-start justify-between gap-4">
+            <nav aria-label={t.library.grouping} className="flex min-w-0 flex-1 flex-wrap gap-1">
               {GROUPS.map((g) => {
-                const selected = g === group;
+                const selected = !collection && g === group;
                 return (
                   <button
                     key={g}
@@ -246,27 +303,79 @@ export function LibraryPage() {
                     onClick={() => {
                       setGroup(g);
                     }}
-                    className={cx(
-                      "inline-flex h-8 items-center gap-2 rounded-md px-3 text-sm transition-colors duration-150 ease-out",
-                      selected ? "bg-active font-medium text-fg" : "text-fg-muted hover:bg-hover hover:text-fg",
-                      g === "steam" && "ml-3",
-                    )}
+                    className={cx(CHIP, selected ? "bg-active font-medium text-fg" : CHIP_IDLE, g === "steam" && "ml-3")}
                   >
                     {groupLabel(g)}
                     {query.status === "success" && <span className="num text-xs text-fg-subtle">{counts[g]}</span>}
                   </button>
                 );
               })}
+              {collections.map((c, index) => {
+                const selected = c.id === collection?.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      setGroup(collectionGroup(c.id));
+                    }}
+                    className={cx(CHIP, "max-w-56", selected ? "bg-active font-medium text-fg" : CHIP_IDLE, index === 0 && "ml-3")}
+                  >
+                    <span className="truncate">{c.name}</span>
+                    <span className="num text-xs text-fg-subtle">{c.gameIds.length}</span>
+                  </button>
+                );
+              })}
+              {collectionsQuery.status === "success" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNaming({ collection: null });
+                  }}
+                  className={cx(CHIP, CHIP_IDLE, collections.length === 0 && "ml-3")}
+                >
+                  <Plus aria-hidden />
+                  {t.collections.create}
+                </button>
+              )}
             </nav>
-            <Segmented
-              label={t.library.view}
-              value={view}
-              onChange={setView}
-              options={[
-                { value: "grid", label: t.library.grid, icon: LayoutGrid, iconOnly: true },
-                { value: "list", label: t.library.list, icon: List, iconOnly: true },
-              ]}
-            />
+            <div className="flex shrink-0 items-center gap-1">
+              {collection && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    icon={Pencil}
+                    label={t.collections.rename}
+                    onClick={() => {
+                      setNaming({ collection });
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    icon={Trash2}
+                    label={t.collections.delete}
+                    className="mr-2"
+                    onClick={() => {
+                      setDeleting(collection);
+                    }}
+                  />
+                </>
+              )}
+              <Segmented
+                label={t.library.view}
+                value={view}
+                onChange={setView}
+                options={[
+                  { value: "grid", label: t.library.grid, icon: LayoutGrid, iconOnly: true },
+                  { value: "list", label: t.library.list, icon: List, iconOnly: true },
+                ]}
+              />
+            </div>
           </div>
 
           {query.status === "loading" &&
@@ -289,15 +398,50 @@ export function LibraryPage() {
 
           {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
 
-          {query.status === "success" && items.length === 0 && (
-            <EmptyState compact icon={Library} title={EMPTY_GROUP[group].title} description={EMPTY_GROUP[group].description} />
-          )}
+          {query.status === "success" &&
+            items.length === 0 &&
+            (collection ? (
+              <EmptyState compact icon={Folder} title={t.collections.emptyTitle} description={t.collections.emptyText} />
+            ) : (
+              <EmptyState compact icon={Library} title={EMPTY_GROUP[group].title} description={EMPTY_GROUP[group].description} />
+            ))}
 
           {query.status === "success" && items.length > 0 && view === "grid" && <VirtualGrid cells={cells} label={t.palette.games} />}
 
-          {query.status === "success" && items.length > 0 && view === "list" && <LibraryTable items={items} onFavorite={setFavorite} />}
+          {query.status === "success" && items.length > 0 && view === "list" && (
+            <LibraryTable items={items} onFavorite={setFavorite} onMenu={openMenu} />
+          )}
         </>
       )}
+
+      {menu && (
+        <CollectionMenu
+          game={menu.item.game}
+          anchor={menu.anchor}
+          onClose={() => {
+            setMenu(null);
+          }}
+        />
+      )}
+      <CollectionNameDialog
+        open={naming !== null}
+        collection={naming?.collection ?? null}
+        onClose={() => {
+          setNaming(null);
+        }}
+        onSaved={(saved) => {
+          setGroup(collectionGroup(saved.id));
+        }}
+      />
+      <DeleteCollectionDialog
+        collection={deleting}
+        onClose={() => {
+          setDeleting(null);
+        }}
+        onDeleted={() => {
+          setGroup("all");
+        }}
+      />
     </Page>
   );
 }

@@ -35,6 +35,8 @@ pub struct AppState {
     pub mover: Arc<crate::mover::Mover>,
     /// Opens a URL in the system browser.
     pub open_url: OpenUrl,
+    /// Linux compatibility ratings.
+    pub protondb: Arc<crate::protondb::ProtonDb>,
 }
 
 pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {

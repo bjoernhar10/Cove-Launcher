@@ -100,6 +100,14 @@ function realItem(game: Game, index: number): LibraryItem {
 const params = new URLSearchParams(window.location.search);
 const count = Number(params.get("games") ?? TITLES.length);
 const core = installFakeCore(demo ? demo.library.map(realItem) : Array.from({ length: count }, (_, i) => demoItem(i)));
+// One collection of the user's own.
+core.collections = [{ id: "1", name: "Mit Freunden", gameIds: core.library.slice(1, 3).map((item) => item.game.id) }];
+
+// ProtonDB ratings for the first games; "game-4" has none.
+const TIERS = ["gold", "platinum", "silver", "borked"] as const;
+core.library.slice(0, 4).forEach((item, i) => {
+  core.protonRatings[item.game.id] = { tier: TIERS[i] ?? "gold", reports: 2107 - i * 700, steamAppId: item.entry.storeGameId ?? "620" };
+});
 core.coveAchievements = core.coveAchievements.map((a, i) => ({ ...a, unlockedAt: i === 0 ? "2026-11-02T18:00:00Z" : a.unlockedAt }));
 if (demo) {
   FAKE_CATALOG.splice(0, FAKE_CATALOG.length, ...demo.catalog);

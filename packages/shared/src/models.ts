@@ -301,6 +301,28 @@ export interface StoreDlc {
   unlockOnly?: boolean;
 }
 
+export type CollectionId = string;
+
+/** One of the user's own collections ("Mit Freunden", "Angefangen" ...). A game can be in several. */
+export interface Collection {
+  id: CollectionId;
+  name: string;
+  /** The library games in it, oldest member first. */
+  gameIds: GameId[];
+}
+
+/** ProtonDB tier: how well a Windows game runs on Linux through Proton. */
+export type ProtonTier = "platinum" | "gold" | "silver" | "bronze" | "borked";
+
+/** ProtonDB's community rating of a game. */
+export interface ProtonRating {
+  tier: ProtonTier;
+  /** Number of user reports behind the tier. */
+  reports: number;
+  /** The Steam app the rating belongs to (ProtonDB rates Steam versions). */
+  steamAppId: string;
+}
+
 export interface StoreDlcList {
   dlcs: StoreDlc[];
   /** All DLCs of the game; the list is cut off for games with hundreds. */

@@ -114,6 +114,48 @@ pub async fn library_update(
 }
 
 #[tauri::command]
+pub async fn collections_list(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::models::Collection>> {
+    db::collections::list(&state.pool).await
+}
+
+#[tauri::command]
+pub async fn collections_create(
+    state: State<'_, AppState>,
+    name: String,
+) -> AppResult<crate::models::Collection> {
+    db::collections::create(&state.pool, &name).await
+}
+
+#[tauri::command]
+pub async fn collections_rename(
+    state: State<'_, AppState>,
+    collection_id: String,
+    name: String,
+) -> AppResult<crate::models::Collection> {
+    db::collections::rename(&state.pool, &collection_id, &name).await
+}
+
+#[tauri::command]
+pub async fn collections_delete(
+    state: State<'_, AppState>,
+    collection_id: String,
+) -> AppResult<()> {
+    db::collections::delete(&state.pool, &collection_id).await
+}
+
+#[tauri::command]
+pub async fn collections_set_game(
+    state: State<'_, AppState>,
+    collection_id: String,
+    game_id: String,
+    member: bool,
+) -> AppResult<()> {
+    db::collections::set_game(&state.pool, &collection_id, &game_id, member).await
+}
+
+#[tauri::command]
 pub async fn library_scan_folder(
     state: State<'_, AppState>,
     path: String,
@@ -246,6 +288,23 @@ pub async fn game_manage_dlcs(state: State<'_, AppState>, game_id: String) -> Ap
             "Steam could not be opened. Is Steam installed?"
         ))
     })
+}
+
+/// `ProtonDB`'s rating of the game (Linux); null when there is none.
+#[tauri::command]
+pub async fn game_proton_rating(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<Option<crate::models::ProtonRating>> {
+    let item = db::library::require(&state.pool, &game_id).await?;
+    state
+        .protondb
+        .rating(
+            item.entry.source,
+            item.entry.store_game_id.as_deref(),
+            &item.game.title,
+        )
+        .await
 }
 
 async fn steam_app(state: &AppState, game_id: &str) -> AppResult<String> {

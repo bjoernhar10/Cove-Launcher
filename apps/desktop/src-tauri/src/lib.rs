@@ -16,6 +16,7 @@ mod launcher;
 mod models;
 mod mover;
 mod plugins;
+mod protondb;
 mod recommend;
 mod scanner;
 mod sidecar;
@@ -49,12 +50,18 @@ macro_rules! cove_handlers {
             $crate::commands::library_remove,
             $crate::commands::library_update,
             $crate::commands::library_scan_folder,
+            $crate::commands::collections_list,
+            $crate::commands::collections_create,
+            $crate::commands::collections_rename,
+            $crate::commands::collections_delete,
+            $crate::commands::collections_set_game,
             $crate::commands::library_achievements,
             $crate::commands::library_playtime,
             $crate::commands::achievements_recent,
             $crate::commands::game_uninstall,
             $crate::commands::game_dlcs,
             $crate::commands::game_manage_dlcs,
+            $crate::commands::game_proton_rating,
             $crate::commands::game_move,
             $crate::commands::downloads_preview_url,
             $crate::commands::downloads_preview_store,
@@ -234,6 +241,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         login_flows: Arc::new(stores::login::LoginFlows::default()),
         cove_achievements,
         open_url: open_url.clone(),
+        protondb: Arc::new(protondb::ProtonDb::new(pool.clone())),
         launcher: Launcher::new(pool.clone(), emit, open_url, Timing::default()),
         defaults,
         catalog,

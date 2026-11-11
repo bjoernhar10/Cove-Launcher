@@ -151,6 +151,25 @@ Launch arguments are split shell-style (shlex); user environment variables overr
    picks one, searches manually or rejects all (`rejected`).
 5. The result is sent as the `library-match-changed` event.
 
+### Collections
+
+Collections are the user's own groups of library games; a game can be in several. They live in the
+tables `collections` and `collection_games` (`db/collections.rs`, commands `collections_*`). The rows
+point at `games`, not at library entries: a game that leaves the library and comes back later is
+still in its collections, but only games that are in the library now are listed. Names are 1 to 50
+characters and unique without regard to case. In the UI they are chips next to the store groups of
+My Library; a game is put into collections from a small menu (right-click on the game, or the
+"Sammlungen" button on its page).
+
+### ProtonDB rating (Linux)
+
+On Linux the game page shows how well a game runs with Proton (`protondb.rs`, command
+`game_proton_rating`). The core reads ProtonDB's public report summary for the game's Steam app id.
+Games from other stores are looked up in the public Steam store search and only accepted when the
+normalized title is exactly the same, so a game never gets the rating of a different one. Answers,
+including "nothing found", are cached in `catalog_cache` for 7 days; an old answer is served when
+ProtonDB or Steam can't be reached.
+
 ### Recommendations
 
 - `services/recommender` runs as a Tauri sidecar (`bundle.externalBin`, PyInstaller onefile). The core's
