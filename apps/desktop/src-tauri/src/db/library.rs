@@ -97,6 +97,7 @@ struct EntryRow {
     compatibility_tool: String,
     proton_version: Option<String>,
     env: String,
+    tweaks: Option<String>,
     added_at: String,
     played_seconds: i64,
     last_played_at: Option<String>,
@@ -140,6 +141,12 @@ impl EntryRow {
                     compatibility_tool: CompatibilityTool::parse(&self.compatibility_tool),
                     env,
                     proton_version: self.proton_version,
+                    // Unreadable or missing (older rows): the defaults.
+                    tweaks: self
+                        .tweaks
+                        .as_deref()
+                        .and_then(|t| serde_json::from_str(t).ok())
+                        .unwrap_or_default(),
                 },
                 catalog_id: self.catalog_id,
                 match_status: MatchStatus::parse(&self.match_status),
@@ -155,7 +162,7 @@ fn select_entries(filter: &str) -> String {
     format!(
         "SELECT {GAME_COLUMNS}, e.source_id, e.store_game_id, e.installed, e.install_path, e.executable_path, \
            e.install_size_bytes, e.favorite, e.playtime_offset_minutes, e.launch_arguments, e.compatibility_tool, \
-           e.proton_version, e.env, e.added_at, e.catalog_id, e.match_status, \
+           e.proton_version, e.env, e.tweaks, e.added_at, e.catalog_id, e.match_status, \
            (SELECT COALESCE(SUM(s.duration_seconds), 0) FROM play_sessions s WHERE s.game_id = g.id) AS played_seconds, \
            (SELECT COALESCE(MAX(MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at), \
               MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at) \
@@ -536,14 +543,23 @@ pub async fn update(
                 "This Proton version does not exist."
             )));
         }
+        let tweaks = &options.tweaks;
+        let size_ok = |v: Option<u32>| v.is_none_or(|v| (160..=15_360).contains(&v));
+        if !size_ok(tweaks.gamescope_width) || !size_ok(tweaks.gamescope_height) {
+            return Err(AppError::InvalidInput(tr!(
+                "Die Auflösung für gamescope muss zwischen 160 und 15360 Pixeln liegen.",
+                "The gamescope resolution must be between 160 and 15360 pixels."
+            )));
+        }
         sqlx::query(
-            "UPDATE library_entries SET launch_arguments = ?, compatibility_tool = ?, env = ?, proton_version = ? \
-             WHERE game_id = ?",
+            "UPDATE library_entries SET launch_arguments = ?, compatibility_tool = ?, env = ?, proton_version = ?, \
+             tweaks = ? WHERE game_id = ?",
         )
         .bind(options.arguments.trim())
         .bind(options.compatibility_tool.as_str())
         .bind(serde_json::to_string(&env)?)
         .bind(proton_version)
+        .bind(serde_json::to_string(tweaks)?)
         .bind(game_id)
         .execute(&mut *tx)
         .await?;
@@ -752,6 +768,14 @@ pub(crate) mod tests {
                     },
                 ],
                 proton_version: Some(" GE-Proton10-25 ".into()),
+                tweaks: crate::models::GameTweaks {
+                    mangohud: true,
+                    gamescope: true,
+                    gamescope_width: Some(1280),
+                    gamescope_height: Some(720),
+                    vkd3d: false,
+                    ..crate::models::GameTweaks::default()
+                },
             }),
         };
         let updated = update(&pool, &item.game.id, &patch).await.unwrap();
@@ -771,6 +795,23 @@ pub(crate) mod tests {
             proton_choices(&pool).await.unwrap(),
             [Some("GE-Proton10-25".to_owned())]
         );
+        let tweaks = &updated.entry.launch_options.tweaks;
+        assert!(tweaks.mangohud && tweaks.gamescope && tweaks.dxvk && !tweaks.vkd3d);
+        assert_eq!(tweaks.gamescope_width, Some(1280));
+        let too_small = LibraryUpdate {
+            launch_options: Some(LaunchOptions {
+                tweaks: crate::models::GameTweaks {
+                    gamescope_width: Some(10),
+                    ..crate::models::GameTweaks::default()
+                },
+                ..LaunchOptions::default()
+            }),
+            ..LibraryUpdate::default()
+        };
+        assert!(matches!(
+            update(&pool, &item.game.id, &too_small).await,
+            Err(AppError::InvalidInput(_))
+        ));
 
         let bad = LibraryUpdate {
             launch_options: Some(LaunchOptions {

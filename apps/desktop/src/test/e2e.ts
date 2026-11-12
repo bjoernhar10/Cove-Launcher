@@ -107,6 +107,31 @@ if (windowsGame) {
   windowsGame.entry.launchOptions = { ...windowsGame.entry.launchOptions, compatibilityTool: "proton", protonVersion: "GE-Proton10-24" };
 }
 
+// Its Proton prefix exists already.
+core.prefixes["game-11"] = { exists: true, sizeBytes: 1_350_000_000, winetricks: true };
+
+// Times to beat from IGDB for most games (every seventh has none), in hours "main + extras".
+const LENGTHS = [12, 3.5, 26, 8, 61, 1.5, 18, 44, 6, 14];
+core.library.forEach((item, i) => {
+  if (i % 7 === 3) return;
+  // The invented games are linked to an (invented) catalogue entry too.
+  item.entry.catalogId ??= `igdb-${String(5000 + i)}`;
+  const normally = Math.round((LENGTHS[i % LENGTHS.length] ?? 10) * 3600);
+  core.timesToBeat[item.entry.catalogId] = { hastily: Math.round(normally * 0.7), normally, completely: Math.round(normally * 2.2), count: 10 + i * 3 };
+});
+
+// Save backups of the first game; a ROM folder the emulator test reads.
+core.backups["game-0"] = {
+  known: true,
+  files: 4,
+  bytes: 3_200_000,
+  backups: [
+    { id: "2026-11-11_20-15-00.000", createdAt: "2026-11-11T20:15:00Z", files: 4, bytes: 3_100_000 },
+    { id: "2026-11-09_19-00-00.000", createdAt: "2026-11-09T19:00:00Z", files: 3, bytes: 2_900_000 },
+  ],
+};
+core.romFiles["/home/alex/ROMs/SNES"] = ["Lighthouse Keeper (USA).sfc", "Tiny Planets (Europe).sfc"];
+
 // One collection of the user's own.
 core.collections = [{ id: "1", name: "Mit Freunden", gameIds: core.library.slice(1, 3).map((item) => item.game.id) }];
 

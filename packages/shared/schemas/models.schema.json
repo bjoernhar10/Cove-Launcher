@@ -197,11 +197,17 @@
         "appearance": {
           "$ref": "#/definitions/AppearanceSettings"
         },
+        "backups": {
+          "$ref": "#/definitions/BackupSettings"
+        },
         "catalog": {
           "$ref": "#/definitions/CatalogSettings"
         },
         "downloads": {
           "$ref": "#/definitions/DownloadSettings"
+        },
+        "emulators": {
+          "$ref": "#/definitions/EmulatorSettings"
         },
         "general": {
           "$ref": "#/definitions/GeneralSettings"
@@ -215,7 +221,9 @@
         "appearance",
         "library",
         "downloads",
-        "catalog"
+        "catalog",
+        "backups",
+        "emulators"
       ],
       "type": "object"
     },
@@ -232,6 +240,56 @@
       "required": [
         "theme",
         "accent"
+      ],
+      "type": "object"
+    },
+    "BackupInfo": {
+      "additionalProperties": false,
+      "description": "One save backup of a game.",
+      "properties": {
+        "bytes": {
+          "type": "number"
+        },
+        "createdAt": {
+          "$ref": "#/definitions/IsoDateTime"
+        },
+        "files": {
+          "type": "number"
+        },
+        "id": {
+          "description": "Folder name (the time), used to restore it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "createdAt",
+        "files",
+        "bytes"
+      ],
+      "type": "object"
+    },
+    "BackupSettings": {
+      "additionalProperties": false,
+      "description": "Save backups of every game (save locations from the Ludusavi manifest).",
+      "properties": {
+        "directory": {
+          "description": "Where backups go; empty = Cove's app data folder.",
+          "type": "string"
+        },
+        "enabled": {
+          "description": "Back up after every session.",
+          "type": "boolean"
+        },
+        "keep": {
+          "description": "Backups kept per game (1 to 100).",
+          "type": "number"
+        }
+      },
+      "required": [
+        "enabled",
+        "directory",
+        "keep"
       ],
       "type": "object"
     },
@@ -930,6 +988,43 @@
       ],
       "type": "string"
     },
+    "EmulatorInfo": {
+      "additionalProperties": false,
+      "description": "An emulator for a system and whether it is installed.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "installed"
+      ],
+      "type": "object"
+    },
+    "EmulatorSettings": {
+      "additionalProperties": false,
+      "description": "Folders with ROMs and the emulator that plays them.",
+      "properties": {
+        "romFolders": {
+          "items": {
+            "$ref": "#/definitions/RomFolder"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "romFolders"
+      ],
+      "type": "object"
+    },
     "EnvVar": {
       "additionalProperties": false,
       "properties": {
@@ -1102,6 +1197,37 @@
       ],
       "type": "object"
     },
+    "GameBackups": {
+      "additionalProperties": false,
+      "description": "Save backups of a game, for its page.",
+      "properties": {
+        "backups": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/definitions/BackupInfo"
+          },
+          "type": "array"
+        },
+        "bytes": {
+          "type": "number"
+        },
+        "files": {
+          "description": "Save files found right now.",
+          "type": "number"
+        },
+        "known": {
+          "description": "The manifest knows where this game keeps its saves.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "known",
+        "files",
+        "bytes",
+        "backups"
+      ],
+      "type": "object"
+    },
     "GameFeatures": {
       "additionalProperties": false,
       "properties": {
@@ -1207,6 +1333,86 @@
         "state",
         "startedAt",
         "sessionSeconds"
+      ],
+      "type": "object"
+    },
+    "GameTools": {
+      "additionalProperties": false,
+      "description": "Which Linux game tools are installed.",
+      "properties": {
+        "gamemode": {
+          "type": "boolean"
+        },
+        "gamescope": {
+          "type": "boolean"
+        },
+        "mangohud": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mangohud",
+        "gamemode",
+        "gamescope"
+      ],
+      "type": "object"
+    },
+    "GameTweaks": {
+      "additionalProperties": false,
+      "description": "Per-game options on Linux for games Cove starts itself.",
+      "properties": {
+        "dxvk": {
+          "description": "Proton: Direct3D 9 to 11 through DXVK (off = WineD3D).",
+          "type": "boolean"
+        },
+        "fsr": {
+          "description": "AMD FSR 1 upscaling: gamescope's filter, else GE-Proton's `WINE_FULLSCREEN_FSR`.",
+          "type": "boolean"
+        },
+        "gamemode": {
+          "description": "Feral GameMode (`gamemoderun`).",
+          "type": "boolean"
+        },
+        "gamescope": {
+          "description": "Run inside Valve's gamescope compositor.",
+          "type": "boolean"
+        },
+        "gamescopeFullscreen": {
+          "description": "gamescope: fullscreen.",
+          "type": "boolean"
+        },
+        "gamescopeHeight": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gamescopeWidth": {
+          "description": "gamescope: the resolution the game renders at; null = the game's own.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mangohud": {
+          "description": "Performance overlay (`mangohud`).",
+          "type": "boolean"
+        },
+        "vkd3d": {
+          "description": "Proton: Direct3D 12 through VKD3D-Proton (off = no D3D12).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mangohud",
+        "gamemode",
+        "gamescope",
+        "gamescopeWidth",
+        "gamescopeHeight",
+        "gamescopeFullscreen",
+        "fsr",
+        "dxvk",
+        "vkd3d"
       ],
       "type": "object"
     },
@@ -1529,13 +1735,18 @@
             }
           ],
           "description": "With Proton: the build to use. `\"latest\"` = always the newest GE-Proton, a GE-Proton release name (`\"GE-Proton10-25\"`), or `\"steam:<folder>\"` for a build Steam installed. null = the default (`library.defaultProton`)."
+        },
+        "tweaks": {
+          "$ref": "#/definitions/GameTweaks",
+          "description": "Linux: MangoHud, GameMode, gamescope, FSR, DXVK/VKD3D (games Cove starts itself)."
         }
       },
       "required": [
         "arguments",
         "compatibilityTool",
         "env",
-        "protonVersion"
+        "protonVersion",
+        "tweaks"
       ],
       "type": "object"
     },
@@ -1735,6 +1946,10 @@
           },
           "type": "array"
         },
+        "gogCloudSaves": {
+          "description": "Sync GOG cloud saves before and after playing (games Cove installed).",
+          "type": "boolean"
+        },
         "scanFolders": {
           "items": {
             "type": "string"
@@ -1747,6 +1962,10 @@
         "steamSilentStart": {
           "description": "Start Steam with `-silent` (tray only) before a Steam game starts.",
           "type": "boolean"
+        },
+        "useUmu": {
+          "description": "Linux: start Proton through umu-launcher (Steam Linux Runtime, per-game fixes).",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1755,7 +1974,9 @@
         "gameFolders",
         "steamSilentStart",
         "epicCloudSaves",
-        "defaultProton"
+        "gogCloudSaves",
+        "defaultProton",
+        "useUmu"
       ],
       "type": "object"
     },
@@ -2095,6 +2316,41 @@
       ],
       "type": "string"
     },
+    "PrefixAction": {
+      "description": "open = show the folder · reset = delete it (the next start creates a fresh one) · winetricks = start winetricks for it.",
+      "enum": [
+        "open",
+        "reset",
+        "winetricks"
+      ],
+      "type": "string"
+    },
+    "PrefixInfo": {
+      "additionalProperties": false,
+      "description": "A game's Proton prefix (Linux).",
+      "properties": {
+        "exists": {
+          "description": "The prefix has been created (the game started at least once).",
+          "type": "boolean"
+        },
+        "sizeBytes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "winetricks": {
+          "description": "`winetricks` is installed.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "exists",
+        "sizeBytes",
+        "winetricks"
+      ],
+      "type": "object"
+    },
     "ProtonKind": {
       "description": "Where a Proton build comes from: GE-Proton (Cove downloads and updates it) or Steam.",
       "enum": [
@@ -2135,6 +2391,9 @@
           "description": "The release list could not be loaded; only installed builds are listed.",
           "type": "boolean"
         },
+        "umu": {
+          "$ref": "#/definitions/UmuStatus"
+        },
         "versions": {
           "description": "GE-Proton (newest first), then Steam's builds.",
           "items": {
@@ -2148,7 +2407,8 @@
         "latest",
         "checkedAt",
         "offline",
-        "installing"
+        "installing",
+        "umu"
       ],
       "type": "object"
     },
@@ -2158,7 +2418,8 @@
         "verifying",
         "unpacking",
         "done",
-        "failed"
+        "failed",
+        "cancelled"
       ],
       "type": "string"
     },
@@ -2574,6 +2835,38 @@
       ],
       "type": "object"
     },
+    "ProxyTimeToBeatRequest": {
+      "additionalProperties": false,
+      "description": "`POST /v1/time-to-beat`: IGDB game ids (at most 500).",
+      "properties": {
+        "ids": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "type": "object"
+    },
+    "ProxyTimeToBeatResponse": {
+      "additionalProperties": false,
+      "description": "Times per IGDB game id; ids without reports are left out.",
+      "properties": {
+        "items": {
+          "additionalProperties": {
+            "$ref": "#/definitions/TimeToBeat"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
     "Recommendation": {
       "additionalProperties": false,
       "properties": {
@@ -2712,6 +3005,65 @@
         "favorite",
         "achievements",
         "sessionCount"
+      ],
+      "type": "object"
+    },
+    "RomFolder": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "description": "`custom`: the arguments, `{rom}` stands for the ROM file.",
+          "type": "string"
+        },
+        "emulator": {
+          "description": "Emulator id of the system (`retroarch`, `dolphin` …) or `custom`.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable id (chosen by the UI).",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "program": {
+          "description": "Program to run instead of the one found on the system (needed for `custom`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system": {
+          "description": "`snes`, `ps2` … (`SystemInfo.id`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "system",
+        "path",
+        "emulator",
+        "program",
+        "arguments"
+      ],
+      "type": "object"
+    },
+    "RomScanResult": {
+      "additionalProperties": false,
+      "description": "Result of scanning the ROM folders.",
+      "properties": {
+        "added": {
+          "description": "New library games.",
+          "type": "number"
+        },
+        "found": {
+          "description": "ROMs found in all folders.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "found",
+        "added"
       ],
       "type": "object"
     },
@@ -2966,6 +3318,39 @@
       ],
       "type": "object"
     },
+    "SystemInfo": {
+      "additionalProperties": false,
+      "description": "A console Cove can play ROMs of.",
+      "properties": {
+        "emulators": {
+          "description": "RetroArch first.",
+          "items": {
+            "$ref": "#/definitions/EmulatorInfo"
+          },
+          "type": "array"
+        },
+        "extensions": {
+          "description": "ROM file extensions (lower case, without the dot).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "extensions",
+        "emulators"
+      ],
+      "type": "object"
+    },
     "ThemePreference": {
       "enum": [
         "system",
@@ -2973,6 +3358,99 @@
         "dark"
       ],
       "type": "string"
+    },
+    "TimeToBeat": {
+      "additionalProperties": false,
+      "description": "How long a game takes, in seconds (IGDB \"time to beat\", from player reports).",
+      "properties": {
+        "completely": {
+          "description": "Everything (100 %).",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "count": {
+          "description": "Number of player reports.",
+          "type": "number"
+        },
+        "hastily": {
+          "description": "Main story.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "normally": {
+          "description": "Main story and extras.",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "hastily",
+        "normally",
+        "completely",
+        "count"
+      ],
+      "type": "object"
+    },
+    "UmuSource": {
+      "description": "Where the umu-launcher Cove uses comes from: the system's package or Cove's own download.",
+      "enum": [
+        "system",
+        "cove"
+      ],
+      "type": "string"
+    },
+    "UmuStatus": {
+      "additionalProperties": false,
+      "description": "umu-launcher: runs Proton inside the Steam Linux Runtime, like Steam does.",
+      "properties": {
+        "enabled": {
+          "description": "`library.useUmu`.",
+          "type": "boolean"
+        },
+        "latest": {
+          "description": "Newest release, when the list could be loaded.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "python": {
+          "description": "`python3` is there (Cove's copy needs it).",
+          "type": "boolean"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/UmuSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null = not on this machine yet."
+        },
+        "version": {
+          "description": "Version of Cove's copy (null for the system's).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "source",
+        "version",
+        "latest",
+        "python"
+      ],
+      "type": "object"
     },
     "UninstallMethod": {
       "description": "What `game_uninstall` did: Cove deleted the folder, or Steam asks and removes the game.",

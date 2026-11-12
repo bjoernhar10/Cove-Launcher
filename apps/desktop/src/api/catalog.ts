@@ -6,6 +6,7 @@ import type {
   CatalogProviderId,
   CatalogSort,
   CatalogStatus,
+  TimeToBeat,
 } from "@cove/shared";
 import { call } from "./transport.ts";
 
@@ -34,6 +35,12 @@ export function getCatalogGame(gameId: string): Promise<CatalogGameDetails> {
 
 export function getSimilarGames(gameId: string): Promise<CatalogPage> {
   return call("catalog_similar", { gameId });
+}
+
+/** How long games take (IGDB, from player reports), per catalogue id; ids without data are missing. */
+export function timeToBeat(catalogIds: string[]): Promise<Record<string, TimeToBeat>> {
+  if (catalogIds.length === 0) return Promise.resolve({});
+  return call("catalog_time_to_beat", { catalogIds });
 }
 
 export function getCatalogStatus(): Promise<CatalogStatus> {

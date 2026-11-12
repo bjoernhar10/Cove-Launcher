@@ -26,8 +26,9 @@ use crate::error::{AppError, AppResult};
 use crate::launcher::{find_proton_installs, version_key, HostEnv};
 use crate::models::{
     AppSettings, CompatibilityTool, LaunchOptions, ProtonKind, ProtonOverview, ProtonPhase,
-    ProtonProgress, ProtonVersion,
+    ProtonProgress, ProtonVersion, UmuSource, UmuStatus,
 };
+use crate::umu::{self, UmuRelease, UMU_ID};
 
 /// "Always the newest GE-Proton"; updated automatically.
 pub const LATEST: &str = "latest";
@@ -38,6 +39,7 @@ pub const GE_RELEASES_URL: &str =
     "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases?per_page=50";
 const CACHE_KEY: &str = "proton:ge-releases";
 const CACHE_PROVIDER: &str = "proton";
+const UMU_CACHE_KEY: &str = "proton:umu-release";
 /// How long the release list counts as fresh (and how often "latest" is checked).
 const LIST_TTL_HOURS: i64 = 6;
 pub const CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60 * LIST_TTL_HOURS as u64);
@@ -202,12 +204,38 @@ fn parse_checksum(text: &str) -> Option<String> {
     (hash.len() == 128 && hash.chars().all(|c| c.is_ascii_hexdigit())).then_some(hash)
 }
 
-/// Streams a file through SHA-512 (blocking; run in `spawn_blocking`).
-fn sha512_file(path: &Path) -> AppResult<String> {
-    use sha2::{Digest, Sha512};
+/// The checksum a download must match.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Checksum {
+    Sha512(String),
+    Sha256(String),
+}
+
+impl Checksum {
+    /// Hashes the file (blocking; run in `spawn_blocking`) and compares.
+    fn matches(&self, path: &Path) -> AppResult<bool> {
+        Ok(match self {
+            Self::Sha512(hex) => hash_file::<sha2::Sha512>(path)? == *hex,
+            Self::Sha256(hex) => hash_file::<sha2::Sha256>(path)? == *hex,
+        })
+    }
+}
+
+/// One file to download, check and unpack.
+struct Fetch<'a> {
+    id: &'a str,
+    url: &'a str,
+    size: u64,
+    checksum: Checksum,
+    /// `.tar.gz` (GE-Proton) or a plain `.tar` (umu's zipapp).
+    gzip: bool,
+}
+
+/// Streams a file through a hash (blocking; run in `spawn_blocking`).
+fn hash_file<D: sha2::Digest>(path: &Path) -> AppResult<String> {
     use std::io::Read;
     let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha512::new();
+    let mut hasher = D::new();
     let mut buffer = vec![0u8; 1 << 20];
     loop {
         let n = file.read(&mut buffer)?;
@@ -227,11 +255,18 @@ fn to_hex(bytes: &[u8]) -> String {
     })
 }
 
-/// Unpacks a GE-Proton `.tar.gz` (one folder named like the release) into `dest`.
-fn unpack(archive: &Path, dest: &Path) -> AppResult<()> {
+/// Unpacks a GE-Proton `.tar.gz` (one folder named like the release) or umu's
+/// `.tar` into `dest`.
+fn unpack(archive: &Path, dest: &Path, gzip: bool) -> AppResult<()> {
     let file = std::fs::File::open(archive)?;
-    let mut tar = tar::Archive::new(flate2::read::GzDecoder::new(file));
+    let reader: Box<dyn std::io::Read> = if gzip {
+        Box::new(flate2::read::GzDecoder::new(file))
+    } else {
+        Box::new(file)
+    };
+    let mut tar = tar::Archive::new(reader);
     tar.set_preserve_mtime(true);
+    tar.set_preserve_permissions(true);
     // `unpack` refuses entries outside `dest`; Proton's own symlinks stay inside.
     tar.unpack(dest).map_err(|e| {
         AppError::Download(tr!(
@@ -250,6 +285,32 @@ type InstallResult = Option<Result<PathBuf, String>>;
 struct Install {
     done: watch::Receiver<InstallResult>,
     progress: ProtonProgress,
+    /// `Cancel` stops the download (`proton_cancel`).
+    control: watch::Sender<Control>,
+}
+
+/// Where umu-launcher comes from and goes to.
+pub struct UmuConfig {
+    /// Cove's copies (`<app data>/umu`).
+    pub root: PathBuf,
+    /// GitHub's "latest release" of umu-launcher.
+    pub release_url: String,
+    /// `umu-run` the system installed.
+    pub system: Option<PathBuf>,
+    /// `python3` is there (needed for Cove's copy).
+    pub python: bool,
+}
+
+impl UmuConfig {
+    /// The real paths of this machine.
+    pub fn detect(root: PathBuf) -> Self {
+        Self {
+            root,
+            release_url: umu::UMU_RELEASE_URL.into(),
+            system: crate::sidecar::which(umu::PROGRAM),
+            python: crate::sidecar::which("python3").is_some(),
+        }
+    }
 }
 
 pub struct ProtonManager {
@@ -262,6 +323,7 @@ pub struct ProtonManager {
     defaults: AppSettings,
     emit: ProgressFn,
     installs: Mutex<HashMap<String, Install>>,
+    umu: UmuConfig,
 }
 
 impl ProtonManager {
@@ -272,16 +334,26 @@ impl ProtonManager {
         defaults: AppSettings,
         emit: ProgressFn,
     ) -> Self {
-        Self::with_endpoint(pool, root, home, defaults, emit, GE_RELEASES_URL.into())
+        let umu = UmuConfig::detect(root.with_file_name("umu"));
+        Self::with_endpoints(
+            pool,
+            root,
+            home,
+            defaults,
+            emit,
+            GE_RELEASES_URL.into(),
+            umu,
+        )
     }
 
-    pub fn with_endpoint(
+    pub fn with_endpoints(
         pool: SqlitePool,
         root: PathBuf,
         home: Option<PathBuf>,
         defaults: AppSettings,
         emit: ProgressFn,
         releases_url: String,
+        umu: UmuConfig,
     ) -> Self {
         let client = reqwest::Client::builder()
             .user_agent(concat!(
@@ -302,6 +374,7 @@ impl ProtonManager {
             defaults,
             emit,
             installs: Mutex::new(HashMap::new()),
+            umu,
         }
     }
 
@@ -319,6 +392,9 @@ impl ProtonManager {
         Ok(HostEnv {
             protons: self.builds(),
             default_proton: settings.library.default_proton,
+            tools: crate::launcher::ToolPaths::detect(),
+            rom_folders: settings.emulators.rom_folders,
+            emulators: crate::emulators::Env::detect(base.home.clone()),
             ..base.clone()
         })
     }
@@ -475,6 +551,7 @@ impl ProtonManager {
             .map(|r| r.name.clone())
             .or_else(|| resolve(&builds, LATEST).map(|b| b.id.clone()));
         ge.extend(steam);
+        let umu = self.umu_status(force).await?;
         Ok(ProtonOverview {
             versions: ge,
             latest,
@@ -483,6 +560,7 @@ impl ProtonManager {
                 .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)),
             offline: list.offline,
             installing,
+            umu,
         })
     }
 
@@ -532,7 +610,7 @@ impl ProtonManager {
         name: &str,
         auto: bool,
     ) -> AppResult<watch::Receiver<InstallResult>> {
-        if !is_ge(name) {
+        if !is_ge(name) && name != UMU_ID {
             return Err(AppError::InvalidInput(tr!(
                 "Das ist keine GE-Proton-Version.",
                 "That's not a GE-Proton version."
@@ -543,6 +621,7 @@ impl ProtonManager {
             return Ok(running.done.clone());
         }
         let (tx, rx) = watch::channel(None);
+        let (control, control_rx) = watch::channel(Control::Run);
         let progress = ProtonProgress {
             id: name.to_owned(),
             phase: ProtonPhase::Downloading,
@@ -556,19 +635,41 @@ impl ProtonManager {
             Install {
                 done: rx.clone(),
                 progress,
+                control,
             },
         );
         drop(installs);
         let me = Arc::clone(self);
         let name = name.to_owned();
         tokio::spawn(async move {
-            let result = me.download_and_unpack(&name, auto).await;
+            let work = async {
+                if name == UMU_ID {
+                    me.download_umu(control_rx.clone()).await
+                } else {
+                    me.download_and_unpack(&name, auto, control_rx.clone())
+                        .await
+                }
+            };
+            // Cancelling drops the download wherever it is (even a slow request).
+            let result = tokio::select! {
+                result = work => result,
+                () = cancel_requested(control_rx.clone()) => {
+                    me.remove_leftovers(&name).await;
+                    Err(AppError::Download(cancelled_text()))
+                }
+            };
             let total = me
                 .installs()
                 .remove(&name)
                 .map_or(0, |i| i.progress.total_bytes);
+            let cancelled = *control_rx.borrow() == Control::Cancel;
+            let result = match result {
+                Err(_) if cancelled => Err(AppError::Download(cancelled_text())),
+                other => other,
+            };
             let (phase, error) = match &result {
                 Ok(_) => (ProtonPhase::Done, None),
+                Err(_) if cancelled => (ProtonPhase::Cancelled, None),
                 Err(error) => {
                     eprintln!("[cove] {name} konnte nicht installiert werden: {error}");
                     (ProtonPhase::Failed, Some(error.user_message()))
@@ -584,6 +685,30 @@ impl ProtonManager {
             let _ = tx.send(Some(result.map_err(|e| e.user_message())));
         });
         Ok(rx)
+    }
+
+    /// Half-downloaded or half-unpacked files of a cancelled install.
+    async fn remove_leftovers(&self, name: &str) {
+        let work = if name == UMU_ID {
+            self.umu.root.join(WORK_DIR)
+        } else {
+            self.root.join(WORK_DIR)
+        };
+        let Ok(mut entries) = tokio::fs::read_dir(&work).await else {
+            return;
+        };
+        let prefix = if name == UMU_ID { "umu-" } else { name };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if !entry.file_name().to_string_lossy().starts_with(prefix) {
+                continue;
+            }
+            let path = entry.path();
+            let _ = if path.is_dir() {
+                tokio::fs::remove_dir_all(&path).await
+            } else {
+                tokio::fs::remove_file(&path).await
+            };
+        }
     }
 
     fn report(&self, name: &str, phase: ProtonPhase, downloaded: u64, total: u64) {
@@ -640,7 +765,12 @@ impl ProtonManager {
         })
     }
 
-    async fn download_and_unpack(&self, name: &str, auto: bool) -> AppResult<PathBuf> {
+    async fn download_and_unpack(
+        &self,
+        name: &str,
+        auto: bool,
+        control: watch::Receiver<Control>,
+    ) -> AppResult<PathBuf> {
         let target = self.root.join(name);
         if target.join("proton").is_file() {
             return Ok(target);
@@ -651,8 +781,15 @@ impl ProtonManager {
         tokio::fs::create_dir_all(&work).await?;
         let archive = work.join(format!("{name}.tar.gz"));
         let unpacked = work.join(name);
+        let fetch = Fetch {
+            id: name,
+            url: &release.archive_url,
+            size: release.archive_size,
+            checksum: Checksum::Sha512(expected),
+            gzip: true,
+        };
         let result = self
-            .fetch_verify_unpack(&release, &expected, &archive, &unpacked)
+            .fetch_verify_unpack(&fetch, &archive, &unpacked, control)
             .await;
         let _ = tokio::fs::remove_file(&archive).await;
         let outcome = match result {
@@ -682,12 +819,12 @@ impl ProtonManager {
 
     async fn fetch_verify_unpack(
         &self,
-        release: &Release,
-        expected: &str,
+        fetch: &Fetch<'_>,
         archive: &Path,
         unpacked: &Path,
+        control: watch::Receiver<Control>,
     ) -> AppResult<()> {
-        let name = release.name.as_str();
+        let name = fetch.id;
         let settings = db::settings::load(&self.pool, &self.defaults).await?;
         let limiter = RateLimiter::new(
             settings
@@ -695,20 +832,18 @@ impl ProtonManager {
                 .bandwidth_limit_bytes_per_second
                 .and_then(|b| u64::try_from(b).ok()),
         );
-        let remote = transfer::probe(&self.client, &release.archive_url).await?;
-        let total = remote.total.unwrap_or(release.archive_size);
+        let remote = transfer::probe(&self.client, fetch.url).await?;
+        let total = remote.total.unwrap_or(fetch.size);
         let progress = Progress::default();
-        // Proton installs are never paused; the sender just has to live.
-        let (_control, control) = watch::channel(Control::Run);
         let job = Job {
             client: &self.client,
-            url: &release.archive_url,
+            url: fetch.url,
             part: archive,
             remote: &remote,
             chunk_size: CHUNK_SIZE,
             limiter: &limiter,
             progress: &progress,
-            control,
+            control: control.clone(),
         };
         let reporter = async {
             let mut ticker = tokio::time::interval(PROGRESS_INTERVAL);
@@ -728,22 +863,26 @@ impl ProtonManager {
 
         self.report(name, ProtonPhase::Verifying, total, total);
         let path = archive.to_path_buf();
-        let actual = tokio::task::spawn_blocking(move || sha512_file(&path))
+        let checksum = fetch.checksum.clone();
+        let matches = tokio::task::spawn_blocking(move || checksum.matches(&path))
             .await
             .map_err(|e| AppError::Download(e.to_string()))??;
-        if actual != expected {
+        if !matches {
             return Err(AppError::Download(tr!(
                 "Der Download von {name} ist beschädigt (Prüfsumme stimmt nicht). Versuch es noch einmal.",
                 "The download of {name} is damaged (checksum mismatch). Please try again."
             )));
         }
 
+        if *control.borrow() == Control::Cancel {
+            return Err(AppError::Download(cancelled_text()));
+        }
         self.report(name, ProtonPhase::Unpacking, total, total);
         if unpacked.exists() {
             tokio::fs::remove_dir_all(unpacked).await?;
         }
-        let (archive, dest) = (archive.to_path_buf(), unpacked.to_path_buf());
-        tokio::task::spawn_blocking(move || unpack(&archive, &dest))
+        let (archive, dest, gzip) = (archive.to_path_buf(), unpacked.to_path_buf(), fetch.gzip);
+        tokio::task::spawn_blocking(move || unpack(&archive, &dest, gzip))
             .await
             .map_err(|e| AppError::Download(e.to_string()))?
     }
@@ -754,6 +893,9 @@ impl ProtonManager {
     /// older builds Cove installed for "latest" that no game needs any more
     /// (only when `may_clean`, i.e. no game is running).
     pub async fn check_updates(self: &Arc<Self>, force: bool, may_clean: bool) -> AppResult<()> {
+        if let Err(error) = self.update_umu(force, may_clean).await {
+            eprintln!("[cove] umu-launcher-Update: {error}");
+        }
         let list = self.release_list(force).await?;
         let (_, latest_used) = self.usage(&self.builds()).await?;
         if !latest_used {
@@ -800,6 +942,20 @@ impl ProtonManager {
         }
     }
 
+    /// Stops a running install (GE-Proton or umu); a launch waiting for it fails.
+    pub fn cancel(&self, id: &str) -> AppResult<()> {
+        match self.installs().get(id) {
+            Some(install) => {
+                install.control.send_replace(Control::Cancel);
+                Ok(())
+            }
+            None => Err(AppError::InvalidInput(tr!(
+                "{id} wird gerade nicht installiert.",
+                "{id} is not being installed right now."
+            ))),
+        }
+    }
+
     /// Deletes a GE-Proton build Cove installed, when no game uses it.
     pub async fn remove(&self, id: &str) -> AppResult<()> {
         if id.starts_with(STEAM_PREFIX) {
@@ -839,6 +995,226 @@ impl ProtonManager {
         tokio::fs::remove_dir_all(&build.path).await?;
         Ok(())
     }
+}
+
+// ───────────── umu-launcher ─────────────
+
+impl ProtonManager {
+    /// The newest umu-launcher release: fresh from the cache, else from GitHub;
+    /// an old one beats none. The flag says GitHub could not be reached.
+    async fn umu_release(&self, force: bool) -> AppResult<(Option<UmuRelease>, bool)> {
+        let cached = db::catalog_cache::get(&self.pool, UMU_CACHE_KEY)
+            .await?
+            .and_then(|entry| {
+                let release: UmuRelease = serde_json::from_str(&entry.value).ok()?;
+                Some((release, entry.fetched_at))
+            });
+        if let Some((release, fetched_at)) = &cached {
+            let fresh = Utc::now() - *fetched_at < chrono::Duration::hours(LIST_TTL_HOURS);
+            if fresh && !force {
+                return Ok((Some(release.clone()), false));
+            }
+        }
+        if let Some(release) = self.fetch_umu_release().await {
+            db::catalog_cache::put(
+                &self.pool,
+                CACHE_PROVIDER,
+                UMU_CACHE_KEY,
+                &serde_json::to_string(&release)?,
+            )
+            .await?;
+            return Ok((Some(release), false));
+        }
+        Ok((cached.map(|(release, _)| release), true))
+    }
+
+    async fn fetch_umu_release(&self) -> Option<UmuRelease> {
+        let response = self
+            .client
+            .get(&self.umu.release_url)
+            .header(ACCEPT, "application/vnd.github+json")
+            .timeout(Duration::from_secs(20))
+            .send()
+            .await
+            .ok()?;
+        if !response.status().is_success() {
+            eprintln!("[cove] umu-launcher-Release: HTTP {}", response.status());
+            return None;
+        }
+        umu::release_from(&response.text().await.ok()?)
+    }
+
+    /// The `umu-run` Cove would use: the system's, else its own newest copy
+    /// (which needs `python3`). With the version of Cove's copy.
+    fn umu_program(&self) -> Option<(PathBuf, UmuSource, Option<String>)> {
+        if let Some(path) = &self.umu.system {
+            return Some((path.clone(), UmuSource::System, None));
+        }
+        if !self.umu.python {
+            return None;
+        }
+        umu::installed(&self.umu.root)
+            .into_iter()
+            .next()
+            .map(|(version, path)| (path, UmuSource::Cove, Some(version)))
+    }
+
+    async fn umu_status(&self, force: bool) -> AppResult<UmuStatus> {
+        let settings = db::settings::load(&self.pool, &self.defaults).await?;
+        let enabled = settings.library.use_umu;
+        let latest = if enabled && self.umu.system.is_none() {
+            self.umu_release(force).await?.0.map(|r| r.version)
+        } else {
+            None
+        };
+        let program = self.umu_program();
+        Ok(UmuStatus {
+            enabled,
+            source: program.as_ref().map(|(_, source, _)| *source),
+            version: program.and_then(|(_, _, version)| version),
+            latest,
+            python: self.umu.python,
+        })
+    }
+
+    /// `umu-run` for a launch, installing Cove's copy first when needed.
+    /// `None` = start Proton directly (umu is switched off, there is no
+    /// `python3`, or the install failed or was cancelled).
+    pub async fn ensure_umu(self: &Arc<Self>) -> AppResult<Option<PathBuf>> {
+        let settings = db::settings::load(&self.pool, &self.defaults).await?;
+        if !settings.library.use_umu {
+            return Ok(None);
+        }
+        if let Some((path, _, _)) = self.umu_program() {
+            return Ok(Some(path));
+        }
+        if !self.umu.python {
+            eprintln!("[cove] umu-launcher braucht python3; Proton startet direkt");
+            return Ok(None);
+        }
+        match self.install(UMU_ID, false).await {
+            Ok(path) => Ok(Some(path)),
+            Err(error) => {
+                eprintln!("[cove] umu-launcher fehlt, Proton startet direkt: {error}");
+                Ok(None)
+            }
+        }
+    }
+
+    /// Downloads the newest zipapp into `<umu root>/<version>`; returns `umu-run`.
+    async fn download_umu(&self, control: watch::Receiver<Control>) -> AppResult<PathBuf> {
+        let (release, offline) = self.umu_release(false).await?;
+        let release = release.ok_or_else(|| {
+            if offline {
+                AppError::Offline(tr!(
+                    "umu-launcher konnte nicht geladen werden. Prüfe deine Internetverbindung.",
+                    "umu-launcher could not be loaded. Check your internet connection."
+                ))
+            } else {
+                AppError::Download(tr!(
+                    "Für die neueste Version von umu-launcher gibt es keine Prüfsumme; Cove installiert sie deshalb nicht.",
+                    "The newest version of umu-launcher has no checksum, so Cove does not install it."
+                ))
+            }
+        })?;
+        let target = self.umu.root.join(&release.version);
+        let program = target.join(umu::PROGRAM);
+        if program.is_file() {
+            return Ok(program);
+        }
+        let work = self.umu.root.join(WORK_DIR);
+        tokio::fs::create_dir_all(&work).await?;
+        let archive = work.join(format!("umu-{}.tar", release.version));
+        let unpacked = work.join(format!("umu-{}", release.version));
+        let fetch = Fetch {
+            id: UMU_ID,
+            url: &release.url,
+            size: release.size,
+            checksum: Checksum::Sha256(release.sha256.clone()),
+            gzip: false,
+        };
+        let result = self
+            .fetch_verify_unpack(&fetch, &archive, &unpacked, control)
+            .await;
+        let _ = tokio::fs::remove_file(&archive).await;
+        let outcome = match result {
+            Ok(()) => match umu::find_program(&unpacked, 3)
+                .as_deref()
+                .and_then(Path::parent)
+            {
+                // The folder with umu-run (and whatever belongs to it) becomes the copy.
+                Some(folder) => {
+                    if target.exists() {
+                        tokio::fs::remove_dir_all(&target).await?;
+                    }
+                    tokio::fs::rename(folder, &target).await?;
+                    make_executable(&program)?;
+                    Ok(program)
+                }
+                None => Err(AppError::Download(tr!(
+                    "Das Archiv von umu-launcher enthält kein umu-run.",
+                    "The umu-launcher archive contains no umu-run."
+                ))),
+            },
+            Err(error) => Err(error),
+        };
+        let _ = tokio::fs::remove_dir_all(&unpacked).await;
+        outcome
+    }
+
+    /// Keeps Cove's copy of umu up to date (when it is used) and removes old
+    /// copies when no game runs.
+    async fn update_umu(self: &Arc<Self>, force: bool, may_clean: bool) -> AppResult<()> {
+        let settings = db::settings::load(&self.pool, &self.defaults).await?;
+        if !settings.library.use_umu || self.umu.system.is_some() || !self.umu.python {
+            return Ok(());
+        }
+        let ours = umu::installed(&self.umu.root);
+        if ours.is_empty() && db::library::proton_choices(&self.pool).await?.is_empty() {
+            return Ok(());
+        }
+        let (Some(release), _) = self.umu_release(force).await? else {
+            return Ok(());
+        };
+        if !ours.iter().any(|(version, _)| *version == release.version) {
+            self.install(UMU_ID, false).await?;
+        }
+        if may_clean {
+            for (version, program) in umu::installed(&self.umu.root).into_iter().skip(1) {
+                if let Some(dir) = program.parent() {
+                    eprintln!("[cove] Alte umu-launcher-Version {version} entfernt");
+                    tokio::fs::remove_dir_all(dir).await?;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn make_executable(path: &Path) -> AppResult<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &Path) -> AppResult<()> {
+    Ok(())
+}
+
+/// Resolves once the user cancelled (never, if the install ends first).
+async fn cancel_requested(mut control: watch::Receiver<Control>) {
+    if control.wait_for(|c| *c == Control::Cancel).await.is_err() {
+        std::future::pending::<()>().await;
+    }
+}
+
+fn cancelled_text() -> String {
+    tr!(
+        "Die Installation wurde abgebrochen.",
+        "The installation was cancelled."
+    )
 }
 
 fn interrupted() -> String {
@@ -973,6 +1349,7 @@ mod tests {
         manager: Arc<ProtonManager>,
         pool: SqlitePool,
         root: tempfile::TempDir,
+        umu_root: tempfile::TempDir,
         events: Arc<Mutex<Vec<ProtonProgress>>>,
     }
 
@@ -1019,19 +1396,27 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let events = Arc::new(Mutex::new(Vec::new()));
         let sink = events.clone();
-        let manager = Arc::new(ProtonManager::with_endpoint(
+        let umu_root = tempfile::tempdir().unwrap();
+        let manager = Arc::new(ProtonManager::with_endpoints(
             pool.clone(),
             root.path().to_path_buf(),
             None,
             crate::state::default_settings(None),
             Arc::new(move |p| sink.lock().unwrap().push(p)),
             format!("{}/releases", server.uri()),
+            UmuConfig {
+                root: umu_root.path().to_path_buf(),
+                release_url: format!("{}/umu/latest", server.uri()),
+                system: None,
+                python: true,
+            },
         ));
         Fixture {
             server,
             manager,
             pool,
             root,
+            umu_root,
             events,
         }
     }
@@ -1118,6 +1503,143 @@ mod tests {
         let last = f.events.lock().unwrap().last().cloned().unwrap();
         assert_eq!(last.phase, ProtonPhase::Failed);
         assert!(last.error.is_some());
+    }
+
+    /// umu's zipapp tar: `umu/umu-run` and a file that belongs to it.
+    fn umu_tar() -> Vec<u8> {
+        let mut tar = tar::Builder::new(Vec::new());
+        for (path, data) in [("umu/umu-run", &b"PK zipapp"[..]), ("umu/README", b"umu")] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            tar.append_data(&mut header, path, data).unwrap();
+        }
+        tar.into_inner().unwrap()
+    }
+
+    /// Serves umu `version` on the fixture's GitHub; `digest` overrides the right one.
+    async fn serve_umu(f: &Fixture, version: &str, digest: Option<&str>) {
+        use sha2::{Digest, Sha256};
+        let data = umu_tar();
+        let digest = digest.map_or_else(|| to_hex(&Sha256::digest(&data)), str::to_owned);
+        let name = format!("umu-launcher-{version}-zipapp.tar");
+        f.server.reset().await;
+        Mock::given(method("GET"))
+            .and(path("/umu/latest"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "tag_name": version,
+                "assets": [{ "name": name, "size": data.len(),
+                             "browser_download_url": format!("{}/dl/{name}", f.server.uri()),
+                             "digest": format!("sha256:{digest}") }]
+            })))
+            .mount(&f.server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/dl/{name}")))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(data))
+            .mount(&f.server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn umu_is_installed_checked_and_kept_up_to_date() {
+        let f = fixture(&[], false).await;
+        serve_umu(&f, "1.4.3", None).await;
+        let program = f.manager.ensure_umu().await.unwrap().unwrap();
+        assert_eq!(program, f.umu_root.path().join("1.4.3/umu-run"));
+        assert!(f.umu_root.path().join("1.4.3/README").is_file());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&program).unwrap().permissions().mode();
+            assert_eq!(mode & 0o111, 0o111, "umu-run must be executable");
+        }
+        let status = f.manager.overview(false).await.unwrap().umu;
+        assert_eq!(status.source, Some(UmuSource::Cove));
+        assert_eq!(status.version.as_deref(), Some("1.4.3"));
+
+        // A new release replaces the copy; the old one goes once no game runs.
+        serve_umu(&f, "1.4.4", None).await;
+        f.manager.check_updates(true, false).await.unwrap();
+        assert!(f.umu_root.path().join("1.4.4/umu-run").is_file());
+        assert!(f.umu_root.path().join("1.4.3").exists());
+        f.manager.check_updates(true, true).await.unwrap();
+        assert!(!f.umu_root.path().join("1.4.3").exists());
+        assert_eq!(
+            f.manager.ensure_umu().await.unwrap(),
+            Some(f.umu_root.path().join("1.4.4/umu-run"))
+        );
+    }
+
+    #[tokio::test]
+    async fn without_umu_proton_starts_directly() {
+        // A damaged download: no umu, the game starts with Proton alone.
+        let f = fixture(&[], false).await;
+        serve_umu(&f, "1.4.4", Some(&"0".repeat(64))).await;
+        assert_eq!(f.manager.ensure_umu().await.unwrap(), None);
+        assert!(!f.umu_root.path().join("1.4.4").exists());
+
+        // Switched off: not even asked for.
+        let mut settings = crate::state::default_settings(None);
+        settings.library.use_umu = false;
+        db::settings::save(&f.pool, &settings).await.unwrap();
+        serve_umu(&f, "1.4.4", None).await;
+        assert_eq!(f.manager.ensure_umu().await.unwrap(), None);
+        assert!(!f.manager.overview(false).await.unwrap().umu.enabled);
+    }
+
+    #[tokio::test]
+    async fn an_install_can_be_cancelled() {
+        let f = fixture(&["GE-Proton10-25"], false).await;
+        // A slow server: the download is still running when the user cancels.
+        f.server.reset().await;
+        Mock::given(method("GET"))
+            .and(path("/releases"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!([{
+                    "tag_name": "GE-Proton10-25",
+                    "assets": [
+                        { "name": "GE-Proton10-25.tar.gz", "size": 10,
+                          "browser_download_url": format!("{}/slow/a.tar.gz", f.server.uri()) },
+                        { "name": "GE-Proton10-25.sha512sum", "size": 140,
+                          "browser_download_url": format!("{}/slow/a.sha512sum", f.server.uri()) }
+                    ]
+                }])),
+            )
+            .mount(&f.server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/slow/a.sha512sum"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(format!("{}  a\n", "a".repeat(128))),
+            )
+            .mount(&f.server)
+            .await;
+        Mock::given(path("/slow/a.tar.gz"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(vec![0u8; 10])
+                    .set_delay(Duration::from_secs(30)),
+            )
+            .mount(&f.server)
+            .await;
+        let mut done = f.manager.start_install("GE-Proton10-25", false).unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        f.manager.cancel("GE-Proton10-25").unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(10), done.wait_for(Option::is_some))
+            .await
+            .expect("cancelling must not wait for the server")
+            .unwrap()
+            .clone();
+        assert!(matches!(result, Some(Err(_))));
+        let last = f.events.lock().unwrap().last().cloned().unwrap();
+        assert_eq!(last.phase, ProtonPhase::Cancelled);
+        assert_eq!(last.error, None);
+        assert!(!f.root.path().join("GE-Proton10-25").exists());
+        let work = f.root.path().join(WORK_DIR);
+        assert!(!work.exists() || std::fs::read_dir(&work).unwrap().count() == 0);
+        assert!(f.manager.cancel("GE-Proton10-25").is_err());
     }
 
     #[tokio::test]

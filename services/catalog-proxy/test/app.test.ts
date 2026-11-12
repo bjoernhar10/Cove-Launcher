@@ -138,6 +138,43 @@ describe("endpoints", () => {
   });
 });
 
+describe("time to beat", () => {
+  it("answers per game id, leaves out games without reports and caches the answer", async () => {
+    const { request, net } = setup((call) =>
+      call.endpoint === "game_time_to_beats"
+        ? [
+            { id: 1, game_id: 1942, hastily: 93_600, normally: 183_600, completely: 370_800, count: 120 },
+            { id: 2, game_id: 7, hastily: null, normally: null, completely: null, count: 0 },
+            { id: 3, game_id: 99, hastily: 10, normally: 20, completely: 30, count: 1 },
+          ]
+        : [],
+    );
+    const ask = () => request("/v1/time-to-beat", { method: "POST", body: JSON.stringify({ ids: [7, 1942, 1942] }) });
+    const res = await ask();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expectShape("ProxyTimeToBeatResponse", body);
+    expect(body).toEqual({ items: { "1942": { hastily: 93_600, normally: 183_600, completely: 370_800, count: 120 } } });
+    expect(net.calls[0]?.body).toBe("fields game_id,hastily,normally,completely,count; where game_id = (7,1942); limit 2;");
+    await ask();
+    expect(net.calls).toHaveLength(1);
+  });
+
+  it.each([
+    ["{}", "ids"],
+    [JSON.stringify({ ids: [] }), "ids"],
+    [JSON.stringify({ ids: ["x"] }), "ids"],
+    [JSON.stringify({ ids: Array.from({ length: 501 }, (_, i) => i + 1) }), "500"],
+    ["nope", "JSON"],
+  ])("rejects %s", async (body, text) => {
+    const { request, net } = setup();
+    const res = await request("/v1/time-to-beat", { method: "POST", body });
+    expect(res.status).toBe(400);
+    expect((await res.json<{ error: { message: string } }>()).error.message).toContain(text);
+    expect(net.calls).toHaveLength(0);
+  });
+});
+
 describe("caching", () => {
   it("caches responses with the right TTL (search 24 h, details 7 days)", async () => {
     const { request, net, cache } = setup();

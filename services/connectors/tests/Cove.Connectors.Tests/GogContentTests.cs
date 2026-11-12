@@ -83,6 +83,47 @@ public class GogContentTests
     });
 
     [Fact]
+    public async Task CloudSavesUseTheGamesOwnClientAndItsFolders()
+    {
+        var withClient = BuildManifest.Replace("\"version\": 2,", "\"version\": 2, \"clientId\": \"5150\", \"clientSecret\": \"abc123\",", StringComparison.Ordinal);
+        var handler = Cdn(url => url switch
+        {
+            "https://cdn.test/build8" => Zlib(withClient),
+            _ when url.StartsWith("https://remote-config.gog.com/components/galaxy_client/clients/5150", StringComparison.Ordinal) => StubHandler.Json("""
+                { "content": { "Windows": { "cloudStorage": { "enabled": true, "locations": [
+                  { "name": "saves", "location": "<?DOCUMENTS?>/Saltmarsh/Saves" } ] } } } }
+                """),
+            _ when url.StartsWith("https://auth.gog.com/token", StringComparison.Ordinal) => StubHandler.Json("""
+                { "access_token": "game-token", "user_id": "4242", "refresh_token": "ignored", "expires_in": 3600 }
+                """),
+            _ => null,
+        });
+        var gog = new GogContent(new HttpClient(handler), TestConfig.Default.Gog);
+
+        var saves = await gog.CloudSavesAsync(Session, "100", CancellationToken.None);
+
+        Assert.True(saves.Enabled);
+        Assert.Equal("game-token", saves.AccessToken);
+        Assert.Equal("https://cloudstorage.gog.com/v1/4242/5150", saves.StorageUrl);
+        Assert.Equal([new GogSaveLocation("saves", "<?DOCUMENTS?>/Saltmarsh/Saves")], saves.Locations);
+        var token = handler.Requests.Single(r => r.Request.RequestUri!.Host == "auth.gog.com").Request.RequestUri!.Query;
+        Assert.Contains("client_id=5150", token, StringComparison.Ordinal);
+        Assert.Contains("refresh_token=r1", token, StringComparison.Ordinal);
+        Assert.Contains("without_new_session=1", token, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GamesWithoutCloudSavesSayNothingToSync()
+    {
+        // The test build has no Galaxy client: no saves, no token request.
+        var handler = Cdn();
+        var gog = new GogContent(new HttpClient(handler), TestConfig.Default.Gog);
+        var saves = await gog.CloudSavesAsync(Session, "100", CancellationToken.None);
+        Assert.False(saves.Enabled);
+        Assert.DoesNotContain(handler.Requests, r => r.Request.RequestUri!.Host == "auth.gog.com");
+    }
+
+    [Fact]
     public async Task BuildsAPlanFromTheNewestPublicBuild()
     {
         var handler = Cdn();

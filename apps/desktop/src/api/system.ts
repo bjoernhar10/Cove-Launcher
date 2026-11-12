@@ -1,8 +1,13 @@
-import type { AboutInfo, FolderInfo, UpdateCheck, UpdateProgress, UserProfile } from "@cove/shared";
+import type { AboutInfo, FolderInfo, GameTools, UpdateCheck, UpdateProgress, UserProfile } from "@cove/shared";
 import { call, subscribe } from "./transport.ts";
 
 export function getProfile(): Promise<UserProfile> {
   return call("system_profile", {});
+}
+
+/** Linux: which game tools (MangoHud, GameMode, gamescope) are installed. */
+export function gameTools(): Promise<GameTools> {
+  return call("system_game_tools", {});
 }
 
 export function getAbout(): Promise<AboutInfo> {

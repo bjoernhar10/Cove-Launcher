@@ -2,10 +2,11 @@ import type { AppSettings, ProtonOverview, ProtonVersion } from "@cove/shared";
 import { Cpu, Download, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../api/index.ts";
+import { UMU_ID } from "../../api/proton.ts";
 import { Button } from "../../components/ui/Button.tsx";
 import { Badge, EmptyState, ErrorState, LoadingRegion, ProgressBar, Skeleton } from "../../components/ui/Feedback.tsx";
-import { Field } from "../../components/ui/Field.tsx";
-import { ProtonSelect, ProtonStatus } from "../../features/ProtonPicker.tsx";
+import { Field, SettingRow, Switch } from "../../components/ui/Field.tsx";
+import { CancelInstall, progressText, ProtonSelect, ProtonStatus } from "../../features/ProtonPicker.tsx";
 import { useQuery } from "../../hooks/useQuery.ts";
 import { useMessages } from "../../i18n/index.ts";
 import { formatBytes, formatDate, formatPercent, formatRelative } from "../../lib/format.ts";
@@ -62,6 +63,7 @@ function VersionRow({ version, overview }: { version: ProtonVersion; overview: P
                   ? t.proton.verifying
                   : t.proton.unpacking}
             </span>
+            <CancelInstall id={version.id} />
           </div>
         ) : (
           meta.length > 0 && <p className="num mt-1 truncate text-xs text-fg-muted">{meta.join(" · ")}</p>
@@ -144,7 +146,85 @@ function DefaultVersion({ overview }: { overview: ProtonOverview }) {
   );
 }
 
-/** Settings → Proton (Linux): default build, GE-Proton downloads and Steam's builds. */
+/** umu-launcher: on/off, where it comes from, and its install. */
+function UmuSection({ overview }: { overview: ProtonOverview }) {
+  const t = useMessages();
+  const settings = useQuery("settings", api.settings.getSettings);
+  const install = useProtonInstall(UMU_ID, overview);
+  const [busy, setBusy] = useState(false);
+  if (settings.status === "error") return <ErrorState message={settings.error} onRetry={settings.retry} />;
+  if (settings.status !== "success") return <Skeleton className="h-16" />;
+  const umu = overview.umu;
+
+  function toggle(useUmu: boolean, before: AppSettings): void {
+    const next = { ...before, library: { ...before.library, useUmu } };
+    settings.update(() => next);
+    api.settings.saveSettings(next).then(
+      () => {
+        invalidateQueries();
+      },
+      (error: unknown) => {
+        toast(errorMessage(error), "danger");
+        invalidateQueries();
+      },
+    );
+  }
+
+  async function installNow(): Promise<void> {
+    setBusy(true);
+    try {
+      await api.proton.install(UMU_ID);
+    } catch (error: unknown) {
+      toast(errorMessage(error), "danger");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  let status: string;
+  if (!umu.enabled) status = t.umu.off;
+  else if (umu.source === "system") status = t.umu.system;
+  else if (umu.source === "cove" && umu.version) status = t.umu.installed(umu.version);
+  else if (!umu.python) status = t.umu.noPython;
+  else status = t.umu.missing;
+
+  return (
+    <div className="mt-10 max-w-xl">
+      <SettingRow title={t.umu.title} description={t.umu.hint}>
+        <Switch
+          label={t.umu.title}
+          checked={umu.enabled}
+          onChange={(useUmu) => {
+            toggle(useUmu, settings.data);
+          }}
+        />
+      </SettingRow>
+      {install ? (
+        <div className="flex items-center gap-2">
+          <div role="status" className="flex min-w-0 flex-1 flex-col gap-2">
+            <p className="text-xs text-fg-muted">{progressText(install, t)}</p>
+            <ProgressBar value={install.downloadedBytes} max={install.totalBytes || 1} label={t.proton.installing("umu-launcher")} />
+          </div>
+          <CancelInstall id={UMU_ID} />
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="status" className="text-xs text-fg-muted">
+            {status}
+          </p>
+          {umu.enabled && umu.source === null && umu.python && (
+            <Button size="sm" icon={Download} disabled={busy} onClick={() => void installNow()}>
+              {t.umu.installNow}
+            </Button>
+          )}
+        </div>
+      )}
+      {umu.enabled && <p className="mt-2 text-xs text-fg-muted">{t.umu.runtimeHint}</p>}
+    </div>
+  );
+}
+
+/** Settings → Proton (Linux): default build, umu-launcher, GE-Proton downloads and Steam's builds. */
 export function ProtonTab() {
   const t = useMessages();
   const query = useQuery("proton", api.proton.overview);
@@ -201,6 +281,7 @@ export function ProtonTab() {
       ) : (
         <>
           <DefaultVersion overview={overview} />
+          <UmuSection overview={overview} />
 
           <div className="mt-10 mb-3 flex flex-wrap items-end justify-between gap-4">
             <div>

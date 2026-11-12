@@ -12,6 +12,7 @@ import { Dialog } from "../components/ui/Dialog.tsx";
 import { Badge, EmptyState, ErrorState, LoadingRegion, OfflineBadge, Skeleton } from "../components/ui/Feedback.tsx";
 import { CatalogSetupState } from "./CataloguePage.tsx";
 import { Page } from "../components/ui/Page.tsx";
+import { TimeToBeat } from "../features/TimeToBeat.tsx";
 import { useCatalogGame, useSimilarGames } from "../hooks/useCatalog.ts";
 import { formatDate } from "../lib/format.ts";
 import { GENRE_LABELS, PLATFORM_LABELS } from "../lib/labels.ts";
@@ -251,6 +252,11 @@ export function CatalogueDetailPage() {
                   )}
                 </Fact>
               </dl>
+              {game.id.startsWith("igdb-") && (
+                <div className="mt-8">
+                  <TimeToBeat catalogId={game.id} />
+                </div>
+              )}
             </aside>
           </div>
 

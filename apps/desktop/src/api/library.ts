@@ -12,6 +12,10 @@ import type {
   ManualGameInput,
   MatchCandidate,
   PlaytimeStats,
+  PrefixAction,
+  BackupInfo,
+  GameBackups,
+  PrefixInfo,
   ProtonRating,
   RunningGame,
   ScanCandidate,
@@ -102,6 +106,31 @@ export function protonRating(gameId: GameId): Promise<ProtonRating | null> {
 }
 
 /** Moves the game folder into another games folder; progress via `subscribeMoveProgress`. */
+/** Save backups of a game: known to the manifest, files found now, backups (newest first). */
+export function backups(gameId: GameId): Promise<GameBackups> {
+  return call("game_backups", { gameId });
+}
+
+/** Backs the game's saves up now; null when nothing changed since the last backup. */
+export function backUpNow(gameId: GameId): Promise<BackupInfo | null> {
+  return call("game_backup_now", { gameId });
+}
+
+/** Puts a backup back (the current saves are backed up first); returns the files restored. */
+export function restoreBackup(gameId: GameId, backupId: string): Promise<number> {
+  return call("game_backup_restore", { gameId, backupId });
+}
+
+/** Linux: a game's Proton prefix (exists, size, winetricks installed). */
+export function prefixInfo(gameId: GameId): Promise<PrefixInfo> {
+  return call("game_prefix_info", { gameId });
+}
+
+/** Linux: opens the prefix folder, deletes it or starts winetricks for it. */
+export async function prefixAction(gameId: GameId, action: PrefixAction): Promise<void> {
+  await call("game_prefix_action", { gameId, action });
+}
+
 export async function moveGame(gameId: GameId, folder: string): Promise<void> {
   await call("game_move", { gameId, folder });
 }

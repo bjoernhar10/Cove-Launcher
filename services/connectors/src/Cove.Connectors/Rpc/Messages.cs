@@ -64,6 +64,7 @@ public sealed record LocalResult(IReadOnlyList<LocalGame> Games);
 [JsonSerializable(typeof(LocalResult))]
 [JsonSerializable(typeof(GogPlanParams))]
 [JsonSerializable(typeof(GogDlcParams))]
+[JsonSerializable(typeof(GogCloudSaves))]
 [JsonSerializable(typeof(OwnedDlcs))]
 [JsonSerializable(typeof(GogInstallPlan))]
 [JsonSerializable(typeof(GogLatest))]

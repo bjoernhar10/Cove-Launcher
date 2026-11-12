@@ -102,6 +102,21 @@ impl ProtonDb {
         .await
     }
 
+    /// The Steam app id of a game: its own for Steam games, otherwise the app with
+    /// exactly its title. `None` when there is none or Steam can't be reached.
+    pub async fn steam_app_id(
+        &self,
+        source: StoreSource,
+        store_game_id: Option<&str>,
+        title: &str,
+    ) -> Option<String> {
+        match (source, store_game_id) {
+            (StoreSource::Steam, Some(id)) => Some(id.to_owned()),
+            _ => self.steam_app(title).await.ok().flatten(),
+        }
+        .filter(|id| is_app_id(id))
+    }
+
     /// The Steam app with exactly this title (compared like catalogue matches).
     async fn steam_app(&self, title: &str) -> AppResult<Option<String>> {
         let wanted = normalize(title);

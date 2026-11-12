@@ -1,10 +1,15 @@
 import type { ProtonOverview, ProtonProgress, ProtonVersionId } from "@cove/shared";
+import { X } from "lucide-react";
+import { useState } from "react";
+import { api } from "../api/index.ts";
 import { LATEST_PROTON } from "../api/proton.ts";
+import { Button } from "../components/ui/Button.tsx";
 import { ProgressBar } from "../components/ui/Feedback.tsx";
 import { Select } from "../components/ui/Field.tsx";
 import { useMessages, type Messages } from "../i18n/index.ts";
 import { formatBytes, formatPercent } from "../lib/format.ts";
-import { useProtonInstall } from "../stores/proton.ts";
+import { installName, useProtonInstall } from "../stores/proton.ts";
+import { errorMessage, toast } from "../stores/toasts.ts";
 
 /** Value of the "Standard" option (a game without a choice of its own). */
 export const DEFAULT_OPTION = "";
@@ -48,7 +53,35 @@ export function ProtonSelect({ value, onChange, overview, defaultId, ...rest }: 
   return <Select {...rest} value={value} onChange={onChange} options={options} />;
 }
 
-function progressText(progress: ProtonProgress, t: Messages): string {
+/** Stops a running install (GE-Proton or umu-launcher). */
+export function CancelInstall({ id }: { id: ProtonVersionId }) {
+  const t = useMessages();
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      iconOnly
+      icon={X}
+      label={t.proton.cancelTitle(installName(id))}
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        api.proton.cancel(id).then(
+          () => {
+            setBusy(false);
+          },
+          (error: unknown) => {
+            setBusy(false);
+            toast(errorMessage(error), "danger");
+          },
+        );
+      }}
+    />
+  );
+}
+
+export function progressText(progress: ProtonProgress, t: Messages): string {
   if (progress.phase === "verifying") return t.proton.verifying;
   if (progress.phase === "unpacking") return t.proton.unpacking;
   return t.proton.downloading(formatPercent(progress.totalBytes > 0 ? progress.downloadedBytes / progress.totalBytes : 0));
@@ -63,9 +96,12 @@ export function ProtonStatus({ id, overview, pending = true }: { id: ProtonVersi
 
   if (install) {
     return (
-      <div role="status" className="flex flex-col gap-2">
-        <p className="text-xs text-fg-muted">{progressText(install, t)}</p>
-        <ProgressBar value={install.downloadedBytes} max={install.totalBytes || 1} label={t.proton.installing(target)} />
+      <div className="flex items-center gap-2">
+        <div role="status" className="flex min-w-0 flex-1 flex-col gap-2">
+          <p className="text-xs text-fg-muted">{progressText(install, t)}</p>
+          <ProgressBar value={install.downloadedBytes} max={install.totalBytes || 1} label={t.proton.installing(target)} />
+        </div>
+        <CancelInstall id={target} />
       </div>
     );
   }

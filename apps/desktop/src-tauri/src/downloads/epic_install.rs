@@ -362,9 +362,12 @@ impl DownloadManager {
         Ok(())
     }
 
-    /// After a session: newer local saves of an Epic game Cove installed go to the cloud.
+    /// After a session: newer local saves of an Epic or GOG game Cove installed go to the cloud.
     pub async fn after_session(&self, game_id: &str, host: &HostEnv) -> AppResult<()> {
         let item = db::library::require(&self.pool, game_id).await?;
+        if item.entry.source == StoreSource::Gog {
+            return self.gog_after_session(&item, host).await;
+        }
         if item.entry.source != StoreSource::Epic || !item.entry.installed_by_cove {
             return Ok(());
         }

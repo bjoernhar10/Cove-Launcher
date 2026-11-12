@@ -24,7 +24,9 @@ public sealed record GogConfig(
     string MetaUrl,
     string SecureLinkUrl,
     string ProductDownloadsUrl,
-    string ProductDlcsUrl);
+    string ProductDlcsUrl,
+    string RemoteConfigUrl,
+    string CloudStorageUrl);
 
 public sealed record EpicConfig(
     string ClientId,

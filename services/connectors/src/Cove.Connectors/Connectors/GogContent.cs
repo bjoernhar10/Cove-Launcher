@@ -346,6 +346,55 @@ public sealed class GogContent(HttpClient http, GogConfig config)
             Dlcs(manifest, baseProduct, products));
     }
 
+    /// <summary>
+    /// Cloud saves: the game's Galaxy client (id and secret from the newest build's
+    /// manifest), the folders its remote config syncs, and a token for that client
+    /// from the account's refresh token (the account's own session stays as it is).
+    /// </summary>
+    public async Task<GogCloudSaves> CloudSavesAsync(StoreSession session, string productId, CancellationToken ct)
+    {
+        var token = Token(session);
+        CheckProduct(productId);
+        var build = await LatestBuildAsync(token, productId, "windows", ct).ConfigureAwait(false);
+        var manifest = await MetaAsync(build.Link, ct).ConfigureAwait(false);
+        var clientId = StoreHttp.Optional(manifest, "clientId");
+        var clientSecret = StoreHttp.Optional(manifest, "clientSecret");
+        if (clientId is null || clientSecret is null || !clientId.All(char.IsAsciiDigit) || !clientSecret.All(char.IsAsciiLetterOrDigit))
+        {
+            return GogCloudSaves.None;
+        }
+
+        var remote = await StoreHttp.GetJsonOrNullAsync(http, Fill(config.RemoteConfigUrl, "clientId", clientId), Name, ct).ConfigureAwait(false);
+        var storage = remote?["content"]?["Windows"]?["cloudStorage"];
+        if (storage?["enabled"] is not JsonValue enabled || !enabled.TryGetValue<bool>(out var on) || !on)
+        {
+            return GogCloudSaves.None;
+        }
+
+        var locations = (storage["locations"]?.AsArray() ?? [])
+            .Select(l => new GogSaveLocation(StoreHttp.Required(l, "name", Name), StoreHttp.Required(l, "location", Name)))
+            .ToList();
+        if (locations.Count == 0)
+        {
+            // Games without their own folders use Galaxy's default one.
+            locations.Add(new GogSaveLocation("__default", $"<?APPLICATION_DATA_LOCAL?>/GOG.com/Galaxy/Applications/{clientId}/Storage/Shared/Files"));
+        }
+
+        var refresh = session.RefreshToken ?? throw new ConnectorException(
+            ConnectorErrorKind.AuthFailed, Texts.T("Bitte melde dich erneut bei GOG an.", "Please sign in to GOG again."));
+        var url = $"{config.TokenUrl}?client_id={clientId}&client_secret={clientSecret}&grant_type=refresh_token" +
+                  $"&refresh_token={Uri.EscapeDataString(refresh)}&without_new_session=1";
+        var body = await StoreHttp.GetJsonAsync(http, url, Name, ct).ConfigureAwait(false);
+        var userId = StoreHttp.Required(body, "user_id", Name);
+        if (!userId.All(char.IsAsciiDigit))
+        {
+            throw Unexpected("user_id");
+        }
+
+        var storageUrl = Fill(Fill(config.CloudStorageUrl, "userId", userId), "clientId", clientId);
+        return new GogCloudSaves(true, clientId, userId, StoreHttp.Required(body, "access_token", Name), storageUrl, locations);
+    }
+
     /// <summary>The newest public build or installer version, for update checks.</summary>
     public async Task<GogLatest> LatestAsync(StoreSession session, string productId, string platform, string language, CancellationToken ct)
     {

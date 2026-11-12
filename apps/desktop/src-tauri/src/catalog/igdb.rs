@@ -3,6 +3,7 @@
 //! Limits: 4 requests/second → [`RateLimiter`]; 429 responses are retried with
 //! a short back-off; an expired token (401) is refreshed once.
 
+use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::time::Duration;
 
@@ -15,11 +16,11 @@ use tokio::time::Instant;
 
 use super::provider::{
     popularity_from_count, status_error, teaser, BrowseQuery, CatalogProvider, ProviderError,
-    ProviderPage,
+    ProviderPage, TIME_TO_BEAT_BATCH,
 };
 use super::rate_limit::RateLimiter;
 use crate::models::{
-    CatalogProviderId, CatalogSort, Game, GameArtwork, GameFeatures, ImageRef, Platform,
+    CatalogProviderId, CatalogSort, Game, GameArtwork, GameFeatures, ImageRef, Platform, TimeToBeat,
 };
 
 pub const API_BASE: &str = "https://api.igdb.com/v4";
@@ -133,6 +134,35 @@ struct IgdbGame {
 #[derive(Debug, Deserialize)]
 struct Count {
     count: i64,
+}
+
+/// A row of IGDB's `game_time_to_beats` (seconds).
+#[derive(Debug, Deserialize)]
+struct IgdbTimeToBeat {
+    game_id: u64,
+    hastily: Option<i64>,
+    normally: Option<i64>,
+    completely: Option<i64>,
+    #[serde(default)]
+    count: i64,
+}
+
+/// IGDB rows per game id; rows without any time are left out.
+fn map_time_to_beat(rows: Vec<IgdbTimeToBeat>) -> HashMap<String, TimeToBeat> {
+    rows.into_iter()
+        .filter(|r| r.hastily.is_some() || r.normally.is_some() || r.completely.is_some())
+        .map(|r| {
+            (
+                r.game_id.to_string(),
+                TimeToBeat {
+                    hastily: r.hastily.filter(|s| *s > 0),
+                    normally: r.normally.filter(|s| *s > 0),
+                    completely: r.completely.filter(|s| *s > 0),
+                    count: r.count,
+                },
+            )
+        })
+        .collect()
 }
 
 fn image(size: &str, id: &str) -> String {
@@ -520,6 +550,28 @@ impl CatalogProvider for IgdbProvider {
             .into_iter()
             .next()
             .ok_or(ProviderError::NotFound)
+    }
+
+    async fn time_to_beat(
+        &self,
+        native_ids: &[String],
+    ) -> Result<HashMap<String, TimeToBeat>, ProviderError> {
+        let ids: Vec<u64> = native_ids.iter().filter_map(|id| id.parse().ok()).collect();
+        let mut found = HashMap::new();
+        for chunk in ids.chunks(TIME_TO_BEAT_BATCH) {
+            let rows: Vec<IgdbTimeToBeat> = self
+                .post(
+                    "game_time_to_beats",
+                    &format!(
+                        "fields game_id,hastily,normally,completely,count; where game_id = ({}); limit {};",
+                        chunk.iter().map(u64::to_string).collect::<Vec<_>>().join(","),
+                        chunk.len()
+                    ),
+                )
+                .await?;
+            found.extend(map_time_to_beat(rows));
+        }
+        Ok(found)
     }
 
     async fn similar(&self, native_id: &str) -> Result<Vec<Game>, ProviderError> {

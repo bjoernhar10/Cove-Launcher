@@ -47,6 +47,12 @@ pub async fn load(pool: &SqlitePool, defaults: &AppSettings) -> AppResult<AppSet
         catalog: get_json(pool, "catalog")
             .await?
             .unwrap_or_else(|| defaults.catalog.clone()),
+        backups: get_json(pool, "backups")
+            .await?
+            .unwrap_or_else(|| defaults.backups.clone()),
+        emulators: get_json(pool, "emulators")
+            .await?
+            .unwrap_or_else(|| defaults.emulators.clone()),
     };
     normalize(&mut settings);
     Ok(settings)
@@ -114,6 +120,13 @@ pub fn validate(settings: &AppSettings) -> AppResult<()> {
             "Empty scan folders aren't allowed."
         ));
     }
+    if !(1..=100).contains(&settings.backups.keep) {
+        return invalid(tr!(
+            "Aufbewahrte Backups: 1 bis 100.",
+            "Backups kept: 1 to 100."
+        ));
+    }
+    crate::emulators::validate(&settings.emulators)?;
     Ok(())
 }
 
@@ -126,6 +139,8 @@ pub async fn save(pool: &SqlitePool, settings: &AppSettings) -> AppResult<()> {
     set_json(pool, "library", &settings.library).await?;
     set_json(pool, "downloads", &settings.downloads).await?;
     set_json(pool, "catalog", &settings.catalog).await?;
+    set_json(pool, "backups", &settings.backups).await?;
+    set_json(pool, "emulators", &settings.emulators).await?;
     Ok(())
 }
 
@@ -155,7 +170,9 @@ pub(crate) mod tests {
                 game_folders: vec!["/home/u/Games".into()],
                 steam_silent_start: true,
                 epic_cloud_saves: true,
+                gog_cloud_saves: true,
                 default_proton: crate::proton::LATEST.to_owned(),
+                use_umu: true,
             },
             downloads: DownloadSettings {
                 directory: "/home/u/Games".into(),
@@ -165,6 +182,8 @@ pub(crate) mod tests {
             catalog: CatalogSettings {
                 use_cove_service: true,
             },
+            backups: crate::models::BackupSettings::default(),
+            emulators: crate::models::EmulatorSettings::default(),
         }
     }
 

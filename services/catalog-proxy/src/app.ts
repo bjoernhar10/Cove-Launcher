@@ -2,7 +2,17 @@
  * Cove catalogue proxy: a small, fixed API in front of IGDB. Clients send
  * parameters only; Apicalypse queries are built here. No pass-through.
  */
-import type { Game, MatchCandidate, ProxyError, ProxyErrorCode, ProxyGame, ProxyMatchResponse, ProxyPage } from "@cove/shared";
+import type {
+  Game,
+  MatchCandidate,
+  ProxyError,
+  ProxyErrorCode,
+  ProxyGame,
+  ProxyMatchResponse,
+  ProxyPage,
+  ProxyTimeToBeatResponse,
+  TimeToBeat,
+} from "@cove/shared";
 import { Hono } from "hono";
 import type { z } from "zod";
 import { cached, cacheApi, TTL, type JsonCache } from "./cache.ts";
@@ -14,15 +24,42 @@ import {
   buildGamesByIdsBody,
   buildSearchBody,
   buildSimilarIdsBody,
+  buildTimeToBeatBody,
   buildWhere,
   PAGE_SIZE,
 } from "./igdb-query.ts";
 import { mapGame, type IgdbGame } from "./mapping.ts";
 import { normalize, score } from "./match.ts";
-import { browseQuery, gameId, matchBody, searchQuery, steamAppId, steamId } from "./schemas.ts";
+import { browseQuery, gameId, matchBody, searchQuery, steamAppId, steamId, timeToBeatBody } from "./schemas.ts";
 import { SteamClient, steamAchievements, steamOwned, steamProfile, steamRarity, steamSchema } from "./steam.ts";
 
 const SEARCH_LIMIT = 20;
+
+/** A row of IGDB's `game_time_to_beats` (seconds). */
+interface IgdbTimeToBeat {
+  game_id: number;
+  hastily?: number | null;
+  normally?: number | null;
+  completely?: number | null;
+  count?: number | null;
+}
+
+/** Seconds, or null for missing and nonsense values. */
+function seconds(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+}
+
+/** SHA-256 in hex: a short cache key for a long id list. */
+async function digest(text: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function timeToBeat(row: IgdbTimeToBeat): TimeToBeat | null {
+  const value = { hastily: seconds(row.hastily), normally: seconds(row.normally), completely: seconds(row.completely) };
+  if (value.hastily === null && value.normally === null && value.completely === null) return null;
+  return { ...value, count: typeof row.count === "number" ? Math.max(0, Math.round(row.count)) : 0 };
+}
 const MATCH_MIN_SCORE = 0.55;
 
 export interface Deps {
@@ -141,6 +178,25 @@ export function createApp(deps: Deps = {}) {
         .sort((a, b) => b.score - a.score)
         .slice(0, 5);
       return { candidates } satisfies ProxyMatchResponse;
+    });
+    return c.json(body);
+  });
+
+  // One cache entry per set of ids (cache calls count as subrequests, so not
+  // one per game); the core caches each game itself and only asks for new ones.
+  app.post("/v1/time-to-beat", async (c) => {
+    const json: unknown = await c.req.json().catch(() => {
+      throw new ApiError(400, "invalid_request", "body must be JSON");
+    });
+    const ids = [...new Set(parse(timeToBeatBody, json).ids)].sort((a, b) => a - b);
+    const body = await cached(c.get("cache"), `ttb:${await digest(ids.join(","))}`, TTL.timeToBeat, async () => {
+      const rows = await c.get("igdb").query<IgdbTimeToBeat[]>("game_time_to_beats", buildTimeToBeatBody(ids));
+      const items: Record<string, TimeToBeat> = {};
+      for (const row of rows) {
+        const value = timeToBeat(row);
+        if (value && ids.includes(row.game_id)) items[String(row.game_id)] = value;
+      }
+      return { items } satisfies ProxyTimeToBeatResponse;
     });
     return c.json(body);
   });

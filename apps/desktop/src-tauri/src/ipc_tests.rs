@@ -56,6 +56,7 @@ async fn app() -> TestApp {
 }
 
 /// The app state with exchangeable connectors, keyring and itch.io API.
+#[allow(clippy::too_many_lines)] // one field per service, all of them test doubles
 async fn app_with(
     connectors: Arc<dyn crate::stores::ConnectorRpc>,
     secrets: Arc<dyn crate::catalog::secrets::SecretStore>,
@@ -111,15 +112,28 @@ async fn app_with(
         )),
         open_url: Arc::new(|_| Ok(())),
         // Nothing listens there: tests never talk to GitHub.
-        proton: Arc::new(crate::proton::ProtonManager::with_endpoint(
+        proton: Arc::new(crate::proton::ProtonManager::with_endpoints(
             pool.clone(),
             tmp.path().join("proton"),
             None,
             default_settings(None),
             Arc::new(|_| {}),
             "http://127.0.0.1:1/releases".into(),
+            crate::proton::UmuConfig {
+                root: tmp.path().join("umu"),
+                release_url: "http://127.0.0.1:1/umu".into(),
+                system: None,
+                python: true,
+            },
         )),
         // Nothing listens there: tests never talk to ProtonDB or Steam.
+        // Nothing listens there: tests never download the Ludusavi manifest.
+        backups: Arc::new(crate::backups::BackupService::new(
+            pool.clone(),
+            default_settings(None),
+            tmp.path().to_path_buf(),
+            "http://127.0.0.1:1/manifest.yaml".into(),
+        )),
         protondb: Arc::new(crate::protondb::ProtonDb::with_endpoints(
             pool.clone(),
             "http://127.0.0.1:1".into(),
@@ -324,6 +338,13 @@ async fn catalog_commands_accept_frontend_payloads() {
     let details =
         invoke_raw(&app, "catalog_game_details", json!({ "gameId": "igdb-1" })).unwrap_err();
     assert_eq!(details["kind"], "catalogNotConfigured");
+    // No catalogue: no times, but no error either (the library filter just finds nothing).
+    let times: Value = invoke(
+        &app,
+        "catalog_time_to_beat",
+        json!({ "catalogIds": ["igdb-1", "rawg-2", "x"] }),
+    );
+    assert_eq!(times, json!({}));
 
     let candidates: Vec<Value> = invoke(&app, "library_match_candidates", json!({ "gameId": "x" }));
     assert_eq!(candidates, Vec::<Value>::new());
@@ -655,6 +676,116 @@ async fn proton_rating_accepts_frontend_payloads() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn backups_and_emulators_accept_frontend_payloads() {
+    let app = app().await;
+    // ROM folders are part of the settings; a scan adds the ROMs with a collection.
+    let roms = app.tmp.path().join("roms/snes");
+    std::fs::create_dir_all(&roms).unwrap();
+    std::fs::write(roms.join("Space Game (USA).sfc"), b"rom").unwrap();
+    let mut settings: Value = invoke(&app, "settings_get", json!({}));
+    settings["emulators"] = json!({ "romFolders": [{ "id": "snes-1", "system": "snes", "path": roms.to_string_lossy(),
+        "emulator": "retroarch", "program": null, "arguments": "" }] });
+    settings["backups"] = json!({ "enabled": true, "directory": "", "keep": 5 });
+    let _: Value = invoke(&app, "settings_update", json!({ "settings": settings }));
+    let systems: Vec<Value> = invoke(&app, "emulators_systems", json!({}));
+    assert!(systems
+        .iter()
+        .any(|s| s["id"] == "ps2" && s["emulators"][1]["id"] == "pcsx2"));
+    let scan: Value = invoke(&app, "emulators_scan", json!({}));
+    assert_eq!(scan, json!({ "found": 1, "added": 1 }));
+    let again: Value = invoke(&app, "emulators_scan", json!({}));
+    assert_eq!(again, json!({ "found": 1, "added": 0 }));
+    let collections: Vec<Value> = invoke(&app, "collections_list", json!({}));
+    assert_eq!(collections[0]["name"], "Super Nintendo");
+    let game = collections[0]["gameIds"][0].clone();
+    let bad = invoke_raw(
+        &app,
+        "settings_update",
+        json!({ "settings": { "emulators": { "romFolders": [] } } }),
+    );
+    assert!(bad.is_err());
+
+    // Backups: the manifest can't be loaded here, so the page says so.
+    let overview = invoke_raw(&app, "game_backups", json!({ "gameId": game })).unwrap_err();
+    assert_eq!(overview["kind"], "offline");
+    let now = invoke_raw(&app, "game_backup_now", json!({ "gameId": game })).unwrap_err();
+    assert_eq!(now["kind"], "offline");
+    let restore = invoke_raw(
+        &app,
+        "game_backup_restore",
+        json!({ "gameId": game, "backupId": "../x" }),
+    )
+    .unwrap_err();
+    assert_eq!(restore["kind"], "invalidInput");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn game_options_and_prefix_accept_frontend_payloads() {
+    let app = app().await;
+    let overview: Value = invoke(&app, "proton_list", json!({}));
+    let exe = app.tmp.path().join("game.exe");
+    std::fs::write(&exe, b"MZ").unwrap();
+    let added: Value = invoke(
+        &app,
+        "library_add_manual",
+        json!({ "input": { "title": "Windows Game", "executablePath": exe.to_string_lossy(), "sizeBytes": null } }),
+    );
+    let id = added["game"]["id"].clone();
+
+    // Game options travel with the launch options; the tools are only reported.
+    let tools: Value = invoke(&app, "system_game_tools", json!({}));
+    assert!(tools["mangohud"].is_boolean() && tools["gamescope"].is_boolean());
+    let tweaked: Value = invoke(
+        &app,
+        "library_update",
+        json!({ "gameId": id, "patch": { "launchOptions": {
+            "arguments": "", "compatibilityTool": "proton", "env": [], "protonVersion": null,
+            "tweaks": { "mangohud": true, "gamemode": false, "gamescope": true, "gamescopeWidth": 1280,
+                        "gamescopeHeight": 720, "gamescopeFullscreen": true, "fsr": true, "dxvk": true, "vkd3d": false } } } }),
+    );
+    assert_eq!(
+        tweaked["entry"]["launchOptions"]["tweaks"]["gamescopeWidth"],
+        1280
+    );
+    assert_eq!(tweaked["entry"]["launchOptions"]["tweaks"]["vkd3d"], false);
+
+    // umu: on by default; nothing to cancel.
+    assert_eq!(overview["umu"]["enabled"], true);
+    let idle = invoke_raw(&app, "proton_cancel", json!({ "versionId": "umu" })).unwrap_err();
+    assert_eq!(idle["kind"], "invalidInput");
+
+    // The prefix: not there yet, then opened, reset.
+    let info: Value = invoke(&app, "game_prefix_info", json!({ "gameId": id }));
+    assert_eq!(info["exists"], false);
+    assert_eq!(info["sizeBytes"], Value::Null);
+    let not_yet = invoke_raw(
+        &app,
+        "game_prefix_action",
+        json!({ "gameId": id, "action": "open" }),
+    )
+    .unwrap_err();
+    assert_eq!(not_yet["kind"], "invalidInput");
+    let pfx = app
+        .tmp
+        .path()
+        .join("compat")
+        .join(id.as_str().unwrap())
+        .join("pfx/drive_c");
+    std::fs::create_dir_all(&pfx).unwrap();
+    std::fs::write(pfx.join("save.dat"), [1u8; 10]).unwrap();
+    let info: Value = invoke(&app, "game_prefix_info", json!({ "gameId": id }));
+    assert_eq!(info["exists"], true);
+    assert_eq!(info["sizeBytes"], 10);
+    let reset: Value = invoke(
+        &app,
+        "game_prefix_action",
+        json!({ "gameId": id, "action": "reset" }),
+    );
+    assert_eq!(reset, Value::Null);
+    assert!(!pfx.exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn proton_commands_accept_frontend_payloads() {
     let app = app().await;
     // A GE-Proton build Cove installed earlier.
@@ -707,7 +838,6 @@ async fn proton_commands_accept_frontend_payloads() {
     )
     .unwrap_err();
     assert_eq!(bad["kind"], "invalidInput");
-
     if cfg!(target_os = "linux") {
         // A build Steam would have installed is not there: say so instead of starting.
         let _: Value = invoke(

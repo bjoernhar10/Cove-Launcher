@@ -88,8 +88,9 @@ migrations/       SQL migrations (embedded via sqlx::migrate!)
 2. Games with an **executable** are started directly:
    - Linux binaries, AppImages and scripts natively.
    - `.desktop` files via their `Exec` line.
-   - `.exe` on Linux via Wine (`wine <exe>`) or Proton (`<proton>/proton run <exe>`, one prefix per game
-     under `compat/<gameId>`). Proton is looked up in the Steam library and in `compatibilitytools.d`.
+   - `.exe` on Linux via Wine (`wine <exe>`) or Proton (one prefix per game under `compat/<gameId>`):
+     through `umu-run` when umu-launcher is there, else `<proton>/proton waitforexitandrun <exe>`.
+     See "Proton (Linux)" below.
 3. **GOG and Epic without an executable** use the URL schemes `goggalaxy://openGameView/<id>` and
    `com.epicgames.launcher://apps/<id>?action=launch&silent=true`.
 
@@ -169,6 +170,22 @@ builds Steam installed are offered as well. Each game picks a build (or uses the
 settings); "latest" always means the newest GE-Proton and is kept up to date in the background. A
 build that is missing is installed when the user picks it, and at the latest before the game
 starts. Old builds that were only installed for "latest" are removed once no game needs them.
+A running install can be cancelled (`proton_cancel`); the download stops at once.
+
+Proton starts through **umu-launcher** when it is there (`umu.rs`, setting `library.useUmu`, on by
+default): umu runs Proton inside the Steam Linux Runtime and applies protonfixes, like Steam. Cove
+prefers the `umu-run` of the system and otherwise downloads umu's zipapp from its GitHub releases
+(SHA-256 from the release asset's digest, needs `python3`) into `<app data>/umu/<version>`, updated
+with the Proton check. The game gets `WINEPREFIX=compat/<gameId>/pfx` (the same Windows folder as
+without umu), `PROTONPATH`, `GAMEID=umu-<Steam app id>` (found like the ProtonDB rating; else
+`umu-default`) and `STORE` for GOG and Epic. When umu is off, missing or can't be installed,
+Proton starts directly. umu-launcher is GPL-3.0 and only ever runs as its own program.
+
+The game's settings tab shows its **prefix** (`prefix.rs`, commands `game_prefix_info` and
+`game_prefix_action`): its size (links are not followed), open the folder, start winetricks with the
+game's Proton build (`WINE`/`WINESERVER` from it; GE-Proton brings winetricks and its helpers along,
+so no system package is needed) or reset it (deletes `compat/<gameId>`; refused
+while the game runs).
 
 ### ProtonDB rating (Linux)
 
@@ -178,6 +195,45 @@ Games from other stores are looked up in the public Steam store search and only 
 normalized title is exactly the same, so a game never gets the rating of a different one. Answers,
 including "nothing found", are cached in `catalog_cache` for 7 days; an old answer is served when
 ProtonDB or Steam can't be reached.
+
+### Game options (Linux)
+
+A game Cove starts itself can run with MangoHud, GameMode and gamescope, with AMD FSR (gamescope's
+filter, or GE-Proton's own when there is no gamescope), and with DXVK or VKD3D-Proton switched off.
+They are stored with the launch options (`LaunchOptions.tweaks`) and turned into Proton variables and
+wrappers around the command by `launcher::apply_tweaks`: `gamemoderun gamescope … -- mangohud <game>`.
+A tool that is switched on but not installed stops the start with a clear message.
+
+### GOG cloud saves
+
+GOG games Cove installed sync their saves with Galaxy's cloud storage, so they stay in step with
+GOG Galaxy on other computers. The connector (`gog.cloudSaves`) finds the game's own Galaxy client in
+its build manifest, the folders it syncs in GOG's public remote config and a token for that client.
+The core compares each folder like the Epic saves: newer cloud files replace local ones before a
+start (after a backup), newer local files are uploaded after a session; unchanged files (same MD5)
+are skipped and nothing is deleted.
+
+### Save backups
+
+After every session Cove backs up the game's saves (`backups/`). Where they are comes from the
+Ludusavi manifest, downloaded at most once a day and turned into a small index; its placeholders are
+filled in for this user, the game's Proton prefix or Steam's prefix of a Steam game. A backup is a
+folder with the files and a `backup.json` of where they came from; unchanged saves make no new
+backup, only the newest few stay, and restoring backs up the current state first.
+
+### Emulators
+
+ROM folders per system with an emulator (RetroArch with the system's core, a standalone emulator or
+the user's own program) live in the settings. A scan adds every ROM as a library game in a
+collection per system; a game whose file lies in such a folder starts through its emulator.
+
+### Time to beat
+
+Game pages show how long a game takes (IGDB `game_time_to_beats`: main story, main + extras,
+everything; command `catalog_time_to_beat`). The proxy answers `POST /v1/time-to-beat` for up to 500
+IGDB ids; own IGDB keys ask IGDB directly, an older proxy without the route hands over to them. The
+core caches every game for 7 days ("no data" too) and serves old answers when the catalogue can't be
+reached. My Library's length filter asks for all linked games at once.
 
 ### Recommendations
 

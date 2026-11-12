@@ -39,6 +39,17 @@ export function formatPlaytime(minutes: number): string {
   return `${hours < 10 ? oneDecimal.format(hours) : integer.format(hours)} ${u.hours}`;
 }
 
+/** A game's length from seconds, rounded like "about": 36 000 → "10 Std.", 5400 → "1,5 Std.", 1200 → "20 Min." */
+export function formatHours(seconds: number): string {
+  const { integer, oneDecimal } = fmt();
+  const u = messages().units;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${integer.format(Math.max(1, minutes))} ${u.minutes}`;
+  // Half hours below 10 h, whole hours above: the reports are rough anyway.
+  const hours = seconds < 36_000 ? Math.round(seconds / 1800) / 2 : Math.round(seconds / 3600);
+  return `${Number.isInteger(hours) ? integer.format(hours) : oneDecimal.format(hours)} ${u.hours}`;
+}
+
 /** Compact form for charts: 90 → "1,5 h", 30 → "30 min" */
 export function formatMinutesShort(minutes: number): string {
   const { integer, oneDecimal } = fmt();

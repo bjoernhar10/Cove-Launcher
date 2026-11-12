@@ -178,6 +178,67 @@ pub struct LaunchOptions {
     /// name or `steam:<folder>`); `None` = the default from the settings.
     #[serde(default)]
     pub proton_version: Option<String>,
+    /// Linux: `MangoHud`, `GameMode`, gamescope, FSR, DXVK/VKD3D.
+    #[serde(default)]
+    pub tweaks: GameTweaks,
+}
+
+/// Per-game options on Linux for games Cove starts itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)] // independent switches
+pub struct GameTweaks {
+    /// Performance overlay (`mangohud`).
+    #[serde(default)]
+    pub mangohud: bool,
+    /// Feral `GameMode` (`gamemoderun`).
+    #[serde(default)]
+    pub gamemode: bool,
+    /// Run inside Valve's gamescope compositor.
+    #[serde(default)]
+    pub gamescope: bool,
+    /// gamescope: the resolution the game renders at (`-w`/`-h`); None = the game's own.
+    #[serde(default)]
+    pub gamescope_width: Option<u32>,
+    #[serde(default)]
+    pub gamescope_height: Option<u32>,
+    /// gamescope: fullscreen (`-f`).
+    #[serde(default)]
+    pub gamescope_fullscreen: bool,
+    /// AMD FSR 1 upscaling: gamescope's filter, else GE-Proton's `WINE_FULLSCREEN_FSR`.
+    #[serde(default)]
+    pub fsr: bool,
+    /// Proton: Direct3D 9 to 11 through DXVK (off = `WineD3D`).
+    #[serde(default = "default_true")]
+    pub dxvk: bool,
+    /// Proton: Direct3D 12 through VKD3D-Proton (off = no D3D12).
+    #[serde(default = "default_true")]
+    pub vkd3d: bool,
+}
+
+impl Default for GameTweaks {
+    fn default() -> Self {
+        Self {
+            mangohud: false,
+            gamemode: false,
+            gamescope: false,
+            gamescope_width: None,
+            gamescope_height: None,
+            gamescope_fullscreen: false,
+            fsr: false,
+            dxvk: true,
+            vkd3d: true,
+        }
+    }
+}
+
+/// Which Linux game tools are installed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GameTools {
+    pub mangohud: bool,
+    pub gamemode: bool,
+    pub gamescope: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -629,6 +690,7 @@ pub struct AppearanceSettings {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)] // independent switches of the settings page
 pub struct LibrarySettings {
     pub scan_folders: Vec<String>,
     pub scan_on_startup: bool,
@@ -642,9 +704,15 @@ pub struct LibrarySettings {
     /// Sync Epic cloud saves before and after playing (games Cove installed).
     #[serde(default = "default_true")]
     pub epic_cloud_saves: bool,
+    /// Sync GOG cloud saves before and after playing (games Cove installed).
+    #[serde(default = "default_true")]
+    pub gog_cloud_saves: bool,
     /// Proton build for games without a choice of their own (Linux).
     #[serde(default = "default_proton")]
     pub default_proton: String,
+    /// Start Proton through umu-launcher (Steam Linux Runtime, per-game fixes).
+    #[serde(default = "default_true")]
+    pub use_umu: bool,
 }
 
 fn default_true() -> bool {
@@ -677,6 +745,120 @@ pub struct AppSettings {
     pub library: LibrarySettings,
     pub downloads: DownloadSettings,
     pub catalog: CatalogSettings,
+    #[serde(default)]
+    pub backups: BackupSettings,
+    #[serde(default)]
+    pub emulators: EmulatorSettings,
+}
+
+/// Save backups of every game (save locations from the Ludusavi manifest).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupSettings {
+    /// Back up after every session.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Where backups go; empty = `<app data>/backups`.
+    #[serde(default)]
+    pub directory: String,
+    /// Backups kept per game (1 to 100).
+    #[serde(default = "default_keep")]
+    pub keep: u32,
+}
+
+fn default_keep() -> u32 {
+    10
+}
+
+impl Default for BackupSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            directory: String::new(),
+            keep: default_keep(),
+        }
+    }
+}
+
+/// An emulator for a system and whether it is installed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmulatorInfo {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+}
+
+/// A console Cove can play ROMs of.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemInfo {
+    pub id: String,
+    pub name: String,
+    /// ROM file extensions (lower case, without the dot).
+    pub extensions: Vec<String>,
+    /// `RetroArch` first.
+    pub emulators: Vec<EmulatorInfo>,
+}
+
+/// Result of scanning the ROM folders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RomScanResult {
+    /// ROMs found in all folders.
+    pub found: i64,
+    /// New library games.
+    pub added: i64,
+}
+
+/// One save backup of a game.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupInfo {
+    /// Folder name (the time), used to restore it.
+    pub id: String,
+    pub created_at: String,
+    pub files: i64,
+    pub bytes: i64,
+}
+
+/// Save backups of a game, for its page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameBackups {
+    /// The manifest knows where this game keeps its saves.
+    pub known: bool,
+    /// Save files found right now.
+    pub files: i64,
+    pub bytes: i64,
+    /// Newest first.
+    pub backups: Vec<BackupInfo>,
+}
+
+/// Folders with ROMs and the emulator that plays them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct EmulatorSettings {
+    #[serde(default)]
+    pub rom_folders: Vec<RomFolder>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RomFolder {
+    /// Stable id (chosen by the UI).
+    pub id: String,
+    /// `snes`, `ps2` … (see `emulators::SYSTEMS`).
+    pub system: String,
+    pub path: String,
+    /// Emulator id of the system (`retroarch`, `dolphin` …) or `custom`.
+    pub emulator: String,
+    /// Program to run instead of the one found on the system (needed for `custom`).
+    #[serde(default)]
+    pub program: Option<String>,
+    /// `custom`: the arguments, `{rom}` stands for the ROM file.
+    #[serde(default)]
+    pub arguments: String,
 }
 
 // ───────────── catalogue ─────────────
@@ -1121,6 +1303,8 @@ pub enum ProtonPhase {
     Unpacking,
     Done,
     Failed,
+    /// The user cancelled the install.
+    Cancelled,
 }
 
 /// Event `proton-progress`: one GE-Proton install, at most about 4 per second.
@@ -1148,6 +1332,70 @@ pub struct ProtonOverview {
     /// The release list could not be loaded (only installed builds are listed).
     pub offline: bool,
     pub installing: Vec<ProtonProgress>,
+    pub umu: UmuStatus,
+}
+
+/// Where the umu-launcher Cove uses comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UmuSource {
+    /// Installed with the system's package manager (`umu-run` in `PATH`).
+    System,
+    /// Downloaded by Cove (zipapp from the GitHub releases).
+    Cove,
+}
+
+/// umu-launcher: runs Proton inside the Steam Linux Runtime, like Steam does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UmuStatus {
+    /// `library.useUmu`.
+    pub enabled: bool,
+    /// null = not on this machine yet.
+    pub source: Option<UmuSource>,
+    /// Version of Cove's copy (null for the system's).
+    pub version: Option<String>,
+    /// Newest release, when the list could be loaded.
+    pub latest: Option<String>,
+    /// `python3` is there (Cove's copy needs it).
+    pub python: bool,
+}
+
+/// A game's Proton prefix (Linux).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrefixInfo {
+    /// The prefix has been created (the game started at least once).
+    pub exists: bool,
+    pub size_bytes: Option<i64>,
+    /// `winetricks` is installed.
+    pub winetricks: bool,
+}
+
+/// What to do with a game's Proton prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PrefixAction {
+    /// Open the prefix folder in the file manager.
+    Open,
+    /// Delete the prefix; the next start creates a fresh one.
+    Reset,
+    /// Start winetricks for the prefix.
+    Winetricks,
+}
+
+/// How long a game takes, in seconds (IGDB "time to beat", from player reports).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimeToBeat {
+    /// Main story.
+    pub hastily: Option<i64>,
+    /// Main story and extras.
+    pub normally: Option<i64>,
+    /// Everything (100 %).
+    pub completely: Option<i64>,
+    /// Number of player reports.
+    pub count: i64,
 }
 
 /// `ProtonDB` tier: how well a Windows game runs on Linux through Proton.

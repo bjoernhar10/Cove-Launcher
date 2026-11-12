@@ -72,3 +72,8 @@ export const steamId = z.string().regex(/^\d{17}$/, "steamid must be a SteamID64
 export const steamAppId = z.string().regex(/^\d{1,10}$/, "appid must be numeric");
 
 export const matchBody = z.object({ title: text(200).min(1, "title is required") });
+
+/** At most 500 IGDB game ids (one IGDB page). */
+export const timeToBeatBody = z.object({
+  ids: z.array(gameId).min(1, "ids must not be empty").max(500, "at most 500 ids"),
+});

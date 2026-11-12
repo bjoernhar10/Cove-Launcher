@@ -15,4 +15,8 @@
     <EmbeddedResource Include="Config/connectors.json" LogicalName="Cove.Connectors.Config.connectors.json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DotNet.ILCompiler" Version="9.0.23" />
+  </ItemGroup>
+
 </Project>

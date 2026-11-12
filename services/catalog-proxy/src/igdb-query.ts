@@ -115,6 +115,11 @@ export function buildSimilarIdsBody(id: number): string {
   return `fields similar_games; where id = ${String(id)};`;
 }
 
+/** Time-to-beat rows (seconds) of up to 500 games. */
+export function buildTimeToBeatBody(ids: number[]): string {
+  return `fields game_id,hastily,normally,completely,count; where game_id = (${ids.join(",")}); limit ${String(ids.length)};`;
+}
+
 export function buildGamesByIdsBody(ids: number[]): string {
   return `fields ${FIELDS}; where id = (${ids.join(",")}) & ${BASE_WHERE}; limit ${String(ids.length)};`;
 }

@@ -1,9 +1,15 @@
 import type { ProtonOverview, ProtonProgress, ProtonVersionId } from "@cove/shared";
 import { create } from "zustand";
 import { api } from "../api/index.ts";
+import { UMU_ID } from "../api/proton.ts";
 import { messages } from "../i18n/index.ts";
 import { invalidateQueries } from "./query.ts";
 import { toast } from "./toasts.ts";
+
+/** Readable name of an install: a GE-Proton release, or umu-launcher. */
+export function installName(id: ProtonVersionId): string {
+  return id === UMU_ID ? "umu-launcher" : id;
+}
 
 interface ProtonState {
   /** GE-Proton builds being installed, with their latest progress. */
@@ -16,14 +22,16 @@ export const useProton = create<ProtonState>()((set) => ({
   installs: {},
   connect: () =>
     api.proton.subscribeProgress((progress) => {
-      if (progress.phase !== "done" && progress.phase !== "failed") {
+      if (progress.phase !== "done" && progress.phase !== "failed" && progress.phase !== "cancelled") {
         set((s) => ({ installs: { ...s.installs, [progress.id]: progress } }));
         return;
       }
       set((s) => ({ installs: Object.fromEntries(Object.entries(s.installs).filter(([id]) => id !== progress.id)) }));
       const t = messages().proton;
-      if (progress.phase === "done") toast(t.installed(progress.id));
-      else toast(t.installFailed(progress.id, progress.error ?? messages().common.genericError), "danger");
+      const name = installName(progress.id);
+      if (progress.phase === "done") toast(t.installed(name));
+      else if (progress.phase === "cancelled") toast(t.cancelled(name));
+      else toast(t.installFailed(name, progress.error ?? messages().common.genericError), "danger");
       invalidateQueries();
     }),
 }));

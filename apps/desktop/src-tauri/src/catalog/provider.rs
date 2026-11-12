@@ -3,7 +3,9 @@
 
 use async_trait::async_trait;
 
-use crate::models::{CatalogFilter, CatalogProviderId, CatalogSort, Game};
+use std::collections::HashMap;
+
+use crate::models::{CatalogFilter, CatalogProviderId, CatalogSort, Game, TimeToBeat};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BrowseQuery {
@@ -101,7 +103,19 @@ pub trait CatalogProvider: Send + Sync {
     async fn match_candidates(&self, title: &str) -> Result<Vec<Game>, ProviderError> {
         self.search(title, 10).await
     }
+    /// How long games take, per native id; ids without reports are left out.
+    /// Sources without such data answer with nothing.
+    async fn time_to_beat(
+        &self,
+        native_ids: &[String],
+    ) -> Result<HashMap<String, TimeToBeat>, ProviderError> {
+        let _ = native_ids;
+        Ok(HashMap::new())
+    }
 }
+
+/// At most this many games per time-to-beat request (IGDB's page limit).
+pub const TIME_TO_BEAT_BATCH: usize = 500;
 
 /// First sentence (or ~180 chars) of a longer text, used as `Game.summary`.
 pub fn teaser(text: &str) -> String {

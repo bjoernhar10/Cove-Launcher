@@ -327,6 +327,13 @@ async fn core_responses_match_shared_schema() {
             checked_at: Some("2026-11-11T08:00:00Z".into()),
             offline: false,
             installing: vec![progress],
+            umu: crate::models::UmuStatus {
+                enabled: true,
+                source: Some(crate::models::UmuSource::Cove),
+                version: Some("1.4.4".into()),
+                latest: Some("1.4.4".into()),
+                python: true,
+            },
         },
     );
     assert_valid(

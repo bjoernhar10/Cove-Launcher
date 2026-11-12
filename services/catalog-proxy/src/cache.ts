@@ -12,6 +12,8 @@ export const TTL = {
   steamUser: 60 * 60,
   /** Steam achievement schema and global rarity */
   steamSchema: 7 * 24 * 60 * 60,
+  /** Times to beat (change slowly) */
+  timeToBeat: 7 * 24 * 60 * 60,
 } as const;
 
 /** Bump when the response format changes, so old cached answers are ignored. */

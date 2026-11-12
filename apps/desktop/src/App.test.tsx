@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { App } from "./App.tsx";
 import { usePreferences } from "./stores/preferences.ts";
 import { invalidateQueries } from "./stores/query.ts";
-import { emitCoreEvent, fakeDownload, fakeItem, fakePlugin, installFakeCore, type FakeCore } from "./test/fakeCore.ts";
+import { emitCoreEvent, FAKE_TWEAKS, fakeDownload, fakeItem, fakePlugin, installFakeCore, type FakeCore } from "./test/fakeCore.ts";
 
 let core: FakeCore;
 
@@ -815,7 +815,7 @@ describe("Proton (Linux)", () => {
     core.library = [
       fakeItem("tidewater", "Tidewater", {
         executablePath: "/games/tidewater/Tidewater.exe",
-        launchOptions: { arguments: "", compatibilityTool: "proton", env: [], protonVersion },
+        launchOptions: { arguments: "", compatibilityTool: "proton", env: [], protonVersion, tweaks: { ...FAKE_TWEAKS } },
       }),
     ];
   }
@@ -894,11 +894,199 @@ describe("Proton (Linux)", () => {
     expect(await screen.findByText("Die Liste ist aktuell.")).toBeDefined();
   });
 
+  it("saves the game options: MangoHud, gamescope with a resolution, no DXVK", async () => {
+    windowsGame();
+    core.gameTools = { mangohud: true, gamemode: true, gamescope: true };
+    renderAt("/library/tidewater?tab=settings");
+    fireEvent.click(await screen.findByRole("switch", { name: "MangoHud" }));
+    fireEvent.click(screen.getByRole("switch", { name: "gamescope" }));
+    fireEvent.change(screen.getByLabelText("Breite in Pixeln"), { target: { value: "1280" } });
+    fireEvent.change(screen.getByLabelText("Höhe in Pixeln"), { target: { value: "720" } });
+    fireEvent.click(screen.getByRole("switch", { name: "AMD FSR" }));
+    expect(screen.getByText("gamescope skaliert die Spielauflösung mit FSR auf deinen Bildschirm hoch.")).toBeDefined();
+    fireEvent.click(screen.getByRole("switch", { name: "DXVK" }));
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => {
+      expect(core.library[0]?.entry.launchOptions.tweaks).toEqual({
+        ...FAKE_TWEAKS,
+        mangohud: true,
+        gamescope: true,
+        gamescopeWidth: 1280,
+        gamescopeHeight: 720,
+        fsr: true,
+        dxvk: false,
+      });
+    });
+  });
+
+  it("says which game tools are missing", async () => {
+    windowsGame();
+    renderAt("/library/tidewater?tab=settings");
+    const gamescope = await screen.findByRole<HTMLButtonElement>("switch", { name: "gamescope" });
+    expect(gamescope.disabled).toBe(true);
+    expect(screen.getByText(/Startet das Spiel in Valves Compositor.*Nicht installiert/)).toBeDefined();
+    expect(screen.getByRole<HTMLButtonElement>("switch", { name: "MangoHud" }).disabled).toBe(false);
+  });
+
+  it("cancels a running install", async () => {
+    windowsGame("GE-Proton10-25");
+    core.proton.installing = [{ id: "GE-Proton10-25", phase: "downloading", downloadedBytes: 1, totalBytes: 4, error: null }];
+    renderAt("/library/tidewater?tab=settings");
+    fireEvent.click(await screen.findByRole("button", { name: "Installation von GE-Proton10-25 abbrechen" }));
+    await waitFor(() => {
+      expect(core.proton.installing).toEqual([]);
+    });
+    await act(() => emitCoreEvent("proton-progress", { id: "GE-Proton10-25", phase: "cancelled", downloadedBytes: 0, totalBytes: 4, error: null }));
+    expect(await screen.findByText("Installation von GE-Proton10-25 abgebrochen.")).toBeDefined();
+  });
+
+  it("runs Proton through umu-launcher, which can be switched off", async () => {
+    windowsGame();
+    renderAt("/settings/proton");
+    const toggle = await screen.findByRole("switch", { name: "Steam Linux Runtime (umu-launcher)" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText("umu-launcher 1.4.4 ist installiert. Cove hält ihn aktuell.")).toBeDefined();
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(core.settings.library.useUmu).toBe(false);
+    });
+    expect(await screen.findByText("Aus: Proton startet direkt.")).toBeDefined();
+  });
+
+  it("installs umu-launcher on request", async () => {
+    windowsGame();
+    core.proton.umu = { enabled: true, source: null, version: null, latest: "1.4.4", python: true };
+    renderAt("/settings/proton");
+    fireEvent.click(await screen.findByRole("button", { name: "Jetzt installieren" }));
+    await waitFor(() => {
+      expect(core.proton.umu.source).toBe("cove");
+    });
+  });
+
+  it("opens, resets and runs winetricks on a game's prefix", async () => {
+    windowsGame();
+    core.prefixes.tidewater = { exists: true, sizeBytes: 1_200_000_000, winetricks: true };
+    renderAt("/library/tidewater?tab=settings");
+    expect(await screen.findByText("Belegt 1,2 GB.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Ordner öffnen" }));
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "winetricks" }).disabled).toBe(false);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "winetricks" }));
+    expect(await screen.findByText("winetricks wurde gestartet.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Zurücksetzen" }));
+    const dialog = await screen.findByRole("dialog", { name: "Prefix von Tidewater zurücksetzen?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Zurücksetzen" }));
+    expect(await screen.findByText("Prefix von Tidewater zurückgesetzt.")).toBeDefined();
+    expect(core.prefixActions.map((a) => a.action)).toEqual(["open", "winetricks", "reset"]);
+    expect(await screen.findByText("Noch kein Prefix. Er entsteht beim ersten Start des Spiels.")).toBeDefined();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Zurücksetzen" }).disabled).toBe(true);
+  });
+
   it("says when the list could not be loaded", async () => {
-    core.proton = { versions: [], latest: null, checkedAt: null, offline: true, installing: [] };
+    core.proton = { ...core.proton, versions: [], latest: null, checkedAt: null, offline: true, installing: [] };
     renderAt("/settings/proton");
     expect(await screen.findByText("Keine Proton-Versionen")).toBeDefined();
     expect(screen.getByRole("button", { name: "Nach Updates suchen" })).toBeDefined();
+  });
+});
+
+describe("Save backups", () => {
+  it("backs a game up and restores a backup after asking", async () => {
+    core.backups.tidewater = {
+      known: true,
+      files: 3,
+      bytes: 2_400_000,
+      backups: [{ id: "2026-11-10_18-00-00.000", createdAt: "2026-11-10T18:00:00Z", files: 2, bytes: 1_000_000 }],
+    };
+    renderAt("/library/tidewater?tab=settings");
+    expect(await screen.findByText("3 Spielstand-Dateien, 2,4 MB.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Jetzt sichern" }));
+    expect(await screen.findByText("3 Dateien gesichert.")).toBeDefined();
+    const list = await screen.findByRole("list", { name: "Backups" });
+    await waitFor(() => {
+      expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    });
+    fireEvent.click(within(list).getByRole("button", { name: "Backup vom 10. November 2026 wiederherstellen" }));
+    const dialog = await screen.findByRole("dialog", { name: "Spielstand von Tidewater wiederherstellen?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Wiederherstellen" }));
+    expect(await screen.findByText("2 Dateien wiederhergestellt.")).toBeDefined();
+  });
+
+  it("says when a game is unknown and keeps the settings", async () => {
+    renderAt("/library/tidewater?tab=settings");
+    expect(await screen.findByText("Für dieses Spiel kennt Cove keine Spielstand-Orte.")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Jetzt sichern" })).toBeNull();
+
+    renderAt("/settings/backups");
+    const auto = await screen.findByRole("switch", { name: "Nach jedem Spielen sichern" });
+    fireEvent.click(auto);
+    fireEvent.change(screen.getByLabelText("Aufbewahren"), { target: { value: "20" } });
+    await waitFor(() => {
+      expect(core.settings.backups).toEqual({ enabled: false, directory: "", keep: 20 });
+    });
+  });
+});
+
+describe("Emulators", () => {
+  it("adds a ROM folder and reads its ROMs into the library", async () => {
+    core.romFiles["/roms/snes"] = ["Space Game (USA).sfc", "Puzzle Time (Europe) [!].smc"];
+    renderAt("/settings/emulators");
+    expect(await screen.findByText("Noch keine ROM-Ordner")).toBeDefined();
+    fireEvent.change(screen.getByLabelText("Ordner"), { target: { value: "/roms/snes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
+    const folders = await screen.findByRole("list", { name: "ROM-Ordner" });
+    expect(within(folders).getByText("Super Nintendo")).toBeDefined();
+    expect(core.settings.emulators.romFolders[0]).toMatchObject({ system: "snes", path: "/roms/snes", emulator: "retroarch" });
+
+    fireEvent.click(screen.getByRole("button", { name: "ROMs einlesen" }));
+    expect(await screen.findByText("2 neue Spiele, 2 ROMs gefunden.")).toBeDefined();
+    expect(core.library.some((i) => i.game.title === "Puzzle Time")).toBe(true);
+    expect(core.collections.find((c) => c.name === "Super Nintendo")?.gameIds).toHaveLength(2);
+
+    // An emulator that is not installed is marked as such.
+    fireEvent.change(screen.getByLabelText("System"), { target: { value: "ps2" } });
+    expect(within(screen.getByLabelText("Emulator")).getByRole("option", { name: "PCSX2 (nicht installiert)" })).toBeDefined();
+  });
+});
+
+describe("Time to beat", () => {
+  beforeEach(() => {
+    core.library = [
+      fakeItem("tidewater", "Tidewater", { catalogId: "igdb-1", matchStatus: "matched" }),
+      fakeItem("orbit", "Orbit", { catalogId: "igdb-2", matchStatus: "matched" }),
+      fakeItem("lantern", "Lantern"),
+    ];
+    core.timesToBeat = {
+      "igdb-1": { hastily: 9 * 3600, normally: 12.4 * 3600, completely: 30 * 3600, count: 42 },
+      "igdb-2": { hastily: 2 * 3600, normally: null, completely: null, count: 3 },
+    };
+  });
+
+  it("shows how long a game takes on its page", async () => {
+    renderAt("/library/tidewater");
+    const section = await screen.findByRole("region", { name: "Spieldauer" });
+    expect(await within(section).findByText("12 Std.")).toBeDefined();
+    expect(within(section).getByText("9 Std.")).toBeDefined();
+    expect(within(section).getByText("30 Std.")).toBeDefined();
+    expect(within(section).getByText("Laut 42 Spielerangaben bei IGDB")).toBeDefined();
+  });
+
+  it("filters the library by length", async () => {
+    renderAt("/library");
+    await screen.findAllByText("Lantern");
+    fireEvent.click(screen.getByRole("button", { name: /^Spieldauer/ }));
+    fireEvent.click(screen.getByRole("radio", { name: "Unter 5 Std." }));
+    await waitFor(() => {
+      expect(screen.queryByText("Tidewater")).toBeNull();
+    });
+    expect(screen.getAllByText("Orbit").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Lantern")).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Über 40 Std." }));
+    expect(await screen.findByText("Keine Spiele dieser Länge")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Alle zeigen" }));
+    expect((await screen.findAllByText("Lantern")).length).toBeGreaterThan(0);
   });
 });
 

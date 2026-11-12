@@ -4,6 +4,9 @@ import { call, subscribe } from "./transport.ts";
 /** Value of `protonVersion` / `defaultProton` for "always the newest GE-Proton". */
 export const LATEST_PROTON = "latest";
 
+/** Id of umu-launcher in `proton-progress`, `install` and `cancel`. */
+export const UMU_ID = "umu";
+
 /** Linux: GE-Proton releases, installed builds and Steam's builds. */
 export function overview(): Promise<ProtonOverview> {
   return call("proton_list", {});
@@ -14,9 +17,14 @@ export function checkUpdates(): Promise<ProtonOverview> {
   return call("proton_check", {});
 }
 
-/** Starts installing a GE-Proton build; progress comes through `subscribeProgress`. */
+/** Starts installing a GE-Proton build or umu-launcher (`UMU_ID`); progress comes through `subscribeProgress`. */
 export async function install(versionId: ProtonVersionId): Promise<void> {
   await call("proton_install", { versionId });
+}
+
+/** Stops a running install; a game waiting for it does not start. */
+export async function cancel(versionId: ProtonVersionId): Promise<void> {
+  await call("proton_cancel", { versionId });
 }
 
 /** Deletes a GE-Proton build no game uses. */

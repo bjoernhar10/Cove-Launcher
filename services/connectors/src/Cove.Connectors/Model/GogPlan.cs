@@ -41,5 +41,23 @@ public sealed record GogInstallPlan(
     GogInstaller? Installer,
     IReadOnlyList<GogDlc> Dlcs);
 
+/// <summary>A folder Galaxy syncs: its name in the cloud and where it lives (<c>&lt;?DOCUMENTS?&gt;/…</c>).</summary>
+public sealed record GogSaveLocation(string Name, string Location);
+
+/// <summary>
+/// Cloud saves of a game: the storage URL and a token for the game's own Galaxy
+/// client. The core lists, downloads and uploads the files itself.
+/// </summary>
+public sealed record GogCloudSaves(
+    bool Enabled,
+    string? ClientId,
+    string? UserId,
+    string? AccessToken,
+    string? StorageUrl,
+    IReadOnlyList<GogSaveLocation> Locations)
+{
+    public static GogCloudSaves None { get; } = new(false, null, null, null, null, []);
+}
+
 /// <summary>The newest public build (for update checks).</summary>
 public sealed record GogLatest(string BuildId, string Version, string Platform);

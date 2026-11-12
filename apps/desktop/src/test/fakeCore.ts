@@ -22,8 +22,15 @@ import type {
   DlcOption,
   GameUpdateInfo,
   InstallTarget,
+  PrefixAction,
+  GameBackups,
+  SystemInfo,
+  GameTools,
+  GameTweaks,
+  PrefixInfo,
   ProtonOverview,
   ProtonRating,
+  TimeToBeat,
   StoreDlcList,
   LaunchVia,
   LibraryItem,
@@ -31,6 +38,19 @@ import type {
   UpdateInfo,
 } from "@cove/shared";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+
+/** The core's defaults for a game's Linux options. */
+export const FAKE_TWEAKS: GameTweaks = {
+  mangohud: false,
+  gamemode: false,
+  gamescope: false,
+  gamescopeWidth: null,
+  gamescopeHeight: null,
+  gamescopeFullscreen: false,
+  fsr: false,
+  dxvk: true,
+  vkd3d: true,
+};
 
 /** Rejects like the Rust core: an error carrying `kind` + `message`. */
 function reject(kind: AppErrorKind, message: string): never {
@@ -81,7 +101,7 @@ export function fakeItem(id: string, title: string, overrides: Partial<LibraryIt
       lastPlayedAt: "2026-11-01T10:00:00Z",
       addedAt: "2026-10-01T10:00:00Z",
       achievements: { unlocked: 0, total: 0 },
-      launchOptions: { arguments: "", compatibilityTool: "native", env: [], protonVersion: null },
+      launchOptions: { arguments: "", compatibilityTool: "native", env: [], protonVersion: null, tweaks: { ...FAKE_TWEAKS } },
       catalogId: null,
       matchStatus: "none",
       launchVia: null,
@@ -101,10 +121,31 @@ export const FAKE_SCAN: ScanCandidate[] = [
 export const DEFAULT_SETTINGS: AppSettings = {
   general: { language: "de", launchOnStartup: false, minimizeToTray: false, startPage: "home" },
   appearance: { theme: "dark", accent: "blue" },
-  library: { scanFolders: [], scanOnStartup: false, gameFolders: ["/home/u/Games"], steamSilentStart: true, epicCloudSaves: true, defaultProton: "latest" },
+  library: { scanFolders: [], scanOnStartup: false, gameFolders: ["/home/u/Games"], steamSilentStart: true, epicCloudSaves: true, gogCloudSaves: true, defaultProton: "latest", useUmu: true },
   downloads: { directory: "/home/u/Games", bandwidthLimitBytesPerSecond: null, maxConcurrent: 1 },
   catalog: { useCoveService: true },
+  backups: { enabled: true, directory: "", keep: 10 },
+  emulators: { romFolders: [] },
 };
+
+/** Systems the fake core offers (a few of the real ones). */
+export const FAKE_SYSTEMS: SystemInfo[] = [
+  {
+    id: "snes",
+    name: "Super Nintendo",
+    extensions: ["sfc", "smc", "zip"],
+    emulators: [{ id: "retroarch", name: "RetroArch", installed: true }],
+  },
+  {
+    id: "ps2",
+    name: "PlayStation 2",
+    extensions: ["iso", "chd", "cso"],
+    emulators: [
+      { id: "retroarch", name: "RetroArch", installed: true },
+      { id: "pcsx2", name: "PCSX2", installed: false },
+    ],
+  },
+];
 
 /** Catalogue served by the fake core (provider "igdb"). */
 export const FAKE_CATALOG: Game[] = [
@@ -160,6 +201,7 @@ export function fakeProton(): ProtonOverview {
     checkedAt: "2026-11-11T06:00:00Z",
     offline: false,
     installing: [],
+    umu: { enabled: true, source: "cove", version: "1.4.4", latest: "1.4.4", python: true },
   };
 }
 
@@ -209,6 +251,20 @@ export interface FakeCore {
   protonRatings: Record<string, ProtonRating>;
   /** ProtonDB can't be reached. */
   protonDown: boolean;
+  /** Proton prefixes that exist (per game id). */
+  prefixes: Record<string, PrefixInfo>;
+  /** Prefix actions the user ran, in order. */
+  prefixActions: { gameId: string; action: PrefixAction }[];
+  /** Save backups per game id; games without an entry are unknown to the manifest. */
+  backups: Record<string, GameBackups>;
+  /** Systems for the emulator settings. */
+  systems: SystemInfo[];
+  /** ROM file names per ROM folder path (what a scan finds). */
+  romFiles: Record<string, string[]>;
+  /** Linux game tools that are installed. */
+  gameTools: GameTools;
+  /** Times to beat per catalogue id (IGDB); missing ids have none. */
+  timesToBeat: Record<string, TimeToBeat>;
   /** URLs Cove asked the system to open (steam:// …). */
   openedUrls: string[];
   /** Upload ids of extras sent with itch.io downloads. */
@@ -293,6 +349,13 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     protonInstalls: [],
     protonRatings: {},
     protonDown: false,
+    prefixes: {},
+    prefixActions: [],
+    timesToBeat: {},
+    gameTools: { mangohud: true, gamemode: true, gamescope: false },
+    backups: {},
+    systems: FAKE_SYSTEMS,
+    romFiles: {},
     openedUrls: [],
     itchExtras: [],
   };
@@ -350,6 +413,7 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     }
     return {
       ...core.proton,
+      umu: { ...core.proton.umu, enabled: core.settings.library.useUmu },
       versions: core.proton.versions.map((v) => {
         const games = used.get(v.id) ?? 0;
         return { ...v, games, removable: v.kind === "ge" && v.installed && games === 0 };
@@ -391,6 +455,10 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       const item = require(gameId);
       if (patch.favorite !== undefined) item.entry.favorite = patch.favorite;
       if (patch.launchOptions) {
+        const size = (v: number | null) => v === null || (v >= 160 && v <= 15_360);
+        if (!size(patch.launchOptions.tweaks.gamescopeWidth) || !size(patch.launchOptions.tweaks.gamescopeHeight)) {
+          reject("invalidInput", "Die Auflösung für gamescope muss zwischen 160 und 15360 Pixeln liegen.");
+        }
         item.entry.launchOptions = patch.launchOptions;
         // A GE-Proton build the user just picked is installed right away.
         const wanted = patch.launchOptions.protonVersion ?? core.settings.library.defaultProton;
@@ -464,6 +532,10 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       return protonOverview();
     },
     proton_install: ({ versionId }) => {
+      if (versionId === "umu") {
+        core.proton.umu = { ...core.proton.umu, source: "cove", version: core.proton.umu.latest };
+        return null;
+      }
       if (versionId.startsWith("steam:")) reject("invalidInput", "Das ist keine GE-Proton-Version.");
       installProton(versionId);
       return null;
@@ -476,6 +548,67 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
         reject("invalidInput", version.games === 1 ? `${versionId} wird noch von einem Spiel verwendet.` : `${versionId} wird noch von ${String(version.games)} Spielen verwendet.`);
       }
       core.proton.versions = core.proton.versions.flatMap((v) => (v.id !== versionId ? [v] : v.downloadBytes === null ? [] : [{ ...v, installed: false }]));
+      return null;
+    },
+    system_game_tools: () => core.gameTools,
+    game_backups: ({ gameId }) => {
+      require(gameId);
+      return core.backups[gameId] ?? { known: false, files: 0, bytes: 0, backups: [] };
+    },
+    game_backup_now: ({ gameId }) => {
+      require(gameId);
+      const state = core.backups[gameId];
+      if (!state?.known) reject("invalidInput", "Für dieses Spiel kennt Cove keine Spielstand-Orte.");
+      const created = { id: `2026-11-12_10-00-0${String(state.backups.length)}.000`, createdAt: new Date().toISOString(), files: state.files, bytes: state.bytes };
+      state.backups = [created, ...state.backups];
+      return created;
+    },
+    game_backup_restore: ({ gameId, backupId }) => {
+      const backup = core.backups[gameId]?.backups.find((b) => b.id === backupId);
+      if (!backup) reject("invalidInput", "Dieses Backup gibt es nicht.");
+      return backup.files;
+    },
+    emulators_systems: () => core.systems,
+    emulators_scan: () => {
+      let found = 0;
+      let added = 0;
+      for (const folder of core.settings.emulators.romFolders) {
+        const system = core.systems.find((s) => s.id === folder.system);
+        for (const file of core.romFiles[folder.path] ?? []) {
+          found += 1;
+          const path = `${folder.path}/${file}`;
+          if (core.library.some((i) => i.entry.executablePath === path)) continue;
+          const title = file.replace(/\.[^.]+$/, "").replace(/\s*[([].*?[)\]]/g, "").trim();
+          const item = fakeItem(`rom-${String(core.library.length)}`, title, { executablePath: path, playtimeMinutes: 0, lastPlayedAt: null });
+          core.library.push(item);
+          const name = system?.name ?? folder.system;
+          let target = core.collections.find((c) => c.name === name);
+          if (!target) {
+            target = { id: String(core.collections.length + 1), name, gameIds: [] };
+            core.collections.push(target);
+          }
+          target.gameIds.push(item.game.id);
+          added += 1;
+        }
+      }
+      return { found, added };
+    },
+    proton_cancel: ({ versionId }) => {
+      if (!core.proton.installing.some((p) => p.id === versionId)) reject("invalidInput", `${versionId} wird gerade nicht installiert.`);
+      core.proton.installing = core.proton.installing.filter((p) => p.id !== versionId);
+      return null;
+    },
+    game_prefix_info: ({ gameId }) => {
+      require(gameId);
+      return core.prefixes[gameId] ?? { exists: false, sizeBytes: null, winetricks: true };
+    },
+    game_prefix_action: ({ gameId, action }) => {
+      require(gameId);
+      const prefix = core.prefixes[gameId];
+      if (!prefix?.exists) reject("invalidInput", "Für dieses Spiel gibt es noch keinen Prefix. Er entsteht beim ersten Start mit Proton.");
+      if (action === "winetricks" && !prefix.winetricks) reject("launch", "winetricks ist nicht installiert.");
+      if (action === "reset") core.prefixes = Object.fromEntries(Object.entries(core.prefixes).filter(([id]) => id !== gameId));
+      core.prefixActions.push({ gameId, action });
       return null;
     },
     game_stop: ({ gameId }) => {
@@ -774,6 +907,10 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       requireCatalog();
       const linked = core.library.find((i) => i.entry.catalogId === gameId || i.game.id === gameId);
       return { game: catalogGame(gameId), libraryGameId: linked?.game.id ?? null, offline: core.catalog.offline };
+    },
+    catalog_time_to_beat: ({ catalogIds }) => {
+      if (catalogIds.length > 5000) reject("invalidInput", "Zu viele Spiele auf einmal.");
+      return Object.fromEntries(catalogIds.flatMap((id) => (core.timesToBeat[id] ? [[id, core.timesToBeat[id]]] : [])));
     },
     catalog_similar: ({ gameId }) => {
       requireCatalog();

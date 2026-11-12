@@ -115,7 +115,7 @@ pub fn newest_manifest(saves: &Saves) -> Option<&SaveFile> {
         .max_by_key(|f| (f.last_modified, f.path.clone()))
 }
 
-fn files_below(dir: &Path) -> Vec<PathBuf> {
+pub fn files_below(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {

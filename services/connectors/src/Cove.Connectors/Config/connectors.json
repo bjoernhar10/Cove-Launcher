@@ -20,7 +20,9 @@
     "metaUrl": "https://gog-cdn-fastly.gog.com/content-system/v2/meta/{path}",
     "secureLinkUrl": "https://content-system.gog.com/products/{productId}/secure_link?generation=2&_version=2&path=/",
     "productDownloadsUrl": "https://api.gog.com/products/{productId}?expand=downloads",
-    "productDlcsUrl": "https://api.gog.com/products/{productId}?expand=expanded_dlcs"
+    "productDlcsUrl": "https://api.gog.com/products/{productId}?expand=expanded_dlcs",
+    "remoteConfigUrl": "https://remote-config.gog.com/components/galaxy_client/clients/{clientId}?component_version=2.0.45",
+    "cloudStorageUrl": "https://cloudstorage.gog.com/v1/{userId}/{clientId}"
   },
   "epic": {
     "clientId": "34a02cf8f4414e29b15921876da36f9a",

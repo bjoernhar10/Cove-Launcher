@@ -217,6 +217,13 @@ public sealed class RpcDispatcher
                     return Node(dlcs, ctx.OwnedDlcs);
                 }
 
+            case "gog.cloudSaves":
+                {
+                    var args = Params(p, ctx.GogDlcParams);
+                    var saves = await GogContent().CloudSavesAsync(args.Session, args.ProductId, ct).ConfigureAwait(false);
+                    return Node(saves, ctx.GogCloudSaves);
+                }
+
             case "gog.latest":
                 {
                     var args = Params(p, ctx.GogPlanParams);

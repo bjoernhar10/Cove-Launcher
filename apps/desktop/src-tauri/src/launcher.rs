@@ -53,6 +53,14 @@ pub struct HostEnv {
     pub protons: Vec<crate::proton::ProtonBuild>,
     /// Build for games without a choice of their own (`library.defaultProton`).
     pub default_proton: String,
+    /// Proton starts through umu-launcher (filled per launch); `None` = directly.
+    pub umu: Option<crate::umu::UmuLaunch>,
+    /// `mangohud`, `gamemoderun`, `gamescope` (looked up per launch).
+    pub tools: ToolPaths,
+    /// ROM folders: a file in one starts through its emulator (filled per launch).
+    pub rom_folders: Vec<crate::models::RomFolder>,
+    /// Where emulators are looked for.
+    pub emulators: crate::emulators::Env,
 }
 
 impl HostEnv {
@@ -62,15 +70,19 @@ impl HostEnv {
             .map(PathBuf::from);
         Self {
             platform: Platform::current(),
-            home,
+            home: home.clone(),
             compat_data_root,
             // Filled per launch by `ProtonManager::host`.
             protons: Vec::new(),
             default_proton: crate::proton::LATEST.to_owned(),
+            umu: None,
+            tools: ToolPaths::default(),
+            rom_folders: Vec::new(),
+            emulators: crate::emulators::Env::detect(home),
         }
     }
 
-    fn steam_root(&self) -> Option<PathBuf> {
+    pub fn steam_root(&self) -> Option<PathBuf> {
         let home = self.home.as_ref()?;
         steam_roots(home).into_iter().find(|p| p.is_dir())
     }
@@ -212,6 +224,167 @@ fn gog_task(target: &LaunchTarget, exe: &Path) -> Option<(Vec<String>, Option<Pa
 }
 
 /// Decides how to start a game.
+/// Linux game tools on this machine (looked up for every launch).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolPaths {
+    pub mangohud: Option<PathBuf>,
+    pub gamemode: Option<PathBuf>,
+    pub gamescope: Option<PathBuf>,
+}
+
+impl ToolPaths {
+    pub fn detect() -> Self {
+        if Platform::current() != Platform::Linux {
+            return Self::default();
+        }
+        Self {
+            mangohud: crate::sidecar::which("mangohud"),
+            gamemode: crate::sidecar::which("gamemoderun"),
+            gamescope: crate::sidecar::which("gamescope"),
+        }
+    }
+
+    pub fn installed(&self) -> crate::models::GameTools {
+        crate::models::GameTools {
+            mangohud: self.mangohud.is_some(),
+            gamemode: self.gamemode.is_some(),
+            gamescope: self.gamescope.is_some(),
+        }
+    }
+}
+
+fn tool_missing(name: &str) -> AppError {
+    AppError::Launch(tr!(
+        "{name} ist nicht installiert. Installiere es über die Paketverwaltung oder schalte es in den Einstellungen des Spiels aus.",
+        "{name} is not installed. Install it with your package manager or switch it off in the game's settings."
+    ))
+}
+
+/// The game's Linux options: Proton variables (DXVK, VKD3D, FSR) and the
+/// wrappers around the command, outermost first:
+/// `gamemoderun gamescope … -- mangohud <program> <args>`.
+fn apply_tweaks(
+    target: &LaunchTarget,
+    host: &HostEnv,
+    exe: &Path,
+    program: PathBuf,
+    args: Vec<String>,
+    env: &mut Vec<(String, String)>,
+) -> AppResult<(PathBuf, Vec<String>)> {
+    let tweaks = &target.options.tweaks;
+    if host.platform != Platform::Linux {
+        return Ok((program, args));
+    }
+    let proton = target.options.compatibility_tool == CompatibilityTool::Proton
+        && exe
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("exe"));
+    if proton {
+        if !tweaks.dxvk {
+            env.push(("PROTON_USE_WINED3D".into(), "1".into()));
+        }
+        if !tweaks.vkd3d {
+            env.push(("PROTON_NO_D3D12".into(), "1".into()));
+        }
+        if tweaks.fsr && !tweaks.gamescope {
+            // GE-Proton scales a fullscreen game rendered below the screen's resolution.
+            env.push(("WINE_FULLSCREEN_FSR".into(), "1".into()));
+        }
+    }
+    let mut command: Vec<String> = Vec::new();
+    let text = |p: &Path| p.to_string_lossy().into_owned();
+    if tweaks.gamemode {
+        let path = host
+            .tools
+            .gamemode
+            .as_ref()
+            .ok_or_else(|| tool_missing("GameMode"))?;
+        command.push(text(path));
+    }
+    if tweaks.gamescope {
+        let path = host
+            .tools
+            .gamescope
+            .as_ref()
+            .ok_or_else(|| tool_missing("gamescope"))?;
+        command.push(text(path));
+        if let (Some(width), Some(height)) = (tweaks.gamescope_width, tweaks.gamescope_height) {
+            command.extend([
+                "-w".into(),
+                width.to_string(),
+                "-h".into(),
+                height.to_string(),
+            ]);
+        }
+        if tweaks.gamescope_fullscreen {
+            command.push("-f".into());
+        }
+        if tweaks.fsr {
+            command.extend(["-F".into(), "fsr".into()]);
+        }
+        command.push("--".into());
+    }
+    if tweaks.mangohud {
+        let path = host
+            .tools
+            .mangohud
+            .as_ref()
+            .ok_or_else(|| tool_missing("MangoHud"))?;
+        command.push(text(path));
+    }
+    if command.is_empty() {
+        return Ok((program, args));
+    }
+    command.push(text(&program));
+    command.extend(args);
+    let first = PathBuf::from(command.remove(0));
+    Ok((first, command))
+}
+
+/// How a Windows game starts with Proton: through umu when it is there, else
+/// Proton directly. Adds the environment both need.
+fn proton_command(
+    target: &LaunchTarget,
+    host: &HostEnv,
+    executable: &str,
+    cwd: Option<&Path>,
+    env: &mut Vec<(String, String)>,
+) -> AppResult<(PathBuf, Vec<String>)> {
+    let wanted = crate::proton::wanted(&target.options, &host.default_proton)
+        .unwrap_or_else(|| host.default_proton.clone());
+    let proton = crate::proton::resolve(&host.protons, &wanted).ok_or_else(|| {
+        AppError::CompatToolNotFound(crate::proton::display_name(&wanted).to_owned())
+    })?;
+    let prefix = host.compat_data_root.join(&target.game_id);
+    let text = |path: &Path| path.to_string_lossy().into_owned();
+    if let Some(umu) = &host.umu {
+        // umu runs Proton in the Steam Linux Runtime. Its prefix is the same
+        // `pfx` folder Proton uses when it runs directly.
+        env.push(("WINEPREFIX".into(), text(&prefix.join("pfx"))));
+        env.push(("PROTONPATH".into(), text(&proton.path)));
+        env.push(("GAMEID".into(), umu.game_id.clone()));
+        if let Some(store) = umu.store {
+            env.push(("STORE".into(), store.to_owned()));
+        }
+        return Ok((umu.program.clone(), vec![executable.to_owned()]));
+    }
+    env.push(("STEAM_COMPAT_DATA_PATH".into(), text(&prefix)));
+    // Proton runs without Steam too; Steam's folder only adds its client libraries.
+    let steam = host.steam_root().map(|p| text(&p));
+    env.push((
+        "STEAM_COMPAT_CLIENT_INSTALL_PATH".into(),
+        steam.unwrap_or_default(),
+    ));
+    if let Some(dir) = cwd {
+        env.push(("STEAM_COMPAT_INSTALL_PATH".into(), text(dir)));
+    }
+    // Like Steam: Proton waits for the game, so the session ends with it.
+    Ok((
+        proton.path.join("proton"),
+        vec!["waitforexitandrun".into(), executable.to_owned()],
+    ))
+}
+
 pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
     if let Some(plan) = store_client_plan(target) {
         return Ok(plan);
@@ -247,7 +420,11 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
     }
     let has_ext = |ext: &str| exe.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext));
 
-    let (program, mut args) = if has_ext("desktop") {
+    let (program, mut args) = if let Some(folder) =
+        crate::emulators::folder_of(&host.rom_folders, &exe)
+    {
+        crate::emulators::command(folder, &exe, &host.emulators)?
+    } else if has_ext("desktop") {
         let content = std::fs::read_to_string(&exe)?;
         let entry = parse_desktop_entry(&content).ok_or_else(|| {
             AppError::Launch(tr!(
@@ -271,23 +448,7 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
                 ))
             }
             CompatibilityTool::Wine => (PathBuf::from("wine"), vec![executable.to_owned()]),
-            CompatibilityTool::Proton => {
-                let wanted = crate::proton::wanted(&target.options, &host.default_proton)
-                    .unwrap_or_else(|| host.default_proton.clone());
-                let proton = crate::proton::resolve(&host.protons, &wanted).ok_or_else(|| {
-                    AppError::CompatToolNotFound(crate::proton::display_name(&wanted).to_owned())
-                })?;
-                let prefix = host.compat_data_root.join(&target.game_id);
-                env.push(("STEAM_COMPAT_DATA_PATH".into(), prefix.to_string_lossy().into_owned()));
-                // Proton runs without Steam too; Steam's folder only adds its client libraries.
-                let steam = host.steam_root().map(|p| p.to_string_lossy().into_owned());
-                env.push(("STEAM_COMPAT_CLIENT_INSTALL_PATH".into(), steam.unwrap_or_default()));
-                if let Some(dir) = &cwd {
-                    env.push(("STEAM_COMPAT_INSTALL_PATH".into(), dir.to_string_lossy().into_owned()));
-                }
-                // Like Steam: Proton waits for the game, so the session ends with it.
-                (proton.path.join("proton"), vec!["waitforexitandrun".into(), executable.to_owned()])
-            }
+            CompatibilityTool::Proton => proton_command(target, host, executable, cwd.as_deref(), &mut env)?,
         }
     } else {
         (exe.clone(), Vec::new())
@@ -296,6 +457,7 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
     args.extend(task_args);
     args.extend(target.extra_args.iter().cloned());
     args.extend(user_args);
+    let (program, args) = apply_tweaks(target, host, &exe, program, args, &mut env)?;
     // User variables last so they can override ours.
     env.extend(
         target
@@ -567,7 +729,10 @@ impl Launcher {
                         program.display()
                     )));
                 }
-                if let Some((_, prefix)) = env.iter().find(|(k, _)| k == "STEAM_COMPAT_DATA_PATH") {
+                if let Some((_, prefix)) = env
+                    .iter()
+                    .find(|(k, _)| k == "STEAM_COMPAT_DATA_PATH" || k == "WINEPREFIX")
+                {
                     std::fs::create_dir_all(prefix)?;
                 }
                 let mut command = Command::new(&program);
@@ -742,6 +907,15 @@ mod tests {
                 })
                 .collect(),
             default_proton: crate::proton::LATEST.to_owned(),
+            umu: None,
+            tools: ToolPaths::default(),
+            rom_folders: Vec::new(),
+            emulators: crate::emulators::Env {
+                platform,
+                home: None,
+                path: Vec::new(),
+                program_files: Vec::new(),
+            },
         }
     }
 
@@ -966,6 +1140,169 @@ mod tests {
             plan(&t, &host(Platform::Linux, &protons)),
             Err(AppError::CompatToolNotFound(name)) if name == "Proton - Experimental"
         ));
+    }
+
+    #[test]
+    fn game_options_wrap_the_command_and_set_proton_variables() {
+        let mut t = target(StoreSource::Manual, Some("/g/Game.exe"), None);
+        t.options.compatibility_tool = CompatibilityTool::Proton;
+        t.options.tweaks = crate::models::GameTweaks {
+            mangohud: true,
+            gamemode: true,
+            gamescope: true,
+            gamescope_width: Some(1280),
+            gamescope_height: Some(720),
+            gamescope_fullscreen: true,
+            fsr: true,
+            dxvk: false,
+            vkd3d: false,
+        };
+        let mut host = host(Platform::Linux, &["GE-Proton10-25"]);
+        // Nothing installed: say which tool is missing instead of starting.
+        assert!(matches!(
+            plan(&t, &host),
+            Err(AppError::Launch(message)) if message.contains("GameMode")
+        ));
+        host.tools = ToolPaths {
+            mangohud: Some(PathBuf::from("/usr/bin/mangohud")),
+            gamemode: Some(PathBuf::from("/usr/bin/gamemoderun")),
+            gamescope: Some(PathBuf::from("/usr/bin/gamescope")),
+        };
+        let LaunchPlan::Process {
+            program, args, env, ..
+        } = plan(&t, &host).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(program, PathBuf::from("/usr/bin/gamemoderun"));
+        let proton = PathBuf::from("/p")
+            .join("GE-Proton10-25")
+            .join("proton")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            args,
+            [
+                "/usr/bin/gamescope",
+                "-w",
+                "1280",
+                "-h",
+                "720",
+                "-f",
+                "-F",
+                "fsr",
+                "--",
+                "/usr/bin/mangohud",
+                &proton,
+                "waitforexitandrun",
+                "/g/Game.exe"
+            ]
+        );
+        let var = |key: &str| env.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str());
+        assert_eq!(var("PROTON_USE_WINED3D"), Some("1"));
+        assert_eq!(var("PROTON_NO_D3D12"), Some("1"));
+        // gamescope scales: no Proton FSR on top.
+        assert_eq!(var("WINE_FULLSCREEN_FSR"), None);
+
+        // Without gamescope GE-Proton's FSR takes over; a native game gets no Proton variables.
+        t.options.tweaks = crate::models::GameTweaks {
+            fsr: true,
+            ..crate::models::GameTweaks::default()
+        };
+        let LaunchPlan::Process { env, .. } = plan(&t, &host).unwrap() else {
+            panic!()
+        };
+        assert!(env
+            .iter()
+            .any(|(k, v)| k == "WINE_FULLSCREEN_FSR" && v == "1"));
+        let mut native = target(StoreSource::Manual, Some("/g/game.sh"), None);
+        native.options.tweaks = crate::models::GameTweaks {
+            mangohud: true,
+            dxvk: false,
+            ..crate::models::GameTweaks::default()
+        };
+        let LaunchPlan::Process {
+            program, args, env, ..
+        } = plan(&native, &host).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(program, PathBuf::from("/usr/bin/mangohud"));
+        assert_eq!(args, ["/g/game.sh"]);
+        assert_eq!(env, Vec::<(String, String)>::new());
+        // Not on Windows.
+        assert!(matches!(
+            plan(&native, &self::host(Platform::Windows, &[])).unwrap(),
+            LaunchPlan::Process { program, .. } if program == Path::new("/g/game.sh")
+        ));
+    }
+
+    #[test]
+    fn roms_start_through_their_emulator_with_the_game_options() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("bin")).unwrap();
+        std::fs::write(root.path().join("bin/dolphin-emu"), b"").unwrap();
+        let roms = root.path().join("roms/gc");
+        let rom = roms.join("Game.rvz");
+        let mut t = target(StoreSource::Manual, Some(&rom.to_string_lossy()), None);
+        t.options.tweaks.mangohud = true;
+        let mut host = host(Platform::Linux, &[]);
+        host.tools.mangohud = Some(PathBuf::from("/usr/bin/mangohud"));
+        host.rom_folders = vec![crate::models::RomFolder {
+            id: "gc".into(),
+            system: "gamecube".into(),
+            path: roms.to_string_lossy().into_owned(),
+            emulator: "dolphin".into(),
+            program: None,
+            arguments: String::new(),
+        }];
+        host.emulators.path = vec![root.path().join("bin")];
+        let LaunchPlan::Process { program, args, .. } = plan(&t, &host).unwrap() else {
+            panic!()
+        };
+        assert_eq!(program, PathBuf::from("/usr/bin/mangohud"));
+        let dolphin = root
+            .path()
+            .join("bin/dolphin-emu")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(args, [dolphin.as_str(), "-b", "-e", &rom.to_string_lossy()]);
+    }
+
+    #[test]
+    fn proton_runs_through_umu_when_it_is_there() {
+        let mut t = target(StoreSource::Gog, Some("/g/Game.exe"), None);
+        t.options.compatibility_tool = CompatibilityTool::Proton;
+        t.options.arguments = "-windowed".into();
+        let mut host = host(Platform::Linux, &["GE-Proton10-25"]);
+        host.umu = Some(crate::umu::UmuLaunch::new(
+            PathBuf::from("/u/umu-run"),
+            StoreSource::Gog,
+            Some("1091500"),
+        ));
+        let LaunchPlan::Process {
+            program, args, env, ..
+        } = plan(&t, &host).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(program, PathBuf::from("/u/umu-run"));
+        assert_eq!(args, ["/g/Game.exe", "-windowed"]);
+        let var = |key: &str| env.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+        // The same wine prefix as without umu, so saves and installs stay.
+        let prefix = PathBuf::from("/data/compat").join("g").join("pfx");
+        assert_eq!(
+            var("WINEPREFIX"),
+            Some(prefix.to_string_lossy().into_owned())
+        );
+        let proton = PathBuf::from("/p").join("GE-Proton10-25");
+        assert_eq!(
+            var("PROTONPATH"),
+            Some(proton.to_string_lossy().into_owned())
+        );
+        assert_eq!(var("GAMEID").as_deref(), Some("umu-1091500"));
+        assert_eq!(var("STORE").as_deref(), Some("gog"));
+        assert_eq!(var("STEAM_COMPAT_DATA_PATH"), None);
     }
 
     #[test]

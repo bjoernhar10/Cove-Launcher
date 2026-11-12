@@ -1,6 +1,6 @@
 import { localized, useMessages } from "../i18n/index.ts";
-import type { Collection, LibraryItem } from "@cove/shared";
-import { Folder, LayoutGrid, Library, List, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import type { Collection, LibraryItem, TimeToBeat } from "@cove/shared";
+import { Folder, Hourglass, LayoutGrid, Library, List, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { memo, useCallback, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Link } from "react-router";
 import { api } from "../api/index.ts";
@@ -12,15 +12,23 @@ import { VirtualGrid } from "../components/game/VirtualGrid.tsx";
 import { Button, ButtonLink } from "../components/ui/Button.tsx";
 import { EmptyState, ErrorState, LoadingRegion, Skeleton } from "../components/ui/Feedback.tsx";
 import { Page, PageHeader } from "../components/ui/Page.tsx";
+import { Popover, RadioOption } from "../components/ui/Popover.tsx";
 import { Segmented } from "../components/ui/Segmented.tsx";
 import { CollectionNameDialog, DeleteCollectionDialog } from "../features/CollectionDialogs.tsx";
 import { CollectionMenu, type MenuAnchor } from "../features/CollectionMenu.tsx";
+import { typicalLength } from "../features/TimeToBeat.tsx";
 import { useMainVirtualizer, VIRTUALIZE_FROM } from "../hooks/useMainVirtualizer.ts";
 import { useQuery } from "../hooks/useQuery.ts";
 import { cx } from "../lib/cx.ts";
 import { formatNumber, formatPlaytime, formatRelative } from "../lib/format.ts";
 import { SOURCE_LABELS } from "../lib/labels.ts";
-import { collectionGroup, usePreferences, type BuiltinGroup, type LibraryGroup } from "../stores/preferences.ts";
+import {
+  collectionGroup,
+  usePreferences,
+  type BuiltinGroup,
+  type LengthFilter,
+  type LibraryGroup,
+} from "../stores/preferences.ts";
 import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 import { useUi } from "../stores/ui.ts";
@@ -42,6 +50,47 @@ function matchesGroup(item: LibraryItem, group: BuiltinGroup): boolean {
   if (group === "installed") return item.entry.installed;
   if (group === "favorites") return item.entry.favorite;
   return item.entry.source === group;
+}
+
+/** Upper bounds in hours (the last band is open). */
+const LENGTHS: { value: Exclude<LengthFilter, "any">; min: number; max: number }[] = [
+  { value: "short", min: 0, max: 5 },
+  { value: "medium", min: 5, max: 15 },
+  { value: "long", min: 15, max: 40 },
+  { value: "veryLong", min: 40, max: Number.POSITIVE_INFINITY },
+];
+
+const LENGTH_LABELS: Record<LengthFilter, string> = localized((m) => m.timeToBeat.lengths);
+
+function inBand(times: TimeToBeat | undefined, filter: LengthFilter): boolean {
+  if (filter === "any") return true;
+  const band = LENGTHS.find((l) => l.value === filter);
+  const seconds = times ? typicalLength(times) : null;
+  if (!band || seconds === null) return false;
+  const hours = seconds / 3600;
+  return hours >= band.min && hours < band.max;
+}
+
+function LengthPopover({ value, onChange }: { value: LengthFilter; onChange: (value: LengthFilter) => void }) {
+  const t = useMessages();
+  return (
+    <Popover label={t.timeToBeat.filter} value={value === "any" ? undefined : LENGTH_LABELS[value]} active={value !== "any"} align="end">
+      <div className="flex flex-col gap-1 p-1">
+        {(["any", ...LENGTHS.map((l) => l.value)] as const).map((option) => (
+          <RadioOption
+            key={option}
+            name="library-length"
+            label={LENGTH_LABELS[option]}
+            checked={value === option}
+            onSelect={() => {
+              onChange(option);
+            }}
+          />
+        ))}
+        <p className="max-w-56 px-2 pt-2 pb-1 text-xs text-fg-muted">{t.timeToBeat.filterHint}</p>
+      </div>
+    </Popover>
+  );
 }
 
 const EMPTY_GROUP: Record<BuiltinGroup, { title: string; description: string }> = localized((m) => m.library.emptyGroup);
@@ -209,6 +258,8 @@ export function LibraryPage() {
   const collectionsQuery = useQuery("collections", api.collections.list);
   const storedGroup = usePreferences((s) => s.libraryGroup);
   const setGroup = usePreferences((s) => s.setLibraryGroup);
+  const length = usePreferences((s) => s.libraryLength);
+  const setLength = usePreferences((s) => s.setLibraryLength);
   const openAddGame = useUi((s) => s.openAddGame);
   const [menu, setMenu] = useState<{ item: LibraryItem; anchor: MenuAnchor } | null>(null);
   const [naming, setNaming] = useState<{ collection: Collection | null } | null>(null);
@@ -243,11 +294,22 @@ export function LibraryPage() {
   );
 
   const all = useMemo(() => (query.status === "success" ? query.data : []), [query.status, query.data]);
-  const items = useMemo(() => {
+  const catalogIds = useMemo(() => all.flatMap((i) => (i.entry.catalogId ? [i.entry.catalogId] : [])), [all]);
+  // Only loaded while the length filter is on (one request for the whole library, cached by the core).
+  const times = useQuery(length === "any" ? "time-to-beat/off" : `time-to-beat/library/${String(catalogIds.length)}`, () =>
+    length === "any" ? Promise.resolve<Record<string, TimeToBeat>>({}) : api.catalog.timeToBeat(catalogIds),
+  );
+  const grouped = useMemo(() => {
     if (!collection) return all.filter((i) => matchesGroup(i, group));
     const members = new Set(collection.gameIds);
     return all.filter((i) => members.has(i.game.id));
   }, [all, group, collection]);
+  const items = useMemo(() => {
+    if (length === "any") return grouped;
+    const known = times.status === "success" ? times.data : {};
+    return grouped.filter((i) => inBand(i.entry.catalogId ? known[i.entry.catalogId] : undefined, length));
+  }, [grouped, length, times.status, times.data]);
+  const lengthLoading = length !== "any" && times.status === "loading";
   const counts = useMemo(() => {
     const result = {} as Record<BuiltinGroup, number>;
     for (const g of GROUPS) result[g] = all.filter((i) => matchesGroup(i, g)).length;
@@ -366,6 +428,9 @@ export function LibraryPage() {
                   />
                 </>
               )}
+              <div className="mr-2">
+                <LengthPopover value={length} onChange={setLength} />
+              </div>
               <Segmented
                 label={t.library.view}
                 value={view}
@@ -378,7 +443,7 @@ export function LibraryPage() {
             </div>
           </div>
 
-          {query.status === "loading" &&
+          {(query.status === "loading" || (query.status === "success" && lengthLoading)) &&
             (view === "grid" ? (
               <LoadingRegion label={t.library.loading} className={COVER_GRID}>
                 {Array.from({ length: 12 }, (_, i) => (
@@ -398,17 +463,38 @@ export function LibraryPage() {
 
           {query.status === "error" && <ErrorState message={query.error} onRetry={query.retry} />}
 
+          {length !== "any" && times.status === "error" && <ErrorState message={times.error} onRetry={times.retry} />}
+
           {query.status === "success" &&
+            !lengthLoading &&
             items.length === 0 &&
-            (collection ? (
+            (length !== "any" && grouped.length > 0 ? (
+              <EmptyState
+                compact
+                icon={Hourglass}
+                title={t.timeToBeat.emptyTitle}
+                description={t.timeToBeat.emptyText}
+                actions={
+                  <Button
+                    onClick={() => {
+                      setLength("any");
+                    }}
+                  >
+                    {t.timeToBeat.showAll}
+                  </Button>
+                }
+              />
+            ) : collection ? (
               <EmptyState compact icon={Folder} title={t.collections.emptyTitle} description={t.collections.emptyText} />
             ) : (
               <EmptyState compact icon={Library} title={EMPTY_GROUP[group].title} description={EMPTY_GROUP[group].description} />
             ))}
 
-          {query.status === "success" && items.length > 0 && view === "grid" && <VirtualGrid cells={cells} label={t.palette.games} />}
+          {query.status === "success" && !lengthLoading && items.length > 0 && view === "grid" && (
+            <VirtualGrid cells={cells} label={t.palette.games} />
+          )}
 
-          {query.status === "success" && items.length > 0 && view === "list" && (
+          {query.status === "success" && !lengthLoading && items.length > 0 && view === "list" && (
             <LibraryTable items={items} onFavorite={setFavorite} onMenu={openMenu} />
           )}
         </>

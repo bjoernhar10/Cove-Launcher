@@ -8,7 +8,11 @@ import { CollectionsButton } from "../features/CollectionMenu.tsx";
 import { DEFAULT_OPTION, ProtonSelect, ProtonStatus } from "../features/ProtonPicker.tsx";
 import { DlcDialog } from "../features/DlcDialog.tsx";
 import { MatchDialog } from "../features/MatchDialog.tsx";
+import { GameTweaks } from "../features/GameTweaks.tsx";
+import { PrefixTools } from "../features/PrefixTools.tsx";
+import { SaveBackups } from "../features/SaveBackups.tsx";
 import { ProtonRating } from "../features/ProtonRating.tsx";
+import { TimeToBeat } from "../features/TimeToBeat.tsx";
 import { GameCover } from "../components/game/GameCover.tsx";
 import { PlayButton } from "../components/game/PlayButton.tsx";
 import { PlaytimeChart } from "../components/game/PlaytimeChart.tsx";
@@ -69,6 +73,7 @@ function Overview({ item }: { item: LibraryItem }) {
         </section>
         <div className="flex flex-col gap-8">
           {detectPlatform() === "linux" && <ProtonRating item={item} />}
+          {entry.catalogId && <TimeToBeat catalogId={entry.catalogId} />}
           <section aria-label={t.game.info}>
             <h2 className="mb-3 text-base font-semibold text-fg">{t.game.info}</h2>
             <dl className="m-0 rounded-lg border border-border px-4 text-sm">
@@ -750,6 +755,16 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
         />
       )}
 
+      {isLinux && item.entry.launchVia === "direct" && (
+        <GameTweaks
+          value={draft.tweaks}
+          proton={draft.compatibilityTool === "proton" && executable.trim().toLowerCase().endsWith(".exe")}
+          onChange={(tweaks) => {
+            setDraft((d) => ({ ...d, tweaks }));
+          }}
+        />
+      )}
+
       <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
         <legend className="text-sm font-medium text-fg">{t.game.env}</legend>
         <p className="text-xs text-fg-muted">{t.game.envHint}</p>
@@ -821,6 +836,8 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
         </Button>
       </div>
     </form>
+    <SaveBackups item={item} />
+    {isLinux && item.entry.launchOptions.compatibilityTool === "proton" && <PrefixTools item={item} />}
     {item.entry.installed && ownStoreInstall(item) && <GameUpdates item={item} />}
     {item.entry.installed && (item.entry.source === "manual" || ownStoreInstall(item)) && item.entry.installPath && (
       <MoveGame item={item} />

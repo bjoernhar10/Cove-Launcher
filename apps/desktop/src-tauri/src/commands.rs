@@ -211,6 +211,9 @@ pub async fn game_launch(state: State<'_, AppState>, game_id: String) -> AppResu
         steam_in_background(&state).await?;
     }
     let host = launch_host(&state, &item).await?;
+    if item.entry.source == StoreSource::Gog && item.entry.installed_by_cove {
+        state.downloads.gog_saves_before_launch(&item, &host).await;
+    }
     if item.entry.source == StoreSource::Epic && item.entry.installed_by_cove {
         let args = state.downloads.epic_launch_args(&item, &host).await?;
         return state.launcher.launch_with(&item, &host, args);
@@ -234,7 +237,27 @@ async fn launch_host(state: &AppState, item: &LibraryItem) -> AppResult<crate::l
         return Ok(host);
     };
     state.proton.ensure(&id).await?;
-    state.proton.host(&state.host).await
+    let mut host = state.proton.host(&state.host).await?;
+    if let Some(program) = state.proton.ensure_umu().await? {
+        // protonfixes are keyed by the Steam app id; don't hold the start up for long.
+        let app_id = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            state.protondb.steam_app_id(
+                item.entry.source,
+                item.entry.store_game_id.as_deref(),
+                &item.game.title,
+            ),
+        )
+        .await
+        .ok()
+        .flatten();
+        host.umu = Some(crate::umu::UmuLaunch::new(
+            program,
+            item.entry.source,
+            app_id.as_deref(),
+        ));
+    }
+    Ok(host)
 }
 
 /// Proton builds: GE-Proton releases, Cove's installs and Steam's builds.
@@ -271,6 +294,226 @@ pub async fn proton_install(state: State<'_, AppState>, version_id: String) -> A
 #[tauri::command]
 pub async fn proton_remove(state: State<'_, AppState>, version_id: String) -> AppResult<()> {
     state.proton.remove(&version_id).await
+}
+
+/// Save backups of a game: known to the manifest, files found now, backups.
+#[tauri::command]
+pub async fn game_backups(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<crate::models::GameBackups> {
+    state.backups.overview(&game_id, &state.host).await
+}
+
+/// Backs a game's saves up now; null when nothing changed since the last backup.
+#[tauri::command]
+pub async fn game_backup_now(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<Option<crate::models::BackupInfo>> {
+    state.backups.back_up(&game_id, &state.host).await
+}
+
+/// Puts a backup back (refused while the game runs); returns the files restored.
+#[tauri::command]
+pub async fn game_backup_restore(
+    state: State<'_, AppState>,
+    game_id: String,
+    backup_id: String,
+) -> AppResult<i64> {
+    if state
+        .launcher
+        .running()
+        .iter()
+        .any(|r| r.game_id == game_id)
+    {
+        return Err(AppError::InvalidInput(tr!(
+            "Beende das Spiel, bevor du einen Spielstand zurückholst.",
+            "Quit the game before you restore a save."
+        )));
+    }
+    let count = state
+        .backups
+        .restore(&game_id, &backup_id, &state.host)
+        .await?;
+    Ok(i64::try_from(count).unwrap_or(i64::MAX))
+}
+
+/// The systems Cove plays ROMs of, with their emulators (installed or not).
+#[tauri::command]
+pub async fn emulators_systems(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::models::SystemInfo>> {
+    let env = crate::emulators::Env::detect(state.host.home.clone());
+    tokio::task::spawn_blocking(move || crate::emulators::systems(&env))
+        .await
+        .map_err(|e| AppError::Launch(e.to_string()))
+}
+
+/// Adds the ROMs of every ROM folder to the library (a collection per system)
+/// and matches the new games with the catalogue in the background.
+#[tauri::command]
+pub async fn emulators_scan<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> AppResult<crate::models::RomScanResult> {
+    let settings = db::settings::load(&state.pool, &state.defaults).await?;
+    let folders = settings.emulators.rom_folders;
+    let found = tokio::task::spawn_blocking(move || {
+        folders
+            .into_iter()
+            .map(|f| {
+                let roms = crate::emulators::scan(&f);
+                (f, roms)
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|e| AppError::Launch(e.to_string()))?;
+    let mut collections = db::collections::list(&state.pool).await?;
+    let mut added = Vec::new();
+    let mut total = 0i64;
+    for (folder, roms) in found {
+        let Some(system) = crate::emulators::system(&folder.system) else {
+            continue;
+        };
+        for rom in roms {
+            total += 1;
+            let input = ManualGameInput {
+                title: rom.title.clone(),
+                executable_path: rom.path.to_string_lossy().into_owned(),
+                size_bytes: i64::try_from(rom.size).ok(),
+            };
+            let item = match db::library::add_manual(&state.pool, &input).await {
+                Ok(item) => item,
+                Err(AppError::AlreadyInLibrary(_)) => continue,
+                Err(error) => return Err(error),
+            };
+            let existing = collections
+                .iter()
+                .find(|c| c.name.to_lowercase() == system.name.to_lowercase())
+                .map(|c| c.id.clone());
+            let collection = if let Some(id) = existing {
+                id
+            } else {
+                let created = db::collections::create(&state.pool, system.name).await?;
+                let id = created.id.clone();
+                collections.push(created);
+                id
+            };
+            db::collections::set_game(&state.pool, &collection, &item.game.id, true).await?;
+            added.push(item.game.id);
+        }
+    }
+    let count = i64::try_from(added.len()).unwrap_or(i64::MAX);
+    if !added.is_empty() {
+        let catalog = state.catalog.clone();
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            for (i, game_id) in added.into_iter().enumerate() {
+                if i > 0 {
+                    tokio::time::sleep(MATCH_PACING).await;
+                }
+                match catalog.match_library_game(&game_id).await {
+                    Ok(status) => {
+                        let _ =
+                            app.emit(LIBRARY_MATCH_CHANGED, LibraryMatchEvent { game_id, status });
+                    }
+                    Err(error) => eprintln!("[cove] Katalog-Zuordnung für {game_id}: {error}"),
+                }
+            }
+        });
+        state.cove_achievements.check_in_background();
+    }
+    Ok(crate::models::RomScanResult {
+        found: total,
+        added: count,
+    })
+}
+
+/// Linux: which game tools (`mangohud`, `gamemoderun`, `gamescope`) are installed.
+#[tauri::command]
+pub fn system_game_tools() -> crate::models::GameTools {
+    crate::launcher::ToolPaths::detect().installed()
+}
+
+/// Stops a running install (a GE-Proton build or umu-launcher).
+#[tauri::command]
+pub fn proton_cancel(state: State<'_, AppState>, version_id: String) -> AppResult<()> {
+    state.proton.cancel(&version_id)
+}
+
+/// The build id a game starts with (its own choice or the default).
+fn proton_choice(item: &LibraryItem, host: &crate::launcher::HostEnv) -> String {
+    crate::proton::wanted(&item.entry.launch_options, &host.default_proton)
+        .unwrap_or_else(|| host.default_proton.clone())
+}
+
+/// A game's Proton prefix: does it exist, how big is it, is winetricks there.
+#[tauri::command]
+pub async fn game_prefix_info(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<crate::models::PrefixInfo> {
+    let item = db::library::require(&state.pool, &game_id).await?;
+    let root = state.host.compat_data_root.clone();
+    let host = state.proton.host(&state.host).await?;
+    let proton = crate::proton::resolve(&host.protons, &proton_choice(&item, &host))
+        .map(|build| build.path.clone());
+    tokio::task::spawn_blocking(move || crate::prefix::info(&root, &game_id, proton.as_deref()))
+        .await
+        .map_err(|e| AppError::Launch(e.to_string()))?
+}
+
+/// Opens, resets or runs winetricks on a game's Proton prefix.
+#[tauri::command]
+pub async fn game_prefix_action<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    game_id: String,
+    action: crate::models::PrefixAction,
+) -> AppResult<()> {
+    use crate::models::PrefixAction;
+    let item = db::library::require(&state.pool, &game_id).await?;
+    let root = state.host.compat_data_root.clone();
+    match action {
+        PrefixAction::Open => {
+            use tauri_plugin_opener::OpenerExt;
+            let folder = crate::prefix::folder(&root, &item.game.id)?;
+            app.opener()
+                .open_path(folder.to_string_lossy(), None::<&str>)
+                .map_err(|e| {
+                    AppError::Launch(tr!(
+                        "Der Ordner konnte nicht geöffnet werden: {e}",
+                        "The folder could not be opened: {e}"
+                    ))
+                })
+        }
+        PrefixAction::Reset => {
+            if state
+                .launcher
+                .running()
+                .iter()
+                .any(|r| r.game_id == item.game.id)
+            {
+                return Err(AppError::InvalidInput(tr!(
+                    "Beende das Spiel, bevor du den Prefix zurücksetzt.",
+                    "Quit the game before you reset its prefix."
+                )));
+            }
+            tokio::task::spawn_blocking(move || crate::prefix::reset(&root, &item.game.id))
+                .await
+                .map_err(|e| AppError::Launch(e.to_string()))?
+        }
+        PrefixAction::Winetricks => {
+            let host = state.proton.host(&state.host).await?;
+            let wanted = proton_choice(&item, &host);
+            let build = crate::proton::resolve(&host.protons, &wanted).ok_or_else(|| {
+                AppError::CompatToolNotFound(crate::proton::display_name(&wanted).to_owned())
+            })?;
+            crate::prefix::winetricks(&root, &item.game.id, &build.path)
+        }
+    }
 }
 
 /// Starts Steam silently (tray only) first, when the user wants that.
@@ -1043,6 +1286,21 @@ pub async fn catalog_similar(
     game_id: String,
 ) -> AppResult<CatalogPage> {
     state.catalog.similar(&game_id).await
+}
+
+/// How long games take, per catalogue id (at most 5000 ids per call).
+#[tauri::command]
+pub async fn catalog_time_to_beat(
+    state: State<'_, AppState>,
+    catalog_ids: Vec<String>,
+) -> AppResult<std::collections::HashMap<String, crate::models::TimeToBeat>> {
+    if catalog_ids.len() > 5000 {
+        return Err(AppError::InvalidInput(tr!(
+            "Zu viele Spiele auf einmal.",
+            "Too many games at once."
+        )));
+    }
+    state.catalog.time_to_beat(&catalog_ids).await
 }
 
 #[tauri::command]

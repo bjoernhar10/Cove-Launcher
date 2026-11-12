@@ -1,6 +1,7 @@
 # Cove
 
-A calm, universal desktop game launcher for **Linux, Windows and macOS** (Apple Silicon).
+A calm, universal desktop game launcher for **Linux, Windows and macOS** (Linux x86_64 and ARM64,
+Windows x64, macOS Apple Silicon and Intel).
 Cove brings your games from Steam, GOG, Epic, itch.io and your own folders together in **one**
 tidy library, launches them (on Linux optionally through Proton or Wine) and keeps track of
 playtime and achievements. No ads, no social feed, no accounts of its own.
@@ -38,8 +39,8 @@ playtime and achievements. No ads, no social feed, no accounts of its own.
   between them.
 - **GOG and Epic without their launchers:** Cove downloads, installs, updates and starts GOG
   and Epic games itself (Windows builds through Proton on Linux, native Linux GOG builds directly).
-  Updates only download what changed. Epic games start with your Epic login, and their cloud saves
-  are synced before and after playing. Games with anti-cheat or a third-party launcher are left to
+  Updates only download what changed. Epic games start with your Epic login. Cloud saves of Epic
+  and GOG games are synced before and after playing (compatible with GOG Galaxy). Games with anti-cheat or a third-party launcher are left to
   the Epic Launcher, and Cove says so. Steam games are installed by Steam.
 - **Steam in the background:** Steam games always start through Steam. If Steam isn't running,
   Cove starts it silently (tray only) first, so no Steam window shows up.
@@ -47,7 +48,22 @@ playtime and achievements. No ads, no social feed, no accounts of its own.
   the library. Right-click a game to put it into one or several.
 - **Proton without Steam (Linux):** pick the Proton version per game or as the default, from
   GE-Proton releases and the versions Steam installed. Cove downloads a missing version right
-  away and keeps "always the newest" up to date by itself.
+  away (a running download can be cancelled) and keeps "always the newest" up to date by itself.
+  Proton runs inside the Steam Linux Runtime through umu-launcher, with its per-game fixes, like in
+  Steam; without umu it starts directly. Each game's prefix can be opened, reset or tuned with
+  winetricks.
+- **Game options (Linux):** per game MangoHud, GameMode, gamescope (with a game resolution and
+  fullscreen), AMD FSR, and DXVK / VKD3D-Proton on or off, next to your own launch arguments and
+  environment variables.
+- **Save backups for every game:** after each session Cove backs up the game's saves (where they
+  are comes from the open Ludusavi manifest, over 20,000 games, also inside Proton prefixes) into a
+  folder you choose, e.g. one Syncthing or Nextcloud syncs. Restore any backup from the game page.
+- **Emulators and ROMs:** add a ROM folder per system (NES to PlayStation 2, Dreamcast …) with
+  RetroArch or a standalone emulator (Dolphin, PCSX2, DuckStation, PPSSPP, mGBA, melonDS, Flycast)
+  or your own program. Every ROM becomes a library game with a collection per system. Cove brings no
+  emulators, BIOS files or ROMs.
+- **Time to beat:** every game page shows how long the main story, main + extras and 100 % take
+  (IGDB player reports), and My Library can be filtered by length.
 - **Linux compatibility:** on Linux every game page shows its ProtonDB rating (Platinum to Borked)
   with the number of reports. Games from other stores are rated through their Steam version.
 - **Achievements** from the stores plus Cove's own (and plugin) achievements.

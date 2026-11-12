@@ -1,6 +1,6 @@
 [package]
 name = "cove"
-version = "0.4.0"
+version = "0.5.0"
 description = "Cove — universal desktop game launcher"
 edition = "2021"
 rust-version = "1.85"
@@ -42,6 +42,8 @@ tauri-plugin-updater = "2.12.0"
 sys-locale = "0.3.2"
 md-5 = "0.11.0"
 sha1 = "0.11.0"
+serde_yaml_ng = "0.10.0"
+glob = "0.3.4"
 
 [lints.rust]
 unsafe_code = "forbid"

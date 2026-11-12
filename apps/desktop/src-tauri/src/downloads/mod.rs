@@ -6,6 +6,8 @@ pub mod epic;
 mod epic_install;
 pub mod extract;
 pub mod gog;
+mod gog_cloud;
+pub mod gog_saves;
 pub mod handoff;
 pub mod itch;
 pub mod limiter;
@@ -2364,6 +2366,10 @@ mod tests {
             compat_data_root: games.path().join("compat"),
             protons: Vec::new(),
             default_proton: crate::proton::LATEST.to_owned(),
+            umu: None,
+            tools: crate::launcher::ToolPaths::default(),
+            rom_folders: Vec::new(),
+            emulators: crate::emulators::Env::detect(None),
         };
         let item = db::library::require(&pool, "epic-sugar").await.unwrap();
         let args = manager.epic_launch_args(&item, &host).await.unwrap();

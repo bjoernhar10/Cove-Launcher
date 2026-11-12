@@ -527,6 +527,22 @@ impl StoreService {
         )?)
     }
 
+    /// GOG cloud saves of a game: its Galaxy client, the synced folders and a
+    /// token for that client (connector `gog.cloudSaves`).
+    pub async fn gog_cloud_saves(
+        &self,
+        product_id: &str,
+    ) -> AppResult<crate::downloads::gog_saves::CloudSaves> {
+        let value = self
+            .with_session(
+                StoreSource::Gog,
+                "gog.cloudSaves",
+                json!({ "productId": product_id, "platform": "windows" }),
+            )
+            .await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
     /// Newest public GOG build (update check).
     pub async fn gog_latest(
         &self,
@@ -1250,6 +1266,16 @@ mod sidecar_contract {
             .await
             .unwrap_err();
         assert!(matches!(dlcs, AppError::InvalidInput(_)), "{dlcs:?}");
+        let saves = rpc
+            .call(
+                "gog.cloudSaves",
+                json!({ "session": { "store": "gog", "accountId": "1", "displayName": "x", "accessToken": "a",
+                                     "refreshToken": "r", "expiresAt": null },
+                        "productId": "../1", "platform": "windows", "proxyUrl": null }),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(saves, AppError::InvalidInput(_)), "{saves:?}");
         for method in ["epic.installInfo", "epic.launch", "epic.saves", "epic.dlcs"] {
             let error = rpc
                 .call(

@@ -42,6 +42,49 @@ test.describe("Bibliothek", () => {
     await expect(page.getByRole("button", { name: "Spielen", exact: true })).toBeVisible();
   });
 
+  test("die Bibliothek nach Spieldauer filtern", async ({ page }) => {
+    await openCove(page, "/library");
+    const games = page.getByRole("list", { name: "Spiele" });
+    const all = await games.getByRole("listitem").count();
+    await page.getByRole("button", { name: /^Spieldauer/ }).click();
+    await page.getByRole("radio", { name: "Unter 5 Std." }).check();
+    await expect(page.getByRole("button", { name: /^Spieldauer.*Unter 5 Std\./ })).toBeVisible();
+    await expect.poll(() => games.getByRole("listitem").count()).toBeLessThan(all);
+    await page.getByRole("radio", { name: "Alle" }).check();
+    await expect.poll(() => games.getByRole("listitem").count()).toBe(all);
+
+    // The game page lists the three lengths.
+    await games.getByRole("listitem").first().getByRole("link").first().click();
+    const length = page.getByRole("region", { name: "Spieldauer" });
+    await expect(length.getByText("Hauptstory")).toBeVisible();
+    await expect(length.getByText(/Laut \d+ Spielerangaben bei IGDB/)).toBeVisible();
+  });
+
+  test("Spielstände sichern und wiederherstellen", async ({ page }) => {
+    await openCove(page, "/library/game-0?tab=settings");
+    const section = page.getByRole("region", { name: "Spielstand-Backups" });
+    await expect(section.getByText("4 Spielstand-Dateien, 3,2 MB.")).toBeVisible();
+    await section.getByRole("button", { name: "Jetzt sichern" }).click();
+    await expect(toasts(page).getByText("4 Dateien gesichert.")).toBeVisible();
+    await expect(section.getByRole("list", { name: "Backups" }).getByRole("listitem")).toHaveCount(3);
+    await section.getByRole("button", { name: "Backup vom 9. November 2026 wiederherstellen" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Wiederherstellen" }).click();
+    await expect(toasts(page).getByText("3 Dateien wiederhergestellt.")).toBeVisible();
+  });
+
+  test("ROMs eines Emulators in die Bibliothek holen", async ({ page }) => {
+    await openCove(page, "/settings/emulators");
+    await page.getByLabel("Ordner").fill("/home/alex/ROMs/SNES");
+    await page.getByRole("button", { name: "Hinzufügen" }).click();
+    await page.getByRole("button", { name: "ROMs einlesen" }).click();
+    await expect(toasts(page).getByText("2 neue Spiele, 2 ROMs gefunden.")).toBeVisible();
+    await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: /My Library/ }).click();
+    await page.getByRole("button", { name: /^Super Nintendo/ }).click();
+    const games = page.getByRole("list", { name: "Spiele" });
+    await expect(games.getByRole("listitem")).toHaveCount(2);
+    await expect(games.getByText("Lighthouse Keeper").first()).toBeVisible();
+  });
+
   test("ein Spiel per Rechtsklick in eine eigene Sammlung legen", async ({ page }) => {
     await openCove(page, "/library");
     const games = page.getByRole("list", { name: "Spiele" });
@@ -176,6 +219,41 @@ test.describe("Bibliothek unter Linux", () => {
     await builds.getByRole("button", { name: "GE-Proton10-24 löschen" }).click();
     await expect(page.getByText("GE-Proton10-24 gelöscht.")).toBeVisible();
     await expect(page.getByRole("list", { name: "Von Steam installiert" }).getByText("Proton 9.0")).toBeVisible();
+  });
+
+  test("Spiel-Optionen: MangoHud und gamescope für ein Windows-Spiel", async ({ page }) => {
+    await openCove(page, "/library/game-11?tab=settings");
+    await page.getByRole("switch", { name: "MangoHud" }).click();
+    // gamescope is not installed in the test core: the switch says so.
+    await expect(page.getByRole("switch", { name: "gamescope" })).toBeDisabled();
+    await expect(page.getByText(/Valves Compositor.*Nicht installiert/)).toBeVisible();
+    await page.getByRole("switch", { name: "DXVK" }).click();
+    await page.getByRole("button", { name: "Speichern" }).click();
+    await expect(toasts(page).getByText("Starteinstellungen gespeichert")).toBeVisible();
+    // Read back from the core.
+    await page.getByRole("tab", { name: "Übersicht" }).click();
+    await page.getByRole("tab", { name: "Einstellungen" }).click();
+    await expect(page.getByRole("switch", { name: "MangoHud" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByRole("switch", { name: "DXVK" })).toHaveAttribute("aria-checked", "false");
+  });
+
+  test("umu-launcher und der Prefix eines Spiels", async ({ page }) => {
+    await openCove(page, "/library/game-11?tab=settings");
+    const prefix = page.getByRole("region", { name: "Proton-Prefix" });
+    await expect(prefix.getByText("Belegt 1,4 GB.")).toBeVisible();
+    await prefix.getByRole("button", { name: "Zurücksetzen" }).click();
+    const dialog = page.getByRole("dialog", { name: /Prefix von .* zurücksetzen\?/ });
+    await dialog.getByRole("button", { name: "Zurücksetzen" }).click();
+    await expect(toasts(page).getByText(/Prefix von .* zurückgesetzt\./)).toBeVisible();
+    await expect(prefix.getByText("Noch kein Prefix. Er entsteht beim ersten Start des Spiels.")).toBeVisible();
+
+    await page.getByRole("link", { name: "Settings" }).click();
+    await page.getByRole("link", { name: "Proton", exact: true }).click();
+    const umu = page.getByRole("switch", { name: "Steam Linux Runtime (umu-launcher)" });
+    await expect(umu).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByText("umu-launcher 1.4.4 ist installiert. Cove hält ihn aktuell.")).toBeVisible();
+    await umu.click();
+    await expect(page.getByText("Aus: Proton startet direkt.")).toBeVisible();
   });
 
   test("die Spielseite zeigt die ProtonDB-Bewertung", async ({ page }) => {

@@ -23,6 +23,9 @@ import { AccountsTab } from "./AccountsTab.tsx";
 import { PluginsTab } from "./PluginsTab.tsx";
 import { ProtonTab } from "./ProtonTab.tsx";
 import { Group, Panel, SettingsSkeleton } from "./parts.tsx";
+import { BackupsTab } from "./BackupsTab.tsx";
+import { EmulatorsTab } from "./EmulatorsTab.tsx";
+import { useSettings } from "./useSettings.ts";
 import { useQuery } from "../../hooks/useQuery.ts";
 import { queryClient } from "../../lib/queryClient.ts";
 import { cx } from "../../lib/cx.ts";
@@ -34,46 +37,11 @@ import { invalidateQueries } from "../../stores/query.ts";
 import { errorMessage, toast } from "../../stores/toasts.ts";
 import { useUi } from "../../stores/ui.ts";
 
-const TABS = ["general", "appearance", "library", "accounts", "catalog", "downloads", "plugins", "proton", "about"] as const;
+const TABS = ["general", "appearance", "library", "backups", "emulators", "accounts", "catalog", "downloads", "plugins", "proton", "about"] as const;
 
 type TabId = (typeof TABS)[number];
 
 const TAB_LABELS: Record<TabId, string> = localized((m) => m.settings.tabs);
-
-/** Loads settings once and saves every change immediately. */
-function useSettings(): {
-  settings: AppSettings | null;
-  error: string | null;
-  retry: () => void;
-  save: (fn: (s: AppSettings) => AppSettings) => void;
-} {
-  const query = useQuery("settings", api.settings.getSettings);
-  const save = (fn: (s: AppSettings) => AppSettings): void => {
-    if (query.status !== "success") return;
-    const { accent } = usePreferences.getState();
-    const next = { ...fn(query.data), appearance: { theme: "dark" as const, accent } };
-    query.update(() => next);
-    const languageChanged = next.general.language !== query.data.general.language;
-    api.settings.saveSettings(next).then(
-      () => {
-        // Texts from the core (errors, store status, reasons) follow the new language.
-        if (!languageChanged) return;
-        invalidateQueries();
-        void queryClient.invalidateQueries();
-      },
-      (error: unknown) => {
-        toast(errorMessage(error), "danger");
-        query.retry();
-      },
-    );
-  };
-  return {
-    settings: query.status === "success" ? query.data : null,
-    error: query.status === "error" ? query.error : null,
-    retry: query.retry,
-    save,
-  };
-}
 
 function GeneralTab() {
   const t = useMessages();
@@ -359,6 +327,15 @@ function LibraryTab() {
             checked={lib.epicCloudSaves}
             onChange={(epicCloudSaves) => {
               save((s) => ({ ...s, library: { ...s.library, epicCloudSaves } }));
+            }}
+          />
+        </SettingRow>
+        <SettingRow title={t.settings.gogCloudSaves} description={t.settings.gogCloudSavesHint}>
+          <Switch
+            label={t.settings.gogCloudSaves}
+            checked={lib.gogCloudSaves}
+            onChange={(gogCloudSaves) => {
+              save((s) => ({ ...s, library: { ...s.library, gogCloudSaves } }));
             }}
           />
         </SettingRow>
@@ -810,6 +787,8 @@ const PANELS: Record<TabId, () => ReactNode> = {
   downloads: DownloadsTab,
   plugins: PluginsTab,
   proton: ProtonTab,
+  backups: BackupsTab,
+  emulators: EmulatorsTab,
   about: AboutTab,
 };
 

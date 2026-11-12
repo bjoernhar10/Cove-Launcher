@@ -13,6 +13,7 @@ caches answers.
 | `GET /v1/game/:id` | Details of one IGDB game | 7 days |
 | `GET /v1/similar/:id` | Similar games | 7 days |
 | `POST /v1/match` `{ "title": "…" }` | Best catalogue candidates for a title, scored | 24 h |
+| `POST /v1/time-to-beat` `{ "ids": [1942, …] }` | Time to beat (seconds) of up to 500 IGDB games; games without reports are left out | 7 days |
 | `GET /v1/steam/profile/:steamid` | Steam name and whether the profile is public | 1 h |
 | `GET /v1/steam/owned/:steamid` | Owned games with playtime (`private: true` when hidden) | 1 h |
 | `GET /v1/steam/achievements/:steamid/:appid` | Player progress merged with names, icons and global rarity | 1 h (schema and rarity 7 days) |

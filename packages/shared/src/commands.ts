@@ -26,6 +26,14 @@ import type {
   ProtonProgress,
   ProtonRating,
   ProtonVersionId,
+  PrefixAction,
+  BackupInfo,
+  GameBackups,
+  RomScanResult,
+  SystemInfo,
+  GameTools,
+  PrefixInfo,
+  TimeToBeat,
   RunningGame,
   ScanCandidate,
   StoreAccount,
@@ -101,10 +109,28 @@ export interface CoveCommands {
   proton_list: { args: NoArgs; result: ProtonOverview };
   /** Loads the release list again; a new "latest" is installed in the background. */
   proton_check: { args: NoArgs; result: ProtonOverview };
-  /** Starts installing a GE-Proton build (progress: `proton-progress`). */
+  /** Starts installing a GE-Proton build or umu-launcher (`"umu"`; progress: `proton-progress`). */
   proton_install: { args: { versionId: ProtonVersionId }; result: null };
   /** Deletes a GE-Proton build no game uses. */
   proton_remove: { args: { versionId: ProtonVersionId }; result: null };
+  /** Save backups of a game: known to the manifest, files found now, backups. */
+  game_backups: { args: { gameId: GameId }; result: GameBackups };
+  /** Backs a game's saves up now; null when nothing changed since the last backup. */
+  game_backup_now: { args: { gameId: GameId }; result: BackupInfo | null };
+  /** Puts a backup back (the current saves are backed up first); returns the files restored. */
+  game_backup_restore: { args: { gameId: GameId; backupId: string }; result: number };
+  /** The systems Cove plays ROMs of, with their emulators. */
+  emulators_systems: { args: NoArgs; result: SystemInfo[] };
+  /** Adds the ROMs of every ROM folder to the library (a collection per system). */
+  emulators_scan: { args: NoArgs; result: RomScanResult };
+  /** Linux: which game tools (MangoHud, GameMode, gamescope) are installed. */
+  system_game_tools: { args: NoArgs; result: GameTools };
+  /** Stops a running install (a GE-Proton build or `"umu"`). */
+  proton_cancel: { args: { versionId: ProtonVersionId }; result: null };
+  /** Linux: a game's Proton prefix. */
+  game_prefix_info: { args: { gameId: GameId }; result: PrefixInfo };
+  /** Linux: opens, resets or runs winetricks on a game's Proton prefix. */
+  game_prefix_action: { args: { gameId: GameId; action: PrefixAction }; result: null };
   /** Moves the game folder into another games folder; progress arrives as `game-move-progress`. */
   game_move: { args: { gameId: GameId; folder: string }; result: null };
   /** Installed and newest version of a GOG or Epic game Cove installed. */
@@ -189,6 +215,8 @@ export interface CoveCommands {
   catalog_browse: { args: { filter: CatalogFilter; sort: CatalogSort; page: number }; result: CatalogPage };
   catalog_game_details: { args: { gameId: string }; result: CatalogGameDetails };
   catalog_similar: { args: { gameId: string }; result: CatalogPage };
+  /** How long games take, per catalogue id (`igdb-…`); ids without data are left out. */
+  catalog_time_to_beat: { args: { catalogIds: string[] }; result: Record<string, TimeToBeat> };
   library_match_candidates: { args: { gameId: GameId }; result: MatchCandidate[] };
   library_link_catalog: { args: { gameId: GameId; catalogId: string }; result: LibraryItem };
   library_reject_match: { args: { gameId: GameId }; result: LibraryItem };

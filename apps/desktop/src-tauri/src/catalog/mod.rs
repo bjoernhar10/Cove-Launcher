@@ -31,7 +31,7 @@ use crate::error::{AppError, AppResult};
 use crate::models::{
     AppSettings, CatalogCredentials, CatalogFilter, CatalogGameDetails, CatalogPage,
     CatalogProviderId, CatalogSort, CatalogSource, CatalogStatus, CoveServiceStatus, Game,
-    LibraryItem, MatchStatus,
+    LibraryItem, MatchStatus, TimeToBeat,
 };
 
 pub const CACHE_TTL_DAYS: i64 = 7;
@@ -444,6 +444,93 @@ impl CatalogService {
             total: None,
             offline: fetched.offline,
         })
+    }
+
+    /// How long games take (IGDB), per catalogue id. Cached per game for
+    /// 7 days, "no reports" too. Ids of other sources and games without
+    /// reports are left out; when the catalogue can't be reached the answer
+    /// holds what the cache knows instead of failing.
+    pub async fn time_to_beat(
+        &self,
+        catalog_ids: &[String],
+    ) -> AppResult<HashMap<String, TimeToBeat>> {
+        let key = |id: &str| format!("v{CACHE_VERSION}:{id}:time-to-beat");
+        let mut result = HashMap::new();
+        let mut stale: HashMap<String, TimeToBeat> = HashMap::new();
+        // (catalogue id, native id) still to ask for.
+        let mut missing: Vec<(String, String)> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for id in catalog_ids {
+            let Some((CatalogProviderId::Igdb, native)) = CatalogProviderId::parse_catalog_id(id)
+            else {
+                continue;
+            };
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            let cached = db::catalog_cache::get(&self.pool, &key(id))
+                .await?
+                .and_then(|entry| {
+                    let value: Option<TimeToBeat> = serde_json::from_str(&entry.value).ok()?;
+                    let fresh = chrono::Utc::now() - entry.fetched_at
+                        < chrono::Duration::days(CACHE_TTL_DAYS);
+                    Some((value, fresh))
+                });
+            match cached {
+                Some((value, true)) => {
+                    if let Some(value) = value {
+                        result.insert(id.clone(), value);
+                    }
+                }
+                Some((value, false)) => {
+                    if let Some(value) = value {
+                        stale.insert(id.clone(), value);
+                    }
+                    missing.push((id.clone(), native.to_owned()));
+                }
+                None => missing.push((id.clone(), native.to_owned())),
+            }
+        }
+        if missing.is_empty() {
+            return Ok(result);
+        }
+        let provider = match self.igdb_chain().await {
+            Ok(provider) => provider,
+            Err(error) => {
+                eprintln!("[cove] Spieldauer: {error}");
+                None
+            }
+        };
+        let natives: Vec<String> = missing.iter().map(|(_, native)| native.clone()).collect();
+        let fetched = match provider {
+            Some(provider) => match provider.time_to_beat(&natives).await {
+                Ok(found) => Some(found),
+                Err(error) => {
+                    eprintln!("[cove] Spieldauer nicht geladen: {error}");
+                    None
+                }
+            },
+            None => None,
+        };
+        match fetched {
+            Some(mut found) => {
+                for (id, native) in &missing {
+                    let value = found.remove(native);
+                    db::catalog_cache::put(
+                        &self.pool,
+                        CatalogProviderId::Igdb.as_str(),
+                        &key(id),
+                        &serde_json::to_string(&value)?,
+                    )
+                    .await?;
+                    if let Some(value) = value {
+                        result.insert(id.clone(), value);
+                    }
+                }
+            }
+            None => result.extend(stale),
+        }
+        Ok(result)
     }
 
     /// Image URLs of a game (for offline prefetching).
@@ -868,5 +955,79 @@ mod source_order_tests {
         let cached = offline_svc.details("igdb-7").await.unwrap();
         assert!(cached.offline);
         assert_eq!(cached.game.title, "Via own keys");
+    }
+
+    #[tokio::test]
+    async fn times_to_beat_come_from_the_proxy_or_own_keys_and_are_cached() {
+        let proxy = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/time-to-beat"))
+            .and(wiremock::matchers::body_json(json!({ "ids": [1942, 7] })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "items": {
+                "1942": { "hastily": 36_000, "normally": 72_000, "completely": null, "count": 12 }
+            } })))
+            .expect(1)
+            .mount(&proxy)
+            .await;
+        let igdb = MockServer::start().await;
+        let (svc, _tmp) = service(Some(proxy.uri()), &igdb).await;
+        let ids = |list: &[&str]| list.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+
+        let times = svc
+            .time_to_beat(&ids(&["igdb-1942", "igdb-7", "rawg-3", "igdb-1942"]))
+            .await
+            .unwrap();
+        assert_eq!(times.len(), 1);
+        assert_eq!(times["igdb-1942"].normally, Some(72_000));
+        assert_eq!(times["igdb-1942"].completely, None);
+        // Second time from the cache ("nothing" for igdb-7 too): the proxy expects one call.
+        let again = svc
+            .time_to_beat(&ids(&["igdb-1942", "igdb-7"]))
+            .await
+            .unwrap();
+        assert_eq!(again, times);
+
+        // An old cache entry still answers when nothing can be reached.
+        crate::db::catalog_cache::set_fetched_at(
+            &svc.pool,
+            "v2:igdb-1942:time-to-beat",
+            chrono::Utc::now() - chrono::Duration::days(8),
+        )
+        .await;
+        drop(proxy);
+        let stale = svc.time_to_beat(&ids(&["igdb-1942"])).await.unwrap();
+        assert_eq!(stale["igdb-1942"].hastily, Some(36_000));
+    }
+
+    #[tokio::test]
+    async fn an_older_proxy_without_times_hands_over_to_own_keys() {
+        let proxy = MockServer::start().await; // no /v1/time-to-beat: 404
+        let igdb = MockServer::start().await;
+        mount_igdb(&igdb).await;
+        Mock::given(method("POST"))
+            .and(path("/v4/game_time_to_beats"))
+            .and(wiremock::matchers::body_string_contains("where game_id = (7)"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                { "id": 1, "game_id": 7, "hastily": 3600, "normally": null, "completely": 7200, "count": 4 }
+            ])))
+            .mount(&igdb)
+            .await;
+        let (svc, _tmp) = service(Some(proxy.uri()), &igdb).await;
+        svc.set_credentials(CatalogCredentials::Igdb {
+            client_id: "id".into(),
+            client_secret: "s".into(),
+        })
+        .await
+        .unwrap();
+        let times = svc.time_to_beat(&["igdb-7".to_owned()]).await.unwrap();
+        assert_eq!(
+            times["igdb-7"],
+            TimeToBeat {
+                hastily: Some(3600),
+                normally: None,
+                completely: Some(7200),
+                count: 4
+            }
+        );
     }
 }

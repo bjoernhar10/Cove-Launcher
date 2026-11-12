@@ -10,6 +10,9 @@ export type BuiltinGroup = "all" | "installed" | "favorites" | StoreSource;
 /** A fixed group or one of the user's collections (`collection:<id>`). */
 export type LibraryGroup = BuiltinGroup | `collection:${string}`;
 
+/** Library filter by how long a game takes (main story and extras). */
+export type LengthFilter = "any" | "short" | "medium" | "long" | "veryLong";
+
 export function collectionGroup(id: CollectionId): LibraryGroup {
   return `collection:${id}`;
 }
@@ -19,10 +22,12 @@ interface PreferencesState {
   sidebarCollapsed: boolean;
   libraryView: LibraryView;
   libraryGroup: LibraryGroup;
+  libraryLength: LengthFilter;
   setAccent: (accent: AccentColor) => void;
   toggleSidebar: () => void;
   setLibraryView: (view: LibraryView) => void;
   setLibraryGroup: (group: LibraryGroup) => void;
+  setLibraryLength: (length: LengthFilter) => void;
 }
 
 /** Client-side UI preferences, persisted in localStorage so the accent applies before first paint. */
@@ -33,6 +38,7 @@ export const usePreferences = create<PreferencesState>()(
       sidebarCollapsed: false,
       libraryView: "grid",
       libraryGroup: "all",
+      libraryLength: "any",
       setAccent: (accent) => {
         set({ accent });
       },
@@ -44,6 +50,9 @@ export const usePreferences = create<PreferencesState>()(
       },
       setLibraryGroup: (libraryGroup) => {
         set({ libraryGroup });
+      },
+      setLibraryLength: (libraryLength) => {
+        set({ libraryLength });
       },
     }),
     { name: "cove.preferences" },

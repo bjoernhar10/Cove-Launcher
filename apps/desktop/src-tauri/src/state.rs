@@ -39,6 +39,8 @@ pub struct AppState {
     pub protondb: Arc<crate::protondb::ProtonDb>,
     /// Proton builds: GE-Proton downloads and updates, Steam's builds.
     pub proton: Arc<crate::proton::ProtonManager>,
+    /// Save backups of every game.
+    pub backups: Arc<crate::backups::BackupService>,
 }
 
 pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
@@ -60,7 +62,9 @@ pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
             game_folders: vec![games_dir.to_string_lossy().into_owned()],
             steam_silent_start: true,
             epic_cloud_saves: true,
+            gog_cloud_saves: true,
             default_proton: crate::proton::LATEST.to_owned(),
+            use_umu: true,
         },
         downloads: DownloadSettings {
             directory: games_dir.to_string_lossy().into_owned(),
@@ -70,5 +74,7 @@ pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
         catalog: CatalogSettings {
             use_cove_service: true,
         },
+        backups: crate::models::BackupSettings::default(),
+        emulators: crate::models::EmulatorSettings::default(),
     }
 }

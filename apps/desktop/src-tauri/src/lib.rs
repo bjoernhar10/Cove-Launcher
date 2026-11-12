@@ -5,17 +5,20 @@
 #[macro_use]
 mod i18n;
 mod auth;
+mod backups;
 mod catalog;
 mod commands;
 mod cove_achievements;
 mod db;
 mod downloads;
+mod emulators;
 mod error;
 mod folders;
 mod launcher;
 mod models;
 mod mover;
 mod plugins;
+mod prefix;
 mod proton;
 mod protondb;
 mod recommend;
@@ -24,6 +27,7 @@ mod sidecar;
 mod state;
 mod steam;
 mod stores;
+mod umu;
 mod updates;
 
 #[cfg(test)]
@@ -60,6 +64,16 @@ macro_rules! cove_handlers {
             $crate::commands::proton_check,
             $crate::commands::proton_install,
             $crate::commands::proton_remove,
+            $crate::commands::proton_cancel,
+            $crate::commands::game_backups,
+            $crate::commands::emulators_systems,
+            $crate::commands::emulators_scan,
+            $crate::commands::game_backup_now,
+            $crate::commands::game_backup_restore,
+            $crate::commands::system_game_tools,
+            $crate::commands::game_prefix_info,
+            $crate::commands::game_prefix_action,
+            $crate::commands::catalog_time_to_beat,
             $crate::commands::library_achievements,
             $crate::commands::library_playtime,
             $crate::commands::achievements_recent,
@@ -143,6 +157,20 @@ pub(crate) use cove_handlers;
 
 pub const GAME_STATE_CHANGED: &str = "game-state-changed";
 
+/// Store accounts through the C# connectors (keyring for the sessions).
+fn build_stores(pool: &sqlx::SqlitePool) -> Arc<stores::StoreService> {
+    Arc::new(stores::StoreService::new(
+        Arc::new(sidecar::Sidecar::with_errors(
+            sidecar::resolve_connectors(),
+            stores::CONNECTOR_ERRORS,
+        )),
+        pool.clone(),
+        Arc::new(catalog::secrets::KeyringStore::app()),
+        catalog::proxy::build_time_url(),
+        std::time::Duration::from_millis(1100),
+    ))
+}
+
 fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> {
     // Until the saved settings are read (or if they can't be), follow the system.
     i18n::set_language(i18n::system_default());
@@ -225,16 +253,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         }
     });
 
-    let stores = Arc::new(stores::StoreService::new(
-        Arc::new(sidecar::Sidecar::with_errors(
-            sidecar::resolve_connectors(),
-            stores::CONNECTOR_ERRORS,
-        )),
-        pool.clone(),
-        Arc::new(catalog::secrets::KeyringStore::app()),
-        catalog::proxy::build_time_url(),
-        std::time::Duration::from_millis(1100),
-    ));
+    let stores = build_stores(&pool);
 
     let downloads = build_downloads(app, &pool, &defaults, &stores, open_url.clone());
     let proton = build_proton(app, &pool, &data_dir, &host, &defaults);
@@ -249,6 +268,12 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         open_url: open_url.clone(),
         protondb: Arc::new(protondb::ProtonDb::new(pool.clone())),
         proton,
+        backups: Arc::new(backups::BackupService::new(
+            pool.clone(),
+            defaults.clone(),
+            data_dir.clone(),
+            backups::manifest::MANIFEST_URL.into(),
+        )),
         launcher: Launcher::new(pool.clone(), emit, open_url, Timing::default()),
         defaults,
         catalog,
@@ -279,7 +304,8 @@ fn keep_proton_up_to_date<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
     });
 }
 
-/// After a session: Epic cloud saves of games Cove installed go up (in the background).
+/// After a session (in the background): cloud saves of Epic and GOG games Cove
+/// installed go up, then the save backup.
 fn after_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, game_id: String) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -289,6 +315,7 @@ fn after_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, game_id: String) 
         if let Err(error) = state.downloads.after_session(&game_id, &state.host).await {
             eprintln!("[cove] Cloud-Spielstände von {game_id}: {error}");
         }
+        state.backups.after_session(&game_id, &state.host).await;
     });
 }
 

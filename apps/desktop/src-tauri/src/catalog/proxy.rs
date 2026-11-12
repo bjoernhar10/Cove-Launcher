@@ -6,8 +6,12 @@ use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
-use super::provider::{status_error, BrowseQuery, CatalogProvider, ProviderError, ProviderPage};
-use crate::models::{CatalogProviderId, CatalogSort, Game, MatchCandidate, Platform};
+use super::provider::{
+    status_error, BrowseQuery, CatalogProvider, ProviderError, ProviderPage, TIME_TO_BEAT_BATCH,
+};
+use std::collections::HashMap;
+
+use crate::models::{CatalogProviderId, CatalogSort, Game, MatchCandidate, Platform, TimeToBeat};
 
 /// Proxy URL baked in at build time (see `build.rs`); None when not configured.
 pub fn build_time_url() -> Option<String> {
@@ -31,6 +35,11 @@ struct GameBody {
 #[derive(Debug, Deserialize)]
 struct MatchBody {
     candidates: Vec<MatchCandidate>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TimeToBeatBody {
+    items: HashMap<String, TimeToBeat>,
 }
 
 pub struct CoveProxyProvider {
@@ -172,6 +181,33 @@ impl CatalogProvider for CoveProxyProvider {
         let body: MatchBody = Self::read(response).await?;
         Ok(body.candidates.into_iter().map(|c| c.game).collect())
     }
+
+    /// `POST /v1/time-to-beat` with up to 500 ids per request.
+    async fn time_to_beat(
+        &self,
+        native_ids: &[String],
+    ) -> Result<HashMap<String, TimeToBeat>, ProviderError> {
+        let ids: Vec<u64> = native_ids.iter().filter_map(|id| id.parse().ok()).collect();
+        let mut found = HashMap::new();
+        for chunk in ids.chunks(TIME_TO_BEAT_BATCH) {
+            let response = self
+                .client
+                .post(format!("{}/v1/time-to-beat", self.base))
+                .json(&serde_json::json!({ "ids": chunk }))
+                .send()
+                .await?;
+            let body: TimeToBeatBody = match Self::read(response).await {
+                Ok(body) => body,
+                // An older proxy without this route: let the next source try.
+                Err(ProviderError::NotFound) => {
+                    return Err(ProviderError::Http(404, "time-to-beat".into()))
+                }
+                Err(error) => return Err(error),
+            };
+            found.extend(body.items);
+        }
+        Ok(found)
+    }
 }
 
 /// Tries providers in order (Cove proxy → own IGDB keys). A definite "not found"
@@ -242,6 +278,14 @@ impl CatalogProvider for FallbackProvider {
 
     async fn match_candidates(&self, title: &str) -> Result<Vec<Game>, ProviderError> {
         self.first_ok(|p| async move { p.match_candidates(title).await })
+            .await
+    }
+
+    async fn time_to_beat(
+        &self,
+        native_ids: &[String],
+    ) -> Result<HashMap<String, TimeToBeat>, ProviderError> {
+        self.first_ok(|p| async move { p.time_to_beat(native_ids).await })
             .await
     }
 }

@@ -15,6 +15,8 @@ const PAGES = [
   "/settings/general",
   "/settings/appearance",
   "/settings/library",
+  "/settings/backups",
+  "/settings/emulators",
   "/settings/accounts",
   "/settings/catalog",
   "/settings/downloads",

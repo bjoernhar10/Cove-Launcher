@@ -104,6 +104,36 @@ export interface LaunchOptions {
    * null = the default (`library.defaultProton`).
    */
   protonVersion: ProtonVersionId | null;
+  /** Linux: MangoHud, GameMode, gamescope, FSR, DXVK/VKD3D (games Cove starts itself). */
+  tweaks: GameTweaks;
+}
+
+/** Per-game options on Linux for games Cove starts itself. */
+export interface GameTweaks {
+  /** Performance overlay (`mangohud`). */
+  mangohud: boolean;
+  /** Feral GameMode (`gamemoderun`). */
+  gamemode: boolean;
+  /** Run inside Valve's gamescope compositor. */
+  gamescope: boolean;
+  /** gamescope: the resolution the game renders at; null = the game's own. */
+  gamescopeWidth: number | null;
+  gamescopeHeight: number | null;
+  /** gamescope: fullscreen. */
+  gamescopeFullscreen: boolean;
+  /** AMD FSR 1 upscaling: gamescope's filter, else GE-Proton's `WINE_FULLSCREEN_FSR`. */
+  fsr: boolean;
+  /** Proton: Direct3D 9 to 11 through DXVK (off = WineD3D). */
+  dxvk: boolean;
+  /** Proton: Direct3D 12 through VKD3D-Proton (off = no D3D12). */
+  vkd3d: boolean;
+}
+
+/** Which Linux game tools are installed. */
+export interface GameTools {
+  mangohud: boolean;
+  gamemode: boolean;
+  gamescope: boolean;
 }
 
 export interface AchievementProgress {
@@ -338,7 +368,7 @@ export interface ProtonVersion {
   removable: boolean;
 }
 
-export type ProtonPhase = "downloading" | "verifying" | "unpacking" | "done" | "failed";
+export type ProtonPhase = "downloading" | "verifying" | "unpacking" | "done" | "failed" | "cancelled";
 
 /** Event `proton-progress`: one GE-Proton install, at most about 4 per second. */
 export interface ProtonProgress {
@@ -361,6 +391,48 @@ export interface ProtonOverview {
   /** The release list could not be loaded; only installed builds are listed. */
   offline: boolean;
   installing: ProtonProgress[];
+  umu: UmuStatus;
+}
+
+/** Where the umu-launcher Cove uses comes from: the system's package or Cove's own download. */
+export type UmuSource = "system" | "cove";
+
+/** umu-launcher: runs Proton inside the Steam Linux Runtime, like Steam does. */
+export interface UmuStatus {
+  /** `library.useUmu`. */
+  enabled: boolean;
+  /** null = not on this machine yet. */
+  source: UmuSource | null;
+  /** Version of Cove's copy (null for the system's). */
+  version: string | null;
+  /** Newest release, when the list could be loaded. */
+  latest: string | null;
+  /** `python3` is there (Cove's copy needs it). */
+  python: boolean;
+}
+
+/** A game's Proton prefix (Linux). */
+export interface PrefixInfo {
+  /** The prefix has been created (the game started at least once). */
+  exists: boolean;
+  sizeBytes: number | null;
+  /** `winetricks` is installed. */
+  winetricks: boolean;
+}
+
+/** open = show the folder · reset = delete it (the next start creates a fresh one) · winetricks = start winetricks for it. */
+export type PrefixAction = "open" | "reset" | "winetricks";
+
+/** How long a game takes, in seconds (IGDB "time to beat", from player reports). */
+export interface TimeToBeat {
+  /** Main story. */
+  hastily: number | null;
+  /** Main story and extras. */
+  normally: number | null;
+  /** Everything (100 %). */
+  completely: number | null;
+  /** Number of player reports. */
+  count: number;
 }
 
 /** ProtonDB tier: how well a Windows game runs on Linux through Proton. */
@@ -707,8 +779,12 @@ export interface LibrarySettings {
   steamSilentStart: boolean;
   /** Sync Epic cloud saves before and after playing (games Cove installed). */
   epicCloudSaves: boolean;
+  /** Sync GOG cloud saves before and after playing (games Cove installed). */
+  gogCloudSaves: boolean;
   /** Linux: Proton build for games without a choice of their own (`"latest"` by default). */
   defaultProton: ProtonVersionId;
+  /** Linux: start Proton through umu-launcher (Steam Linux Runtime, per-game fixes). */
+  useUmu: boolean;
 }
 
 export interface DownloadSettings {
@@ -729,6 +805,82 @@ export interface AppSettings {
   library: LibrarySettings;
   downloads: DownloadSettings;
   catalog: CatalogSettings;
+  backups: BackupSettings;
+  emulators: EmulatorSettings;
+}
+
+/** Save backups of every game (save locations from the Ludusavi manifest). */
+export interface BackupSettings {
+  /** Back up after every session. */
+  enabled: boolean;
+  /** Where backups go; empty = Cove's app data folder. */
+  directory: string;
+  /** Backups kept per game (1 to 100). */
+  keep: number;
+}
+
+/** Folders with ROMs and the emulator that plays them. */
+export interface EmulatorSettings {
+  romFolders: RomFolder[];
+}
+
+export interface RomFolder {
+  /** Stable id (chosen by the UI). */
+  id: string;
+  /** `snes`, `ps2` … (`SystemInfo.id`). */
+  system: string;
+  path: string;
+  /** Emulator id of the system (`retroarch`, `dolphin` …) or `custom`. */
+  emulator: string;
+  /** Program to run instead of the one found on the system (needed for `custom`). */
+  program: string | null;
+  /** `custom`: the arguments, `{rom}` stands for the ROM file. */
+  arguments: string;
+}
+
+/** An emulator for a system and whether it is installed. */
+export interface EmulatorInfo {
+  id: string;
+  name: string;
+  installed: boolean;
+}
+
+/** A console Cove can play ROMs of. */
+export interface SystemInfo {
+  id: string;
+  name: string;
+  /** ROM file extensions (lower case, without the dot). */
+  extensions: string[];
+  /** RetroArch first. */
+  emulators: EmulatorInfo[];
+}
+
+/** Result of scanning the ROM folders. */
+export interface RomScanResult {
+  /** ROMs found in all folders. */
+  found: number;
+  /** New library games. */
+  added: number;
+}
+
+/** One save backup of a game. */
+export interface BackupInfo {
+  /** Folder name (the time), used to restore it. */
+  id: string;
+  createdAt: IsoDateTime;
+  files: number;
+  bytes: number;
+}
+
+/** Save backups of a game, for its page. */
+export interface GameBackups {
+  /** The manifest knows where this game keeps its saves. */
+  known: boolean;
+  /** Save files found right now. */
+  files: number;
+  bytes: number;
+  /** Newest first. */
+  backups: BackupInfo[];
 }
 
 /** Input for adding a game manually. */
@@ -858,6 +1010,16 @@ export interface ProxyMatchRequest {
 /** `POST /v1/match` — best catalogue candidates for a title, best first. */
 export interface ProxyMatchResponse {
   candidates: MatchCandidate[];
+}
+
+/** `POST /v1/time-to-beat`: IGDB game ids (at most 500). */
+export interface ProxyTimeToBeatRequest {
+  ids: number[];
+}
+
+/** Times per IGDB game id; ids without reports are left out. */
+export interface ProxyTimeToBeatResponse {
+  items: Record<string, TimeToBeat>;
 }
 
 export type ProxyErrorCode =
