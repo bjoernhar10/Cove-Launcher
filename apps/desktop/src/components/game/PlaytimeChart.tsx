@@ -59,15 +59,15 @@ export function PlaytimeChart({ days, title }: { days: PlaytimeDay[]; title: str
         )}
         <div className="mt-2 flex justify-between text-xs text-fg-subtle" aria-hidden>
           <span>{days[0] ? formatDateShort(days[0].date) : ""}</span>
-          <span>Heute</span>
+          <span>{t.common.today}</span>
         </div>
       </div>
       <table className="sr-only">
         <caption>{title}</caption>
         <thead>
           <tr>
-            <th scope="col">Tag</th>
-            <th scope="col">Spielzeit</th>
+            <th scope="col">{t.common.day}</th>
+            <th scope="col">{t.common.playtime}</th>
           </tr>
         </thead>
         <tbody>

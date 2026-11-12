@@ -53,7 +53,7 @@ function SortSelect() {
     <label className="flex items-center gap-2 text-sm text-fg-muted">
       {t.catalogue.sort}
       <Select
-        className="w-36"
+        className="w-40"
         value={sort}
         onChange={setSort}
         options={(Object.keys(SORT_LABELS) as (keyof typeof SORT_LABELS)[]).map((value) => ({ value, label: SORT_LABELS[value] }))}

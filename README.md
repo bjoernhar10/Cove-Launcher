@@ -1,92 +1,110 @@
 # Cove
 
-A calm, universal desktop game launcher for **Linux, Windows and macOS** (Linux x86_64 and ARM64,
-Windows x64, macOS Apple Silicon and Intel).
-Cove brings your games from Steam, GOG, Epic, itch.io and your own folders together in **one**
-tidy library, launches them (on Linux optionally through Proton or Wine) and keeps track of
-playtime and achievements. No ads, no social feed, no accounts of its own.
+**A calm, universal game launcher for Linux, Windows and macOS.**
 
-![Cove: Home](docs/screenshots/home-dark.png)
+Cove brings your games from Steam, GOG, Epic, itch.io, emulators and your own folders together in
+one tidy library. It installs GOG and Epic games without their launchers, runs Windows games on
+Linux with Proton, backs up your saves and keeps track of playtime and achievements.
+No ads, no social feed, no account of its own.
+
+[Download](https://github.com/bjoernhar10/Cove-Launcher/releases/latest) ·
+[Features](#features) ·
+[Build from source](#build-from-source) ·
+[Plugins](docs/plugins.md)
+
+![Cove: Home](docs/screenshots/home.png)
 
 | | |
 |---|---|
-| ![Library](docs/screenshots/library-dark.png) | ![Game page](docs/screenshots/game-dark.png) |
-| ![Catalogue](docs/screenshots/catalogue-dark.png) | ![Downloads](docs/screenshots/downloads-dark.png) |
+| ![My Library](docs/screenshots/library.png) | ![Game page](docs/screenshots/game.png) |
+| ![Catalogue](docs/screenshots/catalogue.png) | ![Catalogue game page](docs/screenshots/catalogue-game.png) |
+| ![Game options on Linux](docs/screenshots/game-options.png) | ![Save backups and Proton prefix](docs/screenshots/backups.png) |
+| ![Downloads](docs/screenshots/downloads.png) | ![Emulators](docs/screenshots/emulators.png) |
 
-> Status: early development (0.1). Everything below works; expect rough edges.
-> The screenshots show the real app with game data from IGDB and an example profile.
+<sub>The screenshots show invented demo games with drawn artwork.</sub>
 
 ## Features
 
-- **One library for everything:** grid or list view, groups for installed games, favourites and
-  each store. Stays smooth with thousands of games (virtualised lists, lazy images).
-- **Store accounts:** sign in to Steam, GOG and Epic in the store's own login page. Cove never
-  sees your password; tokens stay in the system keyring. Owned games, playtime and achievements
-  are imported. Games installed locally (Steam, Heroic, Legendary, GOG Galaxy) are found without
-  any login.
-- **Launching and playtime:** native, through Proton or Wine (Linux), or through the store client,
-  with custom arguments and environment variables. Playtime follows the whole process tree;
-  the game page shows the last 14 days.
+### One library
+
+- **Every store in one place:** sign in to Steam, GOG and Epic on the store's own login page and
+  your games, playtime and achievements are imported. Add your itch.io key to download your
+  purchases. Games already installed through Steam, Heroic, Legendary or GOG Galaxy are found
+  without any login.
+- **Your own games and emulators:** add any game folder, or a ROM folder per system (NES to
+  PlayStation 2, Dreamcast, PSP …). Every ROM becomes a game in your library and starts with
+  RetroArch, a standalone emulator (Dolphin, PCSX2, DuckStation, PPSSPP, mGBA, melonDS, Flycast)
+  or your own program. Cove brings no emulators, BIOS files or ROMs.
+- **Tidy:** grid or list, groups for installed games, favourites and each store, your own
+  collections ("With friends", "Started" …), a length filter and a command palette (`Ctrl+K`).
+  Stays smooth with thousands of games.
+- **Playtime and achievements:** playtime follows the whole process tree, the game page shows the
+  last 14 days. Achievements come from the stores, plus Cove's own and those of plugins.
+
+### Installing and playing
+
+- **GOG and Epic without their launchers:** Cove downloads, installs, updates and starts GOG and
+  Epic games itself, with your choice of DLCs. Updates only download what changed. Games with
+  anti-cheat or a third-party launcher are left to the Epic Launcher, and Cove says so.
+- **Steam stays Steam:** Steam games install and start through Steam. If Steam isn't running, Cove
+  starts it silently first, so no Steam window pops up.
+- **Downloads from legal sources:** your itch.io purchases (with soundtracks and other extras)
+  and direct links for DRM-free games, mods and patches. Parallel chunks, pause and resume, a
+  bandwidth limit, checksum checks and unpacking. Before each install Cove shows the sizes, the
+  target folder and the free space; installed games can be moved between drives.
+
+### Linux gaming
+
+- **Proton without Steam:** GE-Proton (downloaded and kept up to date by Cove) or any Proton Steam
+  installed, per game or as the default. Proton runs inside the Steam Linux Runtime through
+  umu-launcher, with its per-game fixes, just like in Steam.
+- **Game options per game:** MangoHud, GameMode, gamescope (with game resolution and fullscreen),
+  AMD FSR, and DXVK / VKD3D-Proton on or off, next to your own launch arguments and environment
+  variables.
+- **Prefix tools:** see each game's Proton prefix size, open it, reset it or run winetricks.
+- **Linux compatibility at a glance:** every game page shows its ProtonDB rating.
+
+### Your saves
+
+- **Save backups for every game:** after each session Cove backs up the game's saves into a folder
+  you choose, for example one that Syncthing or Nextcloud syncs. Where a game keeps its saves comes
+  from the open [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest) (over 20,000
+  games), also inside Proton prefixes. Restore any backup from the game page.
+- **Cloud saves** of the GOG and Epic games Cove installed are synced before and after playing,
+  compatible with GOG Galaxy and the Epic Launcher.
+
+### Discovering
+
 - **Catalogue** with search and filters (genre, platform, year, rating), powered by IGDB through
   Cove's own proxy, so you need no API keys. Works offline from a local cache.
-- **Recommendations** computed on your machine (hybrid content-based recommender in Python),
-  each with a short reason. If the recommender is unavailable, Cove falls back to a simple ranking.
-- **Downloads** from legal sources only: direct links for DRM-free games, mods and patches, and
-  your itch.io purchases through the official API. Parallel chunks, resume after restart, pause,
-  bandwidth limit, SHA-256 check, unpacking (zip, 7z, tar, tar.gz) and automatic library entry.
-  Before each install a dialog shows the sizes, the target folder and the free space on that drive.
-  Several games folders (one per drive, like Steam libraries); installed games can be moved
-  between them.
-- **GOG and Epic without their launchers:** Cove downloads, installs, updates and starts GOG
-  and Epic games itself (Windows builds through Proton on Linux, native Linux GOG builds directly).
-  Updates only download what changed. Epic games start with your Epic login. Cloud saves of Epic
-  and GOG games are synced before and after playing (compatible with GOG Galaxy). Games with anti-cheat or a third-party launcher are left to
-  the Epic Launcher, and Cove says so. Steam games are installed by Steam.
-- **Steam in the background:** Steam games always start through Steam. If Steam isn't running,
-  Cove starts it silently (tray only) first, so no Steam window shows up.
-- **Collections:** your own groups like "With friends" or "Started", next to the store groups in
-  the library. Right-click a game to put it into one or several.
-- **Proton without Steam (Linux):** pick the Proton version per game or as the default, from
-  GE-Proton releases and the versions Steam installed. Cove downloads a missing version right
-  away (a running download can be cancelled) and keeps "always the newest" up to date by itself.
-  Proton runs inside the Steam Linux Runtime through umu-launcher, with its per-game fixes, like in
-  Steam; without umu it starts directly. Each game's prefix can be opened, reset or tuned with
-  winetricks.
-- **Game options (Linux):** per game MangoHud, GameMode, gamescope (with a game resolution and
-  fullscreen), AMD FSR, and DXVK / VKD3D-Proton on or off, next to your own launch arguments and
-  environment variables.
-- **Save backups for every game:** after each session Cove backs up the game's saves (where they
-  are comes from the open Ludusavi manifest, over 20,000 games, also inside Proton prefixes) into a
-  folder you choose, e.g. one Syncthing or Nextcloud syncs. Restore any backup from the game page.
-- **Emulators and ROMs:** add a ROM folder per system (NES to PlayStation 2, Dreamcast …) with
-  RetroArch or a standalone emulator (Dolphin, PCSX2, DuckStation, PPSSPP, mGBA, melonDS, Flycast)
-  or your own program. Every ROM becomes a library game with a collection per system. Cove brings no
-  emulators, BIOS files or ROMs.
-- **Time to beat:** every game page shows how long the main story, main + extras and 100 % take
-  (IGDB player reports), and My Library can be filtered by length.
-- **Linux compatibility:** on Linux every game page shows its ProtonDB rating (Platinum to Borked)
-  with the number of reports. Games from other stores are rated through their Steam version.
-- **Achievements** from the stores plus Cove's own (and plugin) achievements.
+- **Recommendations** computed on your own computer, each with a short reason.
+- **Time to beat:** main story, main + extras and 100 % on game pages.
+
+### And also
+
+- **Private by design:** Cove never sees your store passwords; tokens live only in your system's
+  keyring. Recommendations are computed locally.
+- **Calm design:** a dark, quiet interface with five muted accent colours, fully usable with the
+  keyboard, WCAG 2.1 AA contrast. English and German.
 - **Plugins** in plain JavaScript, isolated in a Web Worker with browser-extension-style
   permissions. Guide: [docs/plugins.md](docs/plugins.md).
-- **Calm design:** dark interface, five muted accent colours, command palette (`Ctrl+K`),
-  fully usable with the keyboard, WCAG 2.1 AA contrast.
-- **German and English:** the whole app, including error messages and recommendation reasons,
-  follows the language chosen in Settings (new installs start in the system language).
-- **Updates** through the signed Tauri updater (Windows, macOS and AppImage; `.deb`/`.rpm` installs are
-  updated by the package manager).
+- **Updates itself** through the signed Tauri updater (Windows, macOS and AppImage; `.deb` and
+  `.rpm` installs are updated by the package manager).
 
 ## Install
 
-Pre-built packages will be on the [releases page](https://github.com/bjoernhar10/Cove-Launcher/releases):
+Download the newest version from the [releases page](https://github.com/bjoernhar10/Cove-Launcher/releases/latest):
 
-| System | Package |
+| System | Download |
 |---|---|
-| Linux | `.AppImage` (updates itself), `.deb`, `.rpm` |
-| Windows | `.msi` or the `-setup.exe` (NSIS) installer |
+| Linux x86_64 | `.AppImage` (updates itself), `.deb` (`amd64`), `.rpm` (`x86_64`) |
+| Linux ARM64 | `.AppImage`, `.deb` (`arm64`), `.rpm` (`aarch64`) |
+| Windows x64 | `-setup.exe` or `.msi` |
+| macOS Apple Silicon | `_aarch64.dmg` |
+| macOS Intel | `_x64.dmg` |
 
-Until the first release, every push to `main` builds all packages; download them from the
-artifacts of the latest [Build workflow run](https://github.com/bjoernhar10/Cove-Launcher/actions/workflows/release.yml).
+The macOS builds are not notarized yet: if macOS refuses to open Cove, right-click it in
+Applications and choose **Open**.
 
 ## Build from source
 
@@ -140,13 +158,16 @@ core (`apps/desktop/src/test/e2e.ts`); the core itself is covered by its own IPC
 Before the first run: `npx playwright install chromium` in `apps/desktop`.
 
 GitHub Actions runs all of this on every push and pull request
-([ci.yml](.github/workflows/ci.yml)) and builds the Linux and Windows packages
-([release.yml](.github/workflows/release.yml)).
+([ci.yml](.github/workflows/ci.yml)) and builds the packages for every system, each on its own
+runner ([release.yml](.github/workflows/release.yml)).
+
+README screenshots come from `COVE_SCREENSHOTS=1 npx playwright test screenshots` in
+`apps/desktop` (invented games from `e2e/demoGames.ts`, English UI).
 
 ## Releasing
 
 1. Raise the version in `apps/desktop/src-tauri/tauri.conf.json` (and `Cargo.toml`, `package.json`).
-2. Push a tag: `git tag v0.2.0 && git push origin v0.2.0`.
+2. Push a tag: `git tag v0.6.0 && git push origin v0.6.0`.
 3. The Build workflow creates a **draft** release with all packages, update signatures and
    `latest.json`. Check it and publish it; installed copies of Cove then offer the update.
 

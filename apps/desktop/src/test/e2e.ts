@@ -48,9 +48,9 @@ function demoItem(index: number): LibraryItem {
 }
 
 /**
- * Real catalogue data for the README screenshots (`e2e/screenshots.e2e.ts` fetches it
- * from the Cove proxy and injects it as `window.__coveDemo`). Without it the tests use
- * the invented titles above, so they never depend on the network.
+ * Demo data for the README screenshots: invented games with drawn artwork
+ * (`e2e/demoGames.ts`), injected by `e2e/screenshots.e2e.ts` as `window.__coveDemo`.
+ * The screenshots are in English; without the demo the tests use the titles above.
  */
 interface Demo {
   library: Game[];
@@ -63,7 +63,10 @@ const demo = (window as unknown as { __coveDemo?: Demo }).__coveDemo;
 function rand(id: string, salt: number): number {
   let h = salt * 7919;
   for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return (h % 10_000) / 10_000;
+  // Mix the bits, so ids that differ only in the last digit get unrelated numbers.
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) % 10_000 / 10_000;
 }
 
 function realItem(game: Game, index: number): LibraryItem {
@@ -148,6 +151,44 @@ if (demo) {
   for (const store of ["steam", "gog", "epic"] as const) {
     Object.assign(core.accounts[store], { status: "connected", connected: true, accountName: "alex", gameCount: games(store), lastSyncedAt: synced });
   }
+  core.settings.general.language = "en";
+  core.settings.library.gameFolders = ["/home/alex/Games", "/mnt/data/Games"];
+  core.settings.downloads.directory = "/home/alex/Games";
+  const ids = core.library.map((item) => item.game.id);
+  core.collections = [
+    { id: "1", name: "With friends", gameIds: ids.filter((_, i) => i % 6 === 1) },
+    { id: "2", name: "Started", gameIds: ids.slice(0, 5) },
+    { id: "3", name: "Short evenings", gameIds: ids.filter((_, i) => i % 4 === 2) },
+  ];
+  // A Windows game that runs with Proton, with game options, a prefix and save backups.
+  const proton = core.library.find((item) => item.entry.source === "manual" && item.entry.installed);
+  if (proton) {
+    const folder = proton.entry.installPath ?? "/home/alex/Games";
+    proton.entry.executablePath = `${folder}/${proton.game.title.replace(/\W+/g, "")}.exe`;
+    proton.entry.installedByCove = true;
+    proton.entry.launchOptions = {
+      ...proton.entry.launchOptions,
+      compatibilityTool: "proton",
+      protonVersion: "GE-Proton10-24",
+      tweaks: { ...proton.entry.launchOptions.tweaks, mangohud: true, gamemode: true },
+      env: [{ key: "DXVK_FRAME_RATE", value: "120" }],
+    };
+    core.prefixes[proton.game.id] = { exists: true, sizeBytes: 1_350_000_000, winetricks: true };
+    core.backups[proton.game.id] = {
+      known: true,
+      files: 6,
+      bytes: 4_800_000,
+      backups: [
+        { id: "2026-11-11_20-15-00.000", createdAt: "2026-11-11T20:15:00Z", files: 6, bytes: 4_800_000 },
+        { id: "2026-11-09_19-02-00.000", createdAt: "2026-11-09T19:02:00Z", files: 6, bytes: 4_650_000 },
+        { id: "2026-11-06_21-40-00.000", createdAt: "2026-11-06T21:40:00Z", files: 5, bytes: 4_100_000 },
+      ],
+    };
+  }
+  core.settings.emulators.romFolders = [
+    { id: "snes", system: "snes", path: "/home/alex/ROMs/SNES", emulator: "retroarch", program: null, arguments: "" },
+    { id: "ps2", system: "ps2", path: "/home/alex/ROMs/PS2", emulator: "retroarch", program: null, arguments: "" },
+  ];
 }
 else FAKE_CATALOG.push(...Array.from({ length: 21 }, (_, i) => ({ ...demoItem(i + 3).game, id: `igdb-${String(i + 10)}` })));
 
@@ -220,13 +261,13 @@ function demoAnswer(command: string, args: Record<string, unknown> | undefined):
           return {
             game,
             score: 1 - i / 20,
-            reason: i % 2 === 0 && anchor ? `Ähnlich wie ${anchor.game.title}` : `Weil du gern ${GENRE_LABELS[game.genres[0] ?? "adventure"]} spielst`,
+            reason: i % 2 === 0 && anchor ? `Similar to ${anchor.game.title}` : `Because you like ${GENRE_LABELS[game.genres[0] ?? "adventure"]}`,
           };
         }),
       };
     case "recommendations_discover":
       return {
-        value: fresh.slice(limit, limit * 2).map((game, i): Recommendation => ({ game, score: 0.5 - i / 40, reason: `Neu für dich: ${GENRE_LABELS[game.genres[0] ?? "adventure"]}` })),
+        value: fresh.slice(limit, limit * 2).map((game, i): Recommendation => ({ game, score: 0.5 - i / 40, reason: `New for you: ${GENRE_LABELS[game.genres[0] ?? "adventure"]}` })),
       };
     case "catalog_browse": {
       const page = Number(args?.page ?? 0);
@@ -234,7 +275,7 @@ function demoAnswer(command: string, args: Record<string, unknown> | undefined):
       const reasons = Object.fromEntries(
         items.map((g, i) => {
           const anchor = core.library[(i * 5 + 2) % core.library.length] ?? favourite;
-          return [g.id, i % 3 === 1 ? `Beliebt bei ${GENRE_LABELS[g.genres[0] ?? "adventure"]}` : `Ähnlich wie ${anchor?.game.title ?? ""}`];
+          return [g.id, i % 3 === 1 ? `Popular in ${GENRE_LABELS[g.genres[0] ?? "adventure"]}` : `Similar to ${anchor?.game.title ?? ""}`];
         }),
       );
       const sort = (args?.sort as string | undefined) ?? "recommended";

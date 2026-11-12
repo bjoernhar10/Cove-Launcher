@@ -1,17 +1,17 @@
-import type { Game, ProxyPage } from "@cove/shared";
+import type { Game } from "@cove/shared";
 import { expect, test, type Page } from "@playwright/test";
-import { openCove } from "./app.ts";
+import { LINUX_USER_AGENT } from "./app.ts";
+import { demoGames } from "./demoGames.ts";
 
 /**
- * README screenshots (`docs/screenshots`) with real games: titles, covers and
- * artwork come from the Cove catalogue proxy (IGDB), exactly as the app shows them.
+ * README screenshots (`docs/screenshots`), in English, on Linux, with invented
+ * games and drawn artwork (`demoGames.ts`): no real game or store artwork.
  * Only runs on request: `COVE_SCREENSHOTS=1 npx playwright test screenshots`.
  */
 test.skip(!process.env.COVE_SCREENSHOTS, "set COVE_SCREENSHOTS=1 to update the README screenshots");
-test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, locale: "en-US", userAgent: LINUX_USER_AGENT });
 
 const OUT = "../../docs/screenshots";
-const PROXY = process.env.COVE_CATALOG_PROXY_URL ?? "https://cove-catalog-proxy.bjoernharter-github.workers.dev";
 
 interface Demo {
   library: Game[];
@@ -19,27 +19,21 @@ interface Demo {
   total: number;
 }
 
-async function browse(query: string): Promise<ProxyPage> {
-  const response = await fetch(`${PROXY}/v1/browse?${query}`);
-  if (!response.ok) throw new Error(`Katalog nicht erreichbar: ${String(response.status)}`);
-  return (await response.json()) as ProxyPage;
-}
-
-/** A plausible library (well-known games with full artwork) and a catalogue to browse. */
-async function loadDemo(): Promise<Demo> {
-  const pages = await Promise.all([0, 1, 2, 3].map((page) => browse(`sort=popular&page=${String(page)}`)));
-  const seen = new Set<string>();
-  const games = pages
-    .flatMap((p) => p.items)
-    .filter((g) => g.artwork.cover.url && g.artwork.header.url && !seen.has(g.id) && seen.add(g.id));
+function loadDemo(): Demo {
+  const games = demoGames();
   const library = games.filter((_, i) => i % 3 !== 2).slice(0, 36);
-  return { library, catalog: games, total: pages[0]?.total ?? games.length };
+  return { library, catalog: games, total: games.length };
 }
 
 async function settle(page: Page): Promise<void> {
   await expect(page.locator("[aria-busy=true]")).toHaveCount(0);
-  // Wait until every visible cover image has loaded.
-  await page.waitForFunction(() => [...document.images].every((img) => img.complete));
+  // Every image in view has loaded (lazy ones further down never start).
+  await page.waitForFunction(() =>
+    [...document.images].every((img) => {
+      const box = img.getBoundingClientRect();
+      return img.complete || box.top > window.innerHeight || box.bottom < 0;
+    }),
+  );
   await page.waitForTimeout(400);
 }
 
@@ -56,10 +50,10 @@ async function seedDownloads(page: Page, demo: Demo): Promise<void> {
       const cove = (window as unknown as { __cove: Cove }).__cove;
       const mb = 1024 * 1024;
       const specs: [string, Record<string, unknown>][] = [
-        ["a", { status: "downloading", totalBytes: 2100 * mb, downloadedBytes: 1365 * mb, bytesPerSecond: 18 * mb, queuePosition: 0, origin: "itch" }],
-        ["b", { status: "queued", totalBytes: 840 * mb, queuePosition: 1, origin: "direct" }],
-        ["c", { status: "handedOff", queuePosition: 2, origin: "gog" }],
-        ["d", { status: "completed", totalBytes: 512 * mb, downloadedBytes: 512 * mb, queuePosition: null, checksumVerified: true, finishedAt: "2026-11-04T09:12:00Z", origin: "direct" }],
+        ["a", { status: "downloading", totalBytes: 2100 * mb, downloadedBytes: 1365 * mb, bytesPerSecond: 18 * mb, queuePosition: 0, origin: "gog", source: "gog" }],
+        ["b", { status: "queued", totalBytes: 840 * mb, queuePosition: 1, origin: "itch" }],
+        ["c", { status: "handedOff", queuePosition: 2, origin: "steam", source: "steam" }],
+        ["d", { status: "completed", totalBytes: 512 * mb, downloadedBytes: 512 * mb, queuePosition: null, checksumVerified: true, finishedAt: "2026-11-11T09:12:00Z", origin: "direct" }],
       ];
       specs.forEach(([id, overrides], i) => {
         const game = games[i] as { title: string } | undefined;
@@ -74,32 +68,60 @@ async function seedDownloads(page: Page, demo: Demo): Promise<void> {
   );
 }
 
-let demo: Demo;
-test.beforeAll(async () => {
-  demo = await loadDemo();
-});
+async function go(page: Page, route: string): Promise<void> {
+  await page.evaluate((r) => {
+    window.location.hash = `#${r}`;
+  }, route);
+  await settle(page);
+}
 
-const theme = "dark";
 test("screenshots", async ({ page }) => {
+  test.setTimeout(120_000);
+  const demo = loadDemo();
   await page.addInitScript((data) => {
+    localStorage.setItem("cove.language", "en");
     (window as unknown as { __coveDemo: unknown }).__coveDemo = data;
   }, demo);
-  await openCove(page, "/");
+  await page.goto("/e2e.html#/");
+  await expect(page.getByRole("navigation", { name: "Sections" })).toBeVisible();
   await seedDownloads(page, demo);
   await settle(page);
-  await page.screenshot({ path: `${OUT}/home-${theme}.png` });
+  await page.screenshot({ path: `${OUT}/home.png` });
 
-  for (const [route, name] of [
+  const first = demo.library[0]?.id ?? "";
+  const shots: [string, string][] = [
     ["/library", "library"],
-    [`/library/${demo.library[0]?.id ?? ""}`, "game"],
+    [`/library/${first}`, "game"],
     ["/catalogue", "catalogue"],
+    [`/catalogue/${demo.catalog[2]?.id ?? ""}`, "catalogue-game"],
     ["/downloads", "downloads"],
-    ["/settings/accounts", "settings"],
-  ] as const) {
-    await page.evaluate((r) => {
-      window.location.hash = `#${r}`;
-    }, route);
-    await settle(page);
-    await page.screenshot({ path: `${OUT}/${name}-${theme}.png` });
+    ["/settings/emulators", "emulators"],
+  ];
+  for (const [route, name] of shots) {
+    await go(page, route);
+    await page.screenshot({ path: `${OUT}/${name}.png` });
   }
+
+  // The Proton game's settings tab: Proton version, game options, prefix and save backups.
+  const protonId = await page.evaluate(() => {
+    interface Item {
+      game: { id: string };
+      entry: { launchOptions: { compatibilityTool: string } };
+    }
+    const cove = (window as unknown as { __cove: { core: { library: Item[] } } }).__cove;
+    return cove.core.library.find((i) => i.entry.launchOptions.compatibilityTool === "proton")?.game.id ?? "";
+  });
+  await go(page, `/library/${protonId}?tab=settings`);
+  await page.getByRole("combobox", { name: "Proton version" }).evaluate((el) => {
+    el.scrollIntoView({ block: "start" });
+    document.getElementById("main")?.scrollBy(0, -180);
+  });
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/game-options.png` });
+  await page.getByRole("heading", { name: "Save backups" }).evaluate((el) => {
+    el.scrollIntoView({ block: "start" });
+    document.getElementById("main")?.scrollBy(0, -48);
+  });
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/backups.png` });
 });
