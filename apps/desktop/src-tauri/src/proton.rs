@@ -1148,6 +1148,8 @@ impl ProtonManager {
                         tokio::fs::remove_dir_all(&target).await?;
                     }
                     tokio::fs::rename(folder, &target).await?;
+                    // Windows has no executable bit.
+                    #[cfg(unix)]
                     make_executable(&program)?;
                     Ok(program)
                 }
@@ -1195,11 +1197,6 @@ impl ProtonManager {
 fn make_executable(path: &Path) -> AppResult<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn make_executable(_path: &Path) -> AppResult<()> {
     Ok(())
 }
 
