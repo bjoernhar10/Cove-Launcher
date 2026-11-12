@@ -1263,7 +1263,8 @@ mod tests {
         assert_eq!(program, PathBuf::from("/usr/bin/mangohud"));
         let dolphin = root
             .path()
-            .join("bin/dolphin-emu")
+            .join("bin")
+            .join("dolphin-emu")
             .to_string_lossy()
             .into_owned();
         assert_eq!(args, [dolphin.as_str(), "-b", "-e", &rom.to_string_lossy()]);

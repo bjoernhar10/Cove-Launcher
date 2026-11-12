@@ -656,11 +656,11 @@ mod tests {
             core_missing.user_message().contains("snes9x"),
             "{core_missing}"
         );
-        let cores = root.path().join("home/.config/retroarch/cores");
+        let cores = root.path().join("home").join(".config/retroarch/cores");
         std::fs::create_dir_all(&cores).unwrap();
         std::fs::write(cores.join("snes9x_libretro.so"), b"").unwrap();
         let (program, args) = command(&snes, &rom, &env(root.path())).unwrap();
-        assert_eq!(program, root.path().join("bin/retroarch"));
+        assert_eq!(program, root.path().join("bin").join("retroarch"));
         assert_eq!(
             args,
             [
@@ -677,7 +677,7 @@ mod tests {
         std::fs::write(root.path().join("bin/dolphin-emu"), b"").unwrap();
         let gc = folder("gamecube", &root.path().join("gc"), "dolphin");
         let (program, args) = command(&gc, Path::new("/gc/Game.rvz"), &env(root.path())).unwrap();
-        assert_eq!(program, root.path().join("bin/dolphin-emu"));
+        assert_eq!(program, root.path().join("bin").join("dolphin-emu"));
         assert_eq!(args, ["-b", "-e", "/gc/Game.rvz"]);
     }
 
