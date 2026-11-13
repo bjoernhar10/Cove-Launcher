@@ -112,6 +112,33 @@ public class LocalDetectionTests
     }
 
     [Fact]
+    public void ReadsHeroicAmazonInstalls()
+    {
+        using var tree = new TempTree();
+        var nile = ".config/heroic/nile_config/nile";
+        tree.Write($"{nile}/installed.json", """
+            [ { "id": "amzn1.adg.product.a", "version": "v1", "path": "/games/Amazon/Lonely Lighthouse", "size": 4096 },
+              { "id": "amzn1.adg.product.b", "path": "/games/Amazon/Unnamed/" },
+              { "path": "/games/no-id" } ]
+            """);
+        tree.Write($"{nile}/library.json", """[ { "id": "e1", "product": { "id": "amzn1.adg.product.a", "title": "Lonely Lighthouse" } } ]""");
+
+        var games = LocalDetection.DetectNile(new LocalEnvironment(tree.Root, null, IsWindows: false));
+        Assert.Equal(
+            [("amazon", "amzn1.adg.product.a", "Lonely Lighthouse", 4096L), ("amazon", "amzn1.adg.product.b", "Unnamed", -1L)],
+            games.Select(g => (g.Store, g.StoreGameId, g.Title, g.SizeBytes ?? -1)));
+    }
+
+    [Theory]
+    [InlineData("\"C:\\Program Files\\Amazon Games\\App\\Amazon Game Remover.exe\" -m Game -p amzn1.adg.product.x1", "amzn1.adg.product.x1")]
+    [InlineData("\"C:\\Amazon Game Remover.exe\" -p \"amzn1.adg.product.x2\" -m Game", "amzn1.adg.product.x2")]
+    [InlineData("\"C:\\Other\\uninstall.exe\" -p something", null)]
+    [InlineData("\"C:\\Amazon Game Remover.exe\" -m Game", null)]
+    [InlineData(null, null)]
+    public void ReadsTheProductIdFromAmazonUninstallCommands(string? command, string? expected) =>
+        Assert.Equal(expected, LocalDetection.AmazonProductId(command));
+
+    [Fact]
     public void MissingFoldersMeanNoGames()
     {
         using var tree = new TempTree();

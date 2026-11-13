@@ -30,8 +30,8 @@ No ads, no social feed, no account of its own.
 
 - **Every store in one place:** sign in to Steam, GOG, Epic and Amazon (Prime Gaming) on the
   store's own login page and your games, playtime and achievements are imported. Add your itch.io key to download your
-  purchases. Games already installed through Steam, Heroic, Legendary or GOG Galaxy are found
-  without any login.
+  purchases. Games already installed through Steam, Heroic, Legendary, GOG Galaxy or the Amazon Games
+  app are found without any login.
 - **Your own games and emulators:** add any game folder, or a ROM folder per system (NES to
   PlayStation 2, Dreamcast, PSP …). Every ROM becomes a game in your library and starts with
   RetroArch, a standalone emulator (Dolphin, PCSX2, DuckStation, PPSSPP, mGBA, melonDS, Flycast)

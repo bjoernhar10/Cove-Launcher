@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Cove.Connectors.Config;
 using Cove.Connectors.Http;
+using Cove.Connectors.Local;
 using Cove.Connectors.Model;
 
 namespace Cove.Connectors.Connectors;
@@ -229,6 +230,7 @@ public sealed class AmazonConnector(HttpClient http, AmazonConfig config) : ISto
         StoreSession session, string storeGameId, StoreContext context, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<StoreAchievement>>([]);
 
-    /// <summary>Games of the Amazon Games app are not detected yet.</summary>
-    public IReadOnlyList<LocalGame> DetectLocal(LocalEnvironment environment) => [];
+    /// <summary>Games of the Amazon Games app (Windows) and of Heroic (Linux).</summary>
+    public IReadOnlyList<LocalGame> DetectLocal(LocalEnvironment environment) =>
+        [.. LocalDetection.DetectAll(environment).Where(g => g.Store == Id)];
 }

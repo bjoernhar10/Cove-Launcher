@@ -648,8 +648,12 @@ impl StoreService {
                     store,
                     store_game_id: g.store_game_id,
                     title: g.title,
+                    executable_path: g.executable_path.or_else(|| {
+                        (store == StoreSource::Amazon)
+                            .then(|| amazon_executable(&g.install_path))
+                            .flatten()
+                    }),
                     install_path: g.install_path,
-                    executable_path: g.executable_path,
                     size_bytes: g.size_bytes,
                 })
             })
@@ -836,6 +840,12 @@ impl StoreService {
 fn dirs_home() -> Option<String> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(|h| h.to_string_lossy().into_owned())
+}
+
+/// The start file of an installed Amazon game (its fuel.json), as a path string.
+fn amazon_executable(install_path: &str) -> Option<String> {
+    crate::downloads::amazon::fuel_start(std::path::Path::new(install_path))
+        .map(|start| start.command.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]

@@ -80,6 +80,12 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.7.1" date="2026-11-13">
+      <description>
+        <p>Amazon games installed through the Amazon Games app (Windows) or Heroic (Linux) are found
+        without a login.</p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-11-13">
       <description>
         <p>A TV mode for controllers: a full-screen interface for the TV and the Steam Deck, with the

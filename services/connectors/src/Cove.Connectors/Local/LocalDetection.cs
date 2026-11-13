@@ -8,8 +8,8 @@ namespace Cove.Connectors.Local;
 
 /// <summary>
 /// Finds installed games without any login: Steam manifests, Heroic/Legendary
-/// configs (GOG + Epic on Linux), Epic launcher manifests and the GOG Galaxy
-/// registry (Windows). Unreadable files are skipped, never fatal.
+/// configs (GOG + Epic on Linux), Heroic's Amazon installs (nile), Epic launcher
+/// manifests and the GOG Galaxy and Amazon Games registry entries (Windows). Unreadable files are skipped, never fatal.
 /// </summary>
 public static class LocalDetection
 {
@@ -234,6 +234,81 @@ public static class LocalDetection
         return [.. games.Values];
     }
 
+    // ───────────── Amazon: Heroic (Linux), Amazon Games app (Windows) ─────────────
+
+    /// <summary>
+    /// Amazon games Heroic installed: nile's installed.json (<c>[{ id, path, size }]</c>)
+    /// in Heroic's nile_config or a standalone nile config, titles from nile's library.json.
+    /// </summary>
+    public static IReadOnlyList<LocalGame> DetectNile(LocalEnvironment env)
+    {
+        var dirs = HeroicConfigDirs(env)
+            .Select(d => Path.Combine(d, "nile_config", "nile"))
+            .Append(Path.Combine(env.Home, ".config", "nile"));
+        var games = new Dictionary<string, LocalGame>(StringComparer.Ordinal);
+        foreach (var dir in dirs)
+        {
+            var installed = TryRead(Path.Combine(dir, "installed.json"), ParseJson) as JsonArray;
+            if (installed is null)
+            {
+                continue;
+            }
+
+            var titles = NileLibraryTitles(Path.Combine(dir, "library.json"));
+            foreach (var entry in installed)
+            {
+                var id = Str(entry, "id");
+                var path = Str(entry, "path");
+                if (id is null || path is null || games.ContainsKey(id))
+                {
+                    continue;
+                }
+
+                games[id] = new LocalGame(
+                    "amazon",
+                    id,
+                    titles.GetValueOrDefault(id) ?? Path.GetFileName(path.TrimEnd('/', '\\')),
+                    path,
+                    null,
+                    entry?["size"] is JsonValue v && v.TryGetValue(out long size) ? size : null,
+                    "nile");
+            }
+        }
+
+        return [.. games.Values];
+    }
+
+    private static Dictionary<string, string> NileLibraryTitles(string file)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entitlement in (TryRead(file, ParseJson) as JsonArray) ?? [])
+        {
+            var product = entitlement?["product"];
+            if (Str(product, "id") is { } id && Str(product, "title") is { } title)
+            {
+                result[id] = title;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The product id in the uninstall command the Amazon Games app registers:
+    /// <c>"…\Amazon Game Remover.exe" -m Game -p amzn1.adg.product.…</c>.
+    /// </summary>
+    public static string? AmazonProductId(string? uninstallCommand)
+    {
+        if (uninstallCommand is null || !uninstallCommand.Contains("Amazon Game Remover", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var parts = uninstallCommand.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var index = Array.FindIndex(parts, p => p == "-p");
+        return index >= 0 && index + 1 < parts.Length ? parts[index + 1].Trim('"') : null;
+    }
+
     // ───────────── Epic launcher (Windows) ─────────────
 
     public static IReadOnlyList<LocalGame> DetectEpicManifests(LocalEnvironment env)
@@ -282,6 +357,12 @@ public static class LocalDetection
         }
 
         all.AddRange(DetectLegendary(env));
+        all.AddRange(DetectNile(env));
+        if (env.IsWindows && OperatingSystem.IsWindows())
+        {
+            all.AddRange(WindowsRegistry.AmazonGames().Where(g => all.All(x => x.StoreGameId != g.StoreGameId || x.Store != "amazon")));
+        }
+
         all.AddRange(DetectEpicManifests(env).Where(g => all.All(x => x.StoreGameId != g.StoreGameId || x.Store != "epic")));
         return all;
     }
@@ -333,7 +414,7 @@ public static class LocalDetection
     }
 }
 
-/// <summary>Windows-only lookups (Steam path, GOG Galaxy installs).</summary>
+/// <summary>Windows-only lookups (Steam path, GOG Galaxy and Amazon Games installs).</summary>
 [SupportedOSPlatform("windows")]
 internal static class WindowsRegistry
 {
@@ -357,6 +438,27 @@ internal static class WindowsRegistry
             if (game?.GetValue("path") is string path && game.GetValue("gameName") is string name)
             {
                 yield return new LocalGame("gog", id, name, path, game.GetValue("exe") as string, null, "gog-galaxy");
+            }
+        }
+    }
+
+    /// <summary>Games the Amazon Games app installed (its uninstall entries of the current user).</summary>
+    public static IEnumerable<LocalGame> AmazonGames()
+    {
+        using var uninstall = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall");
+        if (uninstall is null)
+        {
+            yield break;
+        }
+
+        foreach (var name in uninstall.GetSubKeyNames())
+        {
+            using var entry = uninstall.OpenSubKey(name);
+            if (LocalDetection.AmazonProductId(entry?.GetValue("UninstallString") as string) is { } id
+                && entry?.GetValue("InstallLocation") is string { Length: > 0 } path
+                && entry.GetValue("DisplayName") is string { Length: > 0 } title)
+            {
+                yield return new LocalGame("amazon", id, title, path, null, null, "amazon-games");
             }
         }
     }

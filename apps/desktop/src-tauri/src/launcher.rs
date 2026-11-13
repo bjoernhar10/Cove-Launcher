@@ -185,6 +185,13 @@ pub fn launch_via(
     if source == StoreSource::Epic && store_game_id.is_some() && !installed_by_cove {
         return Some(LaunchVia::EpicLauncher);
     }
+    if source == StoreSource::Amazon
+        && store_game_id.is_some()
+        && !installed_by_cove
+        && cfg!(windows)
+    {
+        return Some(LaunchVia::AmazonGames);
+    }
     if executable_path.is_some_and(|p| !p.trim().is_empty()) {
         return Some(LaunchVia::Direct);
     }
@@ -208,9 +215,11 @@ fn split_args(raw: &str) -> AppResult<Vec<String>> {
 
 /// Steam games, and Epic games from the Epic Launcher, start in their store client.
 fn store_client_plan(target: &LaunchTarget) -> Option<LaunchPlan> {
-    // Steam: DRM, overlay, cloud saves. Epic Launcher installs need its login.
+    // Steam: DRM, overlay, cloud saves. Epic Launcher and Amazon Games app
+    // installs need their login (the Amazon app only exists on Windows).
     let via_client = target.source == StoreSource::Steam
-        || (target.source == StoreSource::Epic && !target.installed_by_cove);
+        || (target.source == StoreSource::Epic && !target.installed_by_cove)
+        || (target.source == StoreSource::Amazon && !target.installed_by_cove && cfg!(windows));
     let id = target.store_game_id.as_deref().filter(|_| via_client)?;
     store_url(target.source, id).map(LaunchPlan::Url)
 }
@@ -1019,6 +1028,27 @@ mod tests {
             launch_via(StoreSource::Amazon, Some("p"), None, false),
             none
         );
+        // Installed by the Amazon Games app (Windows) or Heroic (Linux): the app
+        // starts it on Windows, Cove itself (fuel.json) elsewhere.
+        let app_or_direct = if cfg!(windows) {
+            LaunchVia::AmazonGames
+        } else {
+            LaunchVia::Direct
+        };
+        assert_eq!(
+            launch_via(StoreSource::Amazon, Some("p"), Some("/g/x.exe"), false),
+            Some(app_or_direct)
+        );
+        t.installed_by_cove = false;
+        let plan = plan(&t, &host(Platform::Linux, &[])).unwrap();
+        if cfg!(windows) {
+            assert_eq!(
+                plan,
+                LaunchPlan::Url("amazon-games://play/amzn1.adg.product.1".into())
+            );
+        } else {
+            assert!(matches!(plan, LaunchPlan::Process { ref args, .. } if args == &["-fuel"]));
+        }
     }
 
     #[test]
