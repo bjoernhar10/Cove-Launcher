@@ -5,7 +5,7 @@
 # Native AOT) are built for it too.
 #
 # Every push to main builds all bundles and keeps them as workflow artifacts.
-# A tag `v*` (e.g. v0.2.0) additionally creates a draft GitHub release with
+# A tag `v*` (e.g. v0.2.0) additionally creates one draft GitHub release with
 # signed updater artifacts and `latest.json` for the Tauri updater.
 #
 # Run manually with `tag` (e.g. v0.2.2) to add builds to an existing release
@@ -49,7 +49,23 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      release_id: ${{ steps.release.outputs.id }}
     steps:
+      # One release for all builds: created here, before they run in parallel
+      # (each build creating it itself left two drafts for v0.6.0).
+      - id: release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.tag }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n 1)
+          if [ -z "$id" ]; then
+            id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" -f tag_name="$TAG" -f name="Cove $TAG" \
+              -F draft=true -f body="Release notes follow." --jq .id)
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
       - id: matrix
         env:
           PLATFORMS: ${{ inputs.platforms || 'all' }}
@@ -117,12 +133,9 @@ jobs:
         with:
           projectPath: apps/desktop
           args: --bundles ${{ matrix.bundles }} --config src-tauri/tauri.release.conf.json
+          # The release the plan job created (draft) or found (a manual run with `tag`).
+          releaseId: ${{ needs.plan.outputs.release_id }}
           tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: Cove ${{ inputs.tag || github.ref_name }}
-          releaseBody: See the commits since the previous release for what changed.
-          # Tag pushes create a draft; a manual run with `tag` adds to that release
-          # as it is (a draft lookup would miss a published one and open a new draft).
-          releaseDraft: ${{ !inputs.tag }}
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
           # The signatures are inside latest.json; no separate .sig downloads.
