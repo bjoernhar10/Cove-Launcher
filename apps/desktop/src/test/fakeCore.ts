@@ -36,6 +36,10 @@ import type {
   LibraryItem,
   ScanCandidate,
   UpdateInfo,
+  PlayStats,
+  WishlistItem,
+  GamePrice,
+  StoreSource,
 } from "@cove/shared";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 
@@ -126,6 +130,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   catalog: { useCoveService: true },
   backups: { enabled: true, directory: "", keep: 10 },
   emulators: { romFolders: [] },
+  wishlist: { country: "DE", priceAlerts: true },
 };
 
 /** Systems the fake core offers (a few of the real ones). */
@@ -153,6 +158,8 @@ export const FAKE_CATALOG: Game[] = [
   { ...fakeGame("igdb-2", "Hollow Lantern"), genres: ["horror"] },
   { ...fakeGame("igdb-3", "Paper Orbit"), releaseDate: null },
 ];
+
+const SOURCE_NAMES: Record<ConnectableStore, string> = { steam: "Steam", gog: "GOG", epic: "Epic Games", amazon: "Amazon" };
 
 export function fakeAccount(store: ConnectableStore, overrides: Partial<StoreAccount> = {}): StoreAccount {
   return {
@@ -261,6 +268,9 @@ export interface FakeCore {
   systems: SystemInfo[];
   /** ROM file names per ROM folder path (what a scan finds). */
   romFiles: Record<string, string[]>;
+  wishlist: WishlistItem[];
+  /** Prices per catalogue id; missing = not found on IsThereAnyDeal. */
+  prices: Record<string, GamePrice>;
   /** Linux game tools that are installed. */
   gameTools: GameTools;
   /** Times to beat per catalogue id (IGDB); missing ids have none. */
@@ -318,6 +328,53 @@ export function fakeDownload(id: string, title: string, overrides: Partial<Downl
 }
 
 /** Installs the fake core. Returns its (mutable) state for assertions. */
+/**
+ * Statistics like the core computes them, from the fake library: all time uses the
+ * games' playtime, a year 60 % of it; months and weekdays follow fixed weights.
+ */
+export function fakeStats(library: LibraryItem[], year: number | null): PlayStats {
+  const share = year === null ? 1 : year === 2026 ? 0.6 : year === 2025 ? 0.4 : 0;
+  const played = library
+    .map((item) => ({ item, minutes: Math.round(item.entry.playtimeMinutes * share) }))
+    .filter((p) => p.minutes > 0)
+    .sort((a, b) => b.minutes - a.minutes || a.item.game.title.localeCompare(b.item.game.title));
+  const total = played.reduce((sum, p) => sum + p.minutes, 0);
+  const tracked = Math.round(total * (year === null ? 0.7 : 1));
+  const MONTHS = [3, 5, 4, 6, 8, 7, 5, 9, 6, 4, 7, 10];
+  const WEEKDAYS = [8, 6, 7, 9, 12, 20, 18];
+  const sumOf = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+  const firstMonth = year === null ? { y: 2025, m: 12 } : { y: year, m: 1 };
+  const months = MONTHS.map((w, i) => {
+    const index = firstMonth.m - 1 + i;
+    const month = `${String(firstMonth.y + Math.floor(index / 12))}-${String((index % 12) + 1).padStart(2, "0")}`;
+    return { month, minutes: Math.round((tracked * w) / sumOf(MONTHS)) };
+  });
+  const genres = new Map<string, number>();
+  const stores = new Map<StoreSource, number>();
+  for (const { item, minutes } of played) {
+    for (const genre of item.game.genres) genres.set(genre, (genres.get(genre) ?? 0) + minutes);
+    stores.set(item.entry.source, (stores.get(item.entry.source) ?? 0) + minutes);
+  }
+  const sessions = played.length * 7;
+  const first = played[0];
+  return {
+    year,
+    years: total > 0 ? [2026, 2025] : [],
+    totalMinutes: total,
+    sessionCount: sessions,
+    gamesPlayed: played.length,
+    daysPlayed: Math.min(365, Math.round(sessions * 0.6)),
+    longestStreakDays: played.length > 0 ? 6 : 0,
+    longestSession: first ? { gameId: first.item.game.id, title: first.item.game.title, minutes: 254, startedAt: "2026-11-02T18:40:00Z" } : null,
+    achievementsUnlocked: played.reduce((sum, p) => sum + p.item.entry.achievements.unlocked, 0),
+    months,
+    weekdays: WEEKDAYS.map((w) => Math.round((tracked * w) / sumOf(WEEKDAYS))),
+    topGames: played.slice(0, 10).map(({ item, minutes }, i) => ({ game: item.game, minutes, sessionCount: 24 - i * 2 })),
+    genres: [...genres].map(([genre, minutes]) => ({ genre: genre as PlayStats["genres"][number]["genre"], minutes })).sort((a, b) => b.minutes - a.minutes || a.genre.localeCompare(b.genre)),
+    stores: [...stores].map(([store, minutes]) => ({ store, minutes })).sort((a, b) => b.minutes - a.minutes),
+  };
+}
+
 export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", "Tidewater")]): FakeCore {
   const core: FakeCore = {
     library: structuredClone(library),
@@ -326,7 +383,7 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     catalog: { cove: true, igdb: false, rawg: false, offline: false },
     candidates: {},
     recommender: true,
-    accounts: { steam: fakeAccount("steam"), gog: fakeAccount("gog"), epic: fakeAccount("epic") },
+    accounts: { steam: fakeAccount("steam"), gog: fakeAccount("gog"), epic: fakeAccount("epic"), amazon: fakeAccount("amazon") },
     local: structuredClone(FAKE_LOCAL),
     coveAchievements: structuredClone(FAKE_COVE_ACHIEVEMENTS),
     downloads: [],
@@ -356,6 +413,8 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     backups: {},
     systems: FAKE_SYSTEMS,
     romFiles: {},
+    wishlist: [],
+    prices: {},
     openedUrls: [],
     itchExtras: [],
   };
@@ -503,6 +562,31 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       return null;
     },
     library_achievements: () => [],
+    stats_overview: ({ year }) => fakeStats(core.library, year),
+    wishlist_list: () => core.wishlist.filter((w) => !core.library.some((i) => i.game.id === w.game.id || i.entry.catalogId === w.game.id)),
+    wishlist_add: ({ gameId }) => {
+      const game = FAKE_CATALOG.find((g) => g.id === gameId) ?? reject("catalogProvider", "Spiel nicht gefunden.");
+      const existing = core.wishlist.find((w) => w.game.id === gameId);
+      if (existing) return existing;
+      const item: WishlistItem = { game, addedAt: new Date().toISOString(), targetPrice: null, notifyOnSale: true, price: core.prices[gameId] ?? null };
+      core.wishlist.unshift(item);
+      return item;
+    },
+    wishlist_remove: ({ gameId }) => {
+      core.wishlist = core.wishlist.filter((w) => w.game.id !== gameId);
+      return null;
+    },
+    wishlist_update: ({ gameId, targetPrice, notifyOnSale }) => {
+      const item = core.wishlist.find((w) => w.game.id === gameId) ?? reject("invalidInput", "Dieses Spiel ist nicht auf deiner Wunschliste.");
+      if (targetPrice !== null && (targetPrice < 0 || targetPrice > 100_000)) reject("invalidInput", "Der Wunschpreis muss zwischen 0 und 100000 liegen.");
+      Object.assign(item, { targetPrice, notifyOnSale });
+      return item;
+    },
+    wishlist_refresh: () => {
+      for (const item of core.wishlist) item.price = core.prices[item.game.id] ?? null;
+      return core.wishlist;
+    },
+    game_price: ({ gameId }) => core.prices[gameId] ?? null,
     library_playtime: ({ gameId }) => ({
       gameId,
       totalMinutes: 90,
@@ -755,7 +839,7 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       const item = require(gameId);
       const store = item.entry.source;
       if (store === "manual") reject("invalidInput", "Dieses Spiel stammt aus keinem Store.");
-      if (store === "gog" || (store === "epic" && target)) {
+      if (store === "gog" || store === "amazon" || (store === "epic" && target)) {
         if (!target) reject("invalidInput", "Bitte wähle einen Zielordner.");
         core.installTargets[gameId] = target;
         const download = fakeDownload(`g-${gameId}`, item.game.title, { origin: store, source: store, queuePosition: core.downloads.length });
@@ -776,8 +860,8 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     downloads_preview_store: ({ gameId }) => {
       const item = core.library.find((i) => i.game.id === gameId) ?? reject("notInLibrary", `${gameId} ist nicht in der Bibliothek.`);
       const store = item.entry.source;
-      if (store !== "gog" && store !== "epic") reject("invalidInput", "Cove kann nur GOG- und Epic-Spiele selbst installieren.");
-      if (!core.accounts[store].connected) reject("invalidInput", `Du bist nicht bei ${store === "gog" ? "GOG" : "Epic Games"} angemeldet.`);
+      if (store !== "gog" && store !== "epic" && store !== "amazon") reject("invalidInput", "Cove kann nur GOG-, Epic- und Amazon-Spiele selbst installieren.");
+      if (!core.accounts[store].connected) reject("invalidInput", `Du bist nicht bei ${SOURCE_NAMES[store]} angemeldet.`);
       return {
         title: item.game.title,
         downloadBytes: 9_500_000_000,
@@ -795,7 +879,7 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       const item = require(gameId);
       if (!item.entry.installedByCove) reject("invalidInput", "Cove hat dieses Spiel nicht installiert.");
       core.dlcs[gameId] = (core.dlcs[gameId] ?? []).map((d) => ({ ...d, selected: !excludedDlcs.includes(d.id) }));
-      core.downloads.push(fakeDownload(`up-${gameId}`, item.game.title, { origin: item.entry.source === "epic" ? "epic" : "gog", queuePosition: core.downloads.length }));
+      core.downloads.push(fakeDownload(`up-${gameId}`, item.game.title, { origin: item.entry.source === "epic" ? "epic" : item.entry.source === "amazon" ? "amazon" : "gog", queuePosition: core.downloads.length }));
       return null;
     },
     game_update: ({ gameId }) => {

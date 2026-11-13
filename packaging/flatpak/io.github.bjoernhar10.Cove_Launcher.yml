@@ -1,0 +1,113 @@
+# Flatpak of Cove for Flathub. It repackages the signed release .deb of each
+# version (the same build as on GitHub) on the GNOME 51 runtime, the last one
+# with webkit2gtk-4.1, which Tauri 2 needs.
+# Local build: see docs/flatpak.md.
+id: io.github.bjoernhar10.Cove_Launcher
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+command: cove
+separate-locales: false
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  # GPU, controllers and other input devices for games.
+  - --device=all
+  # 32-bit Windows games (Proton) and the Steam Linux Runtime (umu-launcher).
+  - --allow=multiarch
+  - --allow=devel
+  # Game folders, Steam and Heroic libraries, saves, ROMs.
+  - --filesystem=home
+  - --filesystem=/mnt
+  - --filesystem=/media
+  - --filesystem=/run/media
+  - --filesystem=~/.var/app/com.valvesoftware.Steam:ro
+  - --filesystem=~/.var/app/com.heroicgameslauncher.hgl:ro
+  # The host's programs (Steam, emulators) are found under /run/host ...
+  - --filesystem=host-os:ro
+  # ... and started on the host with flatpak-spawn --host, which also follows
+  # games a store client starts.
+  - --talk-name=org.freedesktop.Flatpak
+  # Store sign-ins live in the system keyring.
+  - --talk-name=org.freedesktop.secrets
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # Price alerts as desktop notifications.
+  - --talk-name=org.freedesktop.Notifications
+  # MangoHud and gamescope from the Flathub Vulkan layer extensions.
+  - --env=PATH=/app/bin:/usr/bin:/usr/lib/extensions/vulkan/MangoHud/bin:/usr/lib/extensions/vulkan/gamescope/bin
+
+add-extensions:
+  org.freedesktop.Platform.Compat.i386:
+    directory: lib/i386-linux-gnu
+    version: '26.08'
+  org.freedesktop.Platform.Compat.i386.Debug:
+    directory: lib/debug/lib/i386-linux-gnu
+    version: '26.08'
+    no-autodownload: true
+  org.freedesktop.Platform.GL32:
+    directory: lib/i386-linux-gnu/GL
+    version: '1.4'
+    versions: 26.08;1.4
+    subdirectories: true
+    no-autodownload: true
+    autodelete: false
+    add-ld-path: lib
+    merge-dirs: vulkan/icd.d;glvnd/egl_vendor.d;OpenCL/vendors;lib/dri;lib/d3d;vulkan/explicit_layer.d;vulkan/implicit_layer.d
+    download-if: active-gl-driver
+    enable-if: active-gl-driver
+
+modules:
+  - shared-modules/libappindicator/libappindicator-gtk3-12.10.json
+
+  - name: compat-i386
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/lib/i386-linux-gnu/GL /app/lib/debug/lib/i386-linux-gnu
+      - install -Dm644 ld.so.conf /app/etc/ld.so.conf
+    sources:
+      - type: inline
+        dest-filename: ld.so.conf
+        contents: |
+          /app/lib32
+          /app/lib/i386-linux-gnu
+          include /run/flatpak/ld.so.conf.d/app-*-org.freedesktop.Platform.Compat.i386.conf
+          include /run/flatpak/ld.so.conf.d/runtime-*-org.freedesktop.Platform.Compat.i386.conf
+
+  - name: cove
+    buildsystem: simple
+    build-commands:
+      - ar x cove.deb data.tar.gz
+      - tar -xzf data.tar.gz
+      - install -Dm755 -t /app/bin usr/bin/cove usr/bin/cove-connectors usr/bin/cove-recommender
+      - install -Dm644 usr/share/icons/hicolor/128x128/apps/cove.png /app/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
+      - install -Dm644 usr/share/icons/hicolor/256x256@2/apps/cove.png /app/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 usr/share/applications/Cove.desktop /app/share/applications/${FLATPAK_ID}.desktop
+      - desktop-file-edit --set-icon=${FLATPAK_ID} --set-key=Comment --set-value="A calm launcher for all your games" /app/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 ${FLATPAK_ID}.metainfo.xml /app/share/metainfo/${FLATPAK_ID}.metainfo.xml
+    sources:
+      - type: file
+        dest-filename: cove.deb
+        only-arches: [x86_64]
+        url: https://github.com/bjoernhar10/Cove-Launcher/releases/download/v0.5.0/Cove_0.5.0_amd64.deb
+        sha256: 01e0e45a3ddb1e67638daaaaff20e64c5bebd8937ac1f30f37a1b1ecf280da85
+        x-checker-data:
+          type: json
+          url: https://api.github.com/repos/bjoernhar10/Cove-Launcher/releases/latest
+          version-query: .tag_name | sub("^v"; "")
+          url-query: '"https://github.com/bjoernhar10/Cove-Launcher/releases/download/v" + $version + "/Cove_" + $version + "_amd64.deb"'
+      - type: file
+        dest-filename: cove.deb
+        only-arches: [aarch64]
+        url: https://github.com/bjoernhar10/Cove-Launcher/releases/download/v0.5.0/Cove_0.5.0_arm64.deb
+        sha256: c9abc31c9281a6e517193291aebdee7ac5827ab7d41e756989cab8c3b7d14dd0
+        x-checker-data:
+          type: json
+          url: https://api.github.com/repos/bjoernhar10/Cove-Launcher/releases/latest
+          version-query: .tag_name | sub("^v"; "")
+          url-query: '"https://github.com/bjoernhar10/Cove-Launcher/releases/download/v" + $version + "/Cove_" + $version + "_arm64.deb"'
+      - type: file
+        path: io.github.bjoernhar10.Cove_Launcher.metainfo.xml

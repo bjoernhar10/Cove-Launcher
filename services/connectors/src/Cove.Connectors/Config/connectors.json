@@ -1,5 +1,5 @@
 {
-  "_comment": "Store endpoints and client ids. GOG and Epic use the same public launcher clients as Heroic/gogdl/Legendary; update here when the stores change something. Override at runtime with COVE_CONNECTORS_CONFIG=/path/to/connectors.json.",
+  "_comment": "Store endpoints and client ids. GOG, Epic and Amazon use the same public launcher clients as Heroic/gogdl/Legendary/nile; update here when the stores change something. Override at runtime with COVE_CONNECTORS_CONFIG=/path/to/connectors.json.",
   "steam": {
     "openIdEndpoint": "https://steamcommunity.com/openid/login",
     "privacySettingsUrl": "https://steamcommunity.com/my/edit/settings",
@@ -37,5 +37,21 @@
     "exchangeUrl": "https://account-public-service-prod03.ol.epicgames.com/account/api/oauth/exchange",
     "ownershipTokenUrl": "https://ecommerceintegration-public-service-ecomprod02.ol.epicgames.com/ecommerceintegration/api/public/platforms/EPIC/identities/{accountId}/ownershipToken",
     "savesUrl": "https://datastorage-public-service-liveegs.live.use1a.on.epicgames.com/api/v1/access/egstore/savesync/{accountId}/{appName}/"
+  },
+  "amazon": {
+    "signinUrl": "https://amazon.com/ap/signin",
+    "returnTo": "https://www.amazon.com",
+    "marketplaceId": "ATVPDKIKX0DER",
+    "deviceType": "A2UMVHOX7UP4V7",
+    "appName": "AGSLauncher for Windows",
+    "appVersion": "1.0.0",
+    "userAgent": "AGSLauncher/1.0.0",
+    "launcherAgent": "com.amazon.agslauncher.win/3.0.9202.1",
+    "keyId": "d5dc8b8b-86c8-4fc4-ae93-18c0def5314d",
+    "registerUrl": "https://api.amazon.com/auth/register",
+    "tokenUrl": "https://api.amazon.com/auth/token",
+    "entitlementsUrl": "https://gaming.amazon.com/api/distribution/entitlements",
+    "distributionUrl": "https://gaming.amazon.com/api/distribution/v2/public",
+    "sdkChannelUrl": "https://gaming.amazon.com/api/distribution/v2/public/download/channel/87d38116-4cbf-4af0-a371-a5b498975346"
   }
 }

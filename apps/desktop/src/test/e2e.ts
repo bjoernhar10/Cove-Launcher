@@ -8,7 +8,7 @@
  *
  * URL parameters: `?games=2500` seeds a large library, `?theme=dark` forces dark mode.
  */
-import type { CoveEvents, DownloadItem, Game, Genre, LibraryItem, Recommendation, StoreSource } from "@cove/shared";
+import type { CoveEvents, DownloadItem, Game, GamePrice, Genre, LibraryItem, Recommendation, StoreSource } from "@cove/shared";
 import { GENRE_LABELS } from "../lib/labels.ts";
 import { emitCoreEvent, fakeDownload, fakeGame, fakeItem, installFakeCore, launchViaOf, FAKE_CATALOG } from "./fakeCore.ts";
 
@@ -70,7 +70,7 @@ function rand(id: string, salt: number): number {
 }
 
 function realItem(game: Game, index: number): LibraryItem {
-  const sources: StoreSource[] = ["steam", "steam", "gog", "epic", "steam", "manual"];
+  const sources: StoreSource[] = ["steam", "amazon", "gog", "epic", "steam", "manual"];
   const source = sources[index % sources.length] ?? "steam";
   const installed = index < 6 || rand(game.id, 1) > 0.45;
   const total = Math.round(rand(game.id, 2) ** 2 * 9000) + 30;
@@ -135,6 +135,16 @@ core.backups["game-0"] = {
 };
 core.romFiles["/home/alex/ROMs/SNES"] = ["Lighthouse Keeper (USA).sfc", "Tiny Planets (Europe).sfc"];
 
+// Prices (IsThereAnyDeal) for the first catalogue games; igdb-3 has none.
+function fakePrice(price: number, regular: number, shops: string[]): GamePrice {
+  const money = (amount: number) => ({ amount, currency: "EUR" });
+  const deals = shops.map((shop, i) => {
+    const amount = Math.round((price + i * 2.5) * 100) / 100;
+    return { shop, price: money(amount), regular: money(regular), cut: Math.round((1 - amount / regular) * 100), url: `https://itad.example/${shop.toLowerCase()}`, expiry: i === 0 ? "2026-11-24T18:00:00Z" : null };
+  });
+  return { url: "https://isthereanydeal.com/game/x/info/", best: deals[0] ?? null, deals, historyLow: money(Math.round(price * 0.7 * 100) / 100), checkedAt: "2026-11-13T09:00:00Z" };
+}
+
 // One collection of the user's own.
 core.collections = [{ id: "1", name: "Mit Freunden", gameIds: core.library.slice(1, 3).map((item) => item.game.id) }];
 
@@ -148,7 +158,7 @@ if (demo) {
   FAKE_CATALOG.splice(0, FAKE_CATALOG.length, ...demo.catalog);
   const games = (store: StoreSource) => core.library.filter((i) => i.entry.source === store).length;
   const synced = "2026-11-04T18:42:00Z";
-  for (const store of ["steam", "gog", "epic"] as const) {
+  for (const store of ["steam", "gog", "epic", "amazon"] as const) {
     Object.assign(core.accounts[store], { status: "connected", connected: true, accountName: "alex", gameCount: games(store), lastSyncedAt: synced });
   }
   core.settings.general.language = "en";
@@ -191,6 +201,21 @@ if (demo) {
   ];
 }
 else FAKE_CATALOG.push(...Array.from({ length: 21 }, (_, i) => ({ ...demoItem(i + 3).game, id: `igdb-${String(i + 10)}` })));
+core.prices["igdb-1"] = fakePrice(9.99, 24.99, ["GOG", "Steam", "Humble"]);
+core.prices["igdb-2"] = fakePrice(19.99, 19.99, ["Steam"]);
+if (demo) {
+  // A wishlist for the screenshots: games from the catalogue that aren't owned.
+  const owned = new Set(core.library.map((i) => i.game.id));
+  const wished = demo.catalog.filter((g) => !owned.has(g.id)).slice(0, 6);
+  const shops = [["GOG", "Steam", "Humble"], ["Steam", "Fanatical"], ["Epic Games", "GOG"], ["Steam"], ["GOG", "Steam"], ["Humble", "Steam"]];
+  wished.forEach((game, i) => {
+    const regular = [29.99, 19.99, 39.99, 14.99, 24.99, 59.99][i] ?? 19.99;
+    const cut = [0.6, 0.25, 0.5, 0, 0.75, 0.33][i] ?? 0;
+    const price = fakePrice(Math.round(regular * (1 - cut) * 100) / 100, regular, shops[i] ?? ["Steam"]);
+    core.prices[game.id] = price;
+    core.wishlist.push({ game, addedAt: new Date(Date.UTC(2026, 10, 10 - i)).toISOString(), targetPrice: i === 0 ? 12 : i === 2 ? 15 : null, notifyOnSale: i !== 3, price });
+  });
+}
 
 
 // ── live behaviour of the Rust core ──

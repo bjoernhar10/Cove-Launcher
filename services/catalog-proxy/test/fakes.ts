@@ -75,6 +75,7 @@ export function fakeEnv(options: FakeEnvOptions = {}) {
     IGDB_CLIENT_ID: options.secrets === false ? "" : "cid",
     IGDB_CLIENT_SECRET: options.secrets === false ? "" : "secret",
     STEAM_API_KEY: options.secrets === false ? "" : "steamkey",
+    ITAD_API_KEY: options.secrets === false ? "" : "itadkey",
   } as unknown as Env;
   return { env, kv, gate, limiter };
 }
@@ -89,15 +90,26 @@ export interface IgdbCall {
  * Fake network: Twitch token endpoint + IGDB endpoints answered by `igdb`.
  * Records every call. `igdb` may return a Response to simulate errors.
  */
-export function fakeNetwork(igdb: (call: IgdbCall) => unknown, steam?: (url: URL) => Response) {
+export function fakeNetwork(
+  igdb: (call: IgdbCall) => unknown,
+  steam?: (url: URL) => Response,
+  itad?: (url: URL, body: string, headers: Headers) => unknown,
+) {
   const calls: IgdbCall[] = [];
   const steamCalls: URL[] = [];
+  const itadCalls: URL[] = [];
   let tokenRequests = 0;
   const fetchFn = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
     if (url.hostname === "api.steampowered.com") {
       steamCalls.push(url);
       return Promise.resolve(steam ? steam(url) : new Response("no steam fake", { status: 500 }));
+    }
+    if (url.hostname === "api.isthereanydeal.com") {
+      itadCalls.push(url);
+      if (!itad) return Promise.resolve(new Response("no itad fake", { status: 500 }));
+      const result = itad(url, typeof init?.body === "string" ? init.body : "", new Headers(init?.headers));
+      return Promise.resolve(result instanceof Response ? result : Response.json(result));
     }
     if (url.hostname === "id.twitch.tv") {
       tokenRequests += 1;
@@ -116,6 +128,7 @@ export function fakeNetwork(igdb: (call: IgdbCall) => unknown, steam?: (url: URL
     fetchFn,
     calls,
     steamCalls,
+    itadCalls,
     get tokenRequests() {
       return tokenRequests;
     },

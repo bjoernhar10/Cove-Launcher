@@ -19,7 +19,7 @@ public class RpcDispatcherTests
         var ping = await Handle("""{"jsonrpc":"2.0","id":1,"method":"system.ping","params":{"message":"hi"}}""");
         Assert.Equal("connectors", ping["result"]!["service"]!.GetValue<string>());
         var list = await Handle("""{"jsonrpc":"2.0","id":2,"method":"store.list"}""");
-        Assert.Equal(["steam", "gog", "epic"], list["result"]!.AsArray().Select(s => s!["id"]!.GetValue<string>()));
+        Assert.Equal(["steam", "gog", "epic", "amazon"], list["result"]!.AsArray().Select(s => s!["id"]!.GetValue<string>()));
     }
 
     [Fact]

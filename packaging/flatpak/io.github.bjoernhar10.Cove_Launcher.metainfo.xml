@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.bjoernhar10.Cove_Launcher</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Cove</name>
+  <summary>A calm launcher for all your games</summary>
+  <developer id="io.github.bjoernhar10">
+    <name>bjoernhar10</name>
+  </developer>
+  <description>
+    <p>
+      Cove brings your games from Steam, GOG, Epic, Amazon, itch.io, emulators and your own folders
+      together in one tidy library. No ads, no social feed, no account of its own.
+    </p>
+    <ul>
+      <li>Sign in to Steam, GOG, Epic and Amazon on the store's own page; Cove never sees your password</li>
+      <li>Install, update and play GOG, Epic and Amazon games without their launchers</li>
+      <li>Run Windows games with Proton (GE-Proton or Steam's), through umu-launcher</li>
+      <li>Per game: MangoHud, gamescope, AMD FSR, DXVK and VKD3D-Proton</li>
+      <li>Save backups for every game, and cloud saves for GOG and Epic</li>
+      <li>ROM folders per system with RetroArch or a standalone emulator</li>
+      <li>Playtime, achievements, statistics, a catalogue and recommendations computed on your computer</li>
+    </ul>
+    <p>
+      In the Flatpak, MangoHud and gamescope come from the Flathub extensions
+      org.freedesktop.Platform.VulkanLayer.MangoHud and org.freedesktop.Platform.VulkanLayer.gamescope.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.bjoernhar10.Cove_Launcher.desktop</launchable>
+  <provides>
+    <binary>cove</binary>
+  </provides>
+  <url type="homepage">https://github.com/bjoernhar10/Cove-Launcher</url>
+  <url type="bugtracker">https://github.com/bjoernhar10/Cove-Launcher/issues</url>
+  <url type="vcs-browser">https://github.com/bjoernhar10/Cove-Launcher</url>
+  <categories>
+    <category>Game</category>
+  </categories>
+  <keywords>
+    <keyword>launcher</keyword>
+    <keyword>steam</keyword>
+    <keyword>gog</keyword>
+    <keyword>epic</keyword>
+    <keyword>proton</keyword>
+    <keyword>emulator</keyword>
+  </keywords>
+  <branding>
+    <color type="primary" scheme_preference="light">#e7e7ea</color>
+    <color type="primary" scheme_preference="dark">#161618</color>
+  </branding>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Home</caption>
+      <image>https://raw.githubusercontent.com/bjoernhar10/Cove-Launcher/main/docs/screenshots/home.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>My Library</caption>
+      <image>https://raw.githubusercontent.com/bjoernhar10/Cove-Launcher/main/docs/screenshots/library.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A game page</caption>
+      <image>https://raw.githubusercontent.com/bjoernhar10/Cove-Launcher/main/docs/screenshots/game.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Game options on Linux</caption>
+      <image>https://raw.githubusercontent.com/bjoernhar10/Cove-Launcher/main/docs/screenshots/game-options.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Statistics</caption>
+      <image>https://raw.githubusercontent.com/bjoernhar10/Cove-Launcher/main/docs/screenshots/stats.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.6.0" date="2026-11-13">
+      <description>
+        <p>Amazon Games (Prime Gaming) without the Amazon app, a wishlist with price alerts, a statistics
+        page, and Cove as a Flatpak.</p>
+      </description>
+    </release>
+    <release version="0.5.0" date="2026-11-12">
+      <description>
+        <p>Save backups for every game, emulators and ROMs, game options on Linux, umu-launcher,
+        GOG cloud saves, time to beat, and builds for Linux ARM64 and Intel Macs.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -294,9 +294,14 @@ pub struct Env {
 
 impl Env {
     pub fn detect(home: Option<PathBuf>) -> Self {
-        let path = std::env::var_os("PATH")
-            .map(|p| std::env::split_paths(&p).collect())
-            .unwrap_or_default();
+        // In Flatpak, emulators are the host's (seen under /run/host, run with flatpak-spawn).
+        let path = if crate::flatpak::active() {
+            crate::flatpak::host_path_dirs(home.as_deref())
+        } else {
+            std::env::var_os("PATH")
+                .map(|p| std::env::split_paths(&p).collect())
+                .unwrap_or_default()
+        };
         let program_files = ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"]
             .iter()
             .filter_map(|v| std::env::var_os(v).map(PathBuf::from))
@@ -323,6 +328,9 @@ impl Env {
     }
 
     fn flatpak_installed(&self, app: &str) -> bool {
+        if crate::flatpak::active() {
+            return crate::flatpak::host_app_installed(app);
+        }
         let user = self
             .home
             .as_ref()
@@ -381,6 +389,15 @@ fn find_core(core: &str, command: &[String], env: &Env) -> Option<PathBuf> {
         PathBuf::from("/usr/lib/aarch64-linux-gnu/libretro"),
         PathBuf::from("/usr/local/lib/libretro"),
     ];
+    if crate::flatpak::active() {
+        // The host's system folders, as the sandbox sees them.
+        for dir in &mut dirs {
+            if dir.starts_with("/usr") {
+                *dir =
+                    Path::new(crate::flatpak::HOST_ROOT).join(dir.strip_prefix("/").unwrap_or(dir));
+            }
+        }
+    }
     // Windows: next to retroarch.exe.
     if let Some(dir) = command.first().map(Path::new).and_then(Path::parent) {
         dirs.insert(0, dir.join("cores"));

@@ -21,6 +21,10 @@ import type {
   LibraryUpdate,
   ManualGameInput,
   PlaytimeStats,
+  PlayStats,
+  WishlistItem,
+  GamePrice,
+  PriceAlert,
   PluginInfo,
   ProtonOverview,
   ProtonProgress,
@@ -93,6 +97,13 @@ export interface CoveCommands {
   collections_set_game: { args: { collectionId: CollectionId; gameId: GameId; member: boolean }; result: null };
   library_achievements: { args: { gameId: GameId }; result: Achievement[] };
   library_playtime: { args: { gameId: GameId }; result: PlaytimeStats };
+  stats_overview: { args: { year: number | null }; result: PlayStats };
+  wishlist_list: { args: NoArgs; result: WishlistItem[] };
+  wishlist_add: { args: { gameId: GameId }; result: WishlistItem };
+  wishlist_remove: { args: { gameId: GameId }; result: null };
+  wishlist_update: { args: { gameId: GameId; targetPrice: number | null; notifyOnSale: boolean }; result: WishlistItem };
+  wishlist_refresh: { args: NoArgs; result: WishlistItem[] };
+  game_price: { args: { gameId: GameId }; result: GamePrice | null };
   achievements_recent: { args: { limit: number }; result: AchievementUnlock[] };
   game_launch: { args: { gameId: GameId }; result: LaunchResult };
   game_stop: { args: { gameId: GameId }; result: null };
@@ -241,6 +252,7 @@ export interface CoveEvents {
   "update-progress": UpdateProgress;
   "game-move-progress": GameMoveProgress;
   "proton-progress": ProtonProgress;
+  "price-alert": PriceAlert;
 }
 
 export type CoveEvent = keyof CoveEvents;

@@ -52,6 +52,7 @@ const ORIGIN_LABELS: Record<DownloadItem["download"]["origin"], string> = {
   steam: "Steam",
   gog: "GOG",
   epic: "Epic",
+  amazon: "Amazon",
 };
 
 /** Store install running in the store's own client. */

@@ -15,9 +15,11 @@ import * as library from "./library.ts";
 import * as plugins from "./plugins.ts";
 import * as proton from "./proton.ts";
 import * as settings from "./settings.ts";
+import * as stats from "./stats.ts";
 import * as system from "./system.ts";
+import * as wishlist from "./wishlist.ts";
 
-export const api = { accounts, catalog, collections, downloads, emulators, home, library, plugins, proton, settings, system } as const;
+export const api = { accounts, catalog, collections, downloads, emulators, home, library, plugins, proton, settings, stats, system, wishlist } as const;
 
 export { DEFAULT_CATALOG_FILTER, DEFAULT_CATALOG_SORT } from "./catalog.ts";
 export { CoveError } from "./transport.ts";

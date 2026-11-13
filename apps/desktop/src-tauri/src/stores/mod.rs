@@ -462,6 +462,48 @@ impl StoreService {
         Ok(list.dlcs)
     }
 
+    /// Where the current version of an Amazon game lies.
+    pub async fn amazon_download(
+        &self,
+        product_id: &str,
+    ) -> AppResult<crate::downloads::amazon::Download> {
+        let value = self
+            .with_session(
+                StoreSource::Amazon,
+                "amazon.download",
+                json!({ "productId": product_id }),
+            )
+            .await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
+    /// The live version of Amazon products (update check).
+    pub async fn amazon_versions(
+        &self,
+        product_ids: &[String],
+    ) -> AppResult<HashMap<String, String>> {
+        #[derive(serde::Deserialize)]
+        struct Versions {
+            versions: HashMap<String, String>,
+        }
+        let value = self
+            .with_session(
+                StoreSource::Amazon,
+                "amazon.versions",
+                json!({ "productIds": product_ids }),
+            )
+            .await?;
+        Ok(serde_json::from_value::<Versions>(value)?.versions)
+    }
+
+    /// Where the Amazon Games SDK files lie.
+    pub async fn amazon_sdk(&self) -> AppResult<crate::downloads::amazon::Sdk> {
+        let value = self
+            .with_session(StoreSource::Amazon, "amazon.sdk", json!({}))
+            .await?;
+        Ok(serde_json::from_value(value)?)
+    }
+
     /// Manifest links and catalogue attributes of an Epic game.
     pub async fn epic_install_info(
         &self,

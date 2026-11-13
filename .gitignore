@@ -55,3 +55,8 @@ Thumbs.db
 
 # Sidecar binaries (built by `npm run build:sidecar -w @cove/desktop`)
 apps/desktop/src-tauri/binaries/
+
+# Flatpak builds
+packaging/flatpak/shared-modules/
+packaging/flatpak/build-dir/
+.flatpak-builder/

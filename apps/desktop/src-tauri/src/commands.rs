@@ -16,7 +16,7 @@ use crate::models::{
     CatalogSort, CatalogStatus, ComponentVersion, ConnectorLoginFinished, ConnectorLoginStart,
     CoveAchievement, DownloadItem, DownloadStatus, Game, GameId, ImportSummary, LaunchResult,
     LaunchVia, LibraryItem, LibraryMatchEvent, LibraryUpdate, LocalStoreGame, ManualGameInput,
-    MatchCandidate, Platform, PlaytimeStats, PluginInfo, Recommendation, RunningGame,
+    MatchCandidate, Platform, PlayStats, PlaytimeStats, PluginInfo, Recommendation, RunningGame,
     ScanCandidate, StoreAccount, StoreSource, SyncPhase, SyncProgress, UserProfile,
 };
 use crate::models::{
@@ -194,6 +194,140 @@ pub async fn library_playtime(
     db::sessions::stats(&state.pool, &game_id, chrono::Utc::now().date_naive()).await
 }
 
+pub const PRICE_ALERT: &str = "price-alert";
+
+/// Checks the wishlist's prices and announces alerts (in the app and as a
+/// desktop notification). `forced` checks even with alerts switched off.
+pub async fn check_prices<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    state: &AppState,
+    forced: bool,
+) -> Option<Vec<crate::models::WishlistItem>> {
+    use tauri_plugin_notification::NotificationExt;
+    let settings = match db::settings::load(&state.pool, &state.defaults).await {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!("[prices] {error}");
+            return None;
+        }
+    };
+    if !forced && !settings.wishlist.price_alerts {
+        return None;
+    }
+    match state.prices.check(&settings.wishlist.country).await {
+        Ok((items, alerts)) => {
+            for alert in alerts {
+                let price = format!(
+                    "{:.2} {}",
+                    alert.deal.price.amount, alert.deal.price.currency
+                );
+                let body = match alert.reason {
+                    crate::models::AlertReason::Target => tr!(
+                        "Jetzt {price} bei {}: dein Wunschpreis ist erreicht.",
+                        "Now {price} at {}: your target price is reached.",
+                        alert.deal.shop
+                    ),
+                    crate::models::AlertReason::Sale => tr!(
+                        "−{} % bei {}: jetzt {price}.",
+                        "−{} % at {}: now {price}.",
+                        alert.deal.cut,
+                        alert.deal.shop
+                    ),
+                };
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title(&alert.title)
+                    .body(&body)
+                    .show();
+                let _ = app.emit(PRICE_ALERT, &alert);
+            }
+            Some(items)
+        }
+        Err(error) => {
+            eprintln!("[prices] {error}");
+            None
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn wishlist_list(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::models::WishlistItem>> {
+    db::wishlist::list(&state.pool).await
+}
+
+/// Adds a catalogue game with its prices (when they arrive within a few seconds).
+#[tauri::command]
+pub async fn wishlist_add(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<crate::models::WishlistItem> {
+    let game = state.catalog.details(&game_id).await?.game;
+    db::wishlist::add(&state.pool, &game).await?;
+    let settings = db::settings::load(&state.pool, &state.defaults).await?;
+    let lookup = state.prices.game_price(&game, &settings.wishlist.country);
+    if let Ok(Ok(Some(price))) =
+        tokio::time::timeout(std::time::Duration::from_secs(8), lookup).await
+    {
+        db::wishlist::set_price(&state.pool, &game.id, Some(&price)).await?;
+    }
+    db::wishlist::get(&state.pool, &game.id)
+        .await?
+        .ok_or_else(|| AppError::InvalidInput(tr!("Ungültiges Spiel.", "Invalid game.")))
+}
+
+#[tauri::command]
+pub async fn wishlist_remove(state: State<'_, AppState>, game_id: String) -> AppResult<()> {
+    db::wishlist::remove(&state.pool, &game_id).await
+}
+
+#[tauri::command]
+pub async fn wishlist_update(
+    state: State<'_, AppState>,
+    game_id: String,
+    target_price: Option<f64>,
+    notify_on_sale: bool,
+) -> AppResult<crate::models::WishlistItem> {
+    db::wishlist::update(&state.pool, &game_id, target_price, notify_on_sale).await
+}
+
+/// Checks the prices now ("Preise prüfen").
+#[tauri::command]
+pub async fn wishlist_refresh<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::models::WishlistItem>> {
+    match check_prices(&app, &state, true).await {
+        Some(items) => Ok(items),
+        None => Err(AppError::StoreUnavailable(tr!(
+            "Preise sind gerade nicht verfügbar. Versuch es später noch einmal.",
+            "Prices aren't available right now. Please try again later."
+        ))),
+    }
+}
+
+/// Prices of a catalogue game (catalogue page).
+#[tauri::command]
+pub async fn game_price(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<Option<crate::models::GamePrice>> {
+    let game = state.catalog.details(&game_id).await?.game;
+    let settings = db::settings::load(&state.pool, &state.defaults).await?;
+    state
+        .prices
+        .game_price(&game, &settings.wishlist.country)
+        .await
+}
+
+/// The statistics page: a year (None = all time).
+#[tauri::command]
+pub async fn stats_overview(state: State<'_, AppState>, year: Option<i32>) -> AppResult<PlayStats> {
+    db::stats::overview(&state.pool, year, chrono::Utc::now().date_naive()).await
+}
+
 #[tauri::command]
 pub async fn achievements_recent(
     state: State<'_, AppState>,
@@ -216,7 +350,11 @@ pub async fn game_launch(state: State<'_, AppState>, game_id: String) -> AppResu
     }
     if item.entry.source == StoreSource::Epic && item.entry.installed_by_cove {
         let args = state.downloads.epic_launch_args(&item, &host).await?;
-        return state.launcher.launch_with(&item, &host, args);
+        return state.launcher.launch_with(&item, &host, args, Vec::new());
+    }
+    if item.entry.source == StoreSource::Amazon && item.entry.installed_by_cove {
+        let env = state.downloads.amazon_launch_env(&item, &host).await?;
+        return state.launcher.launch_with(&item, &host, Vec::new(), env);
     }
     state.launcher.launch(&item, &host)
 }
@@ -539,6 +677,7 @@ pub async fn game_dlcs(
     };
     match store {
         StoreSource::Steam => state.stores.steam_dlcs(&store_game_id).await,
+        StoreSource::Amazon | StoreSource::Manual => Err(no_dlc_list()),
         StoreSource::Gog | StoreSource::Epic => {
             let owned = state
                 .stores
@@ -575,7 +714,6 @@ pub async fn game_dlcs(
             let total = i64::try_from(dlcs.len()).unwrap_or(i64::MAX);
             Ok(crate::models::StoreDlcList { dlcs, total })
         }
-        StoreSource::Manual => Err(no_dlc_list()),
     }
 }
 
@@ -912,7 +1050,7 @@ pub async fn downloads_enqueue(
 ) -> AppResult<()> {
     let item = db::library::require(&state.pool, &game_id).await?;
     // Epic without a target: the game stays with the Epic Launcher (anti-cheat …).
-    let own_install = item.entry.source == StoreSource::Gog
+    let own_install = matches!(item.entry.source, StoreSource::Gog | StoreSource::Amazon)
         || (item.entry.source == StoreSource::Epic && target.is_some());
     if own_install {
         let target = target.ok_or_else(|| {

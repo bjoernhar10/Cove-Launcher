@@ -41,6 +41,8 @@ pub struct AppState {
     pub proton: Arc<crate::proton::ProtonManager>,
     /// Save backups of every game.
     pub backups: Arc<crate::backups::BackupService>,
+    /// Wishlist prices and price alerts.
+    pub prices: Arc<crate::prices::PriceService>,
 }
 
 pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
@@ -76,5 +78,6 @@ pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
         },
         backups: crate::models::BackupSettings::default(),
         emulators: crate::models::EmulatorSettings::default(),
+        wishlist: crate::models::WishlistSettings::default(),
     }
 }

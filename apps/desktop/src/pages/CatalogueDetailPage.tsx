@@ -12,6 +12,7 @@ import { Dialog } from "../components/ui/Dialog.tsx";
 import { Badge, EmptyState, ErrorState, LoadingRegion, OfflineBadge, Skeleton } from "../components/ui/Feedback.tsx";
 import { CatalogSetupState } from "./CataloguePage.tsx";
 import { Page } from "../components/ui/Page.tsx";
+import { GamePrices, WishlistButton } from "../features/GamePrices.tsx";
 import { TimeToBeat } from "../features/TimeToBeat.tsx";
 import { useCatalogGame, useSimilarGames } from "../hooks/useCatalog.ts";
 import { formatDate } from "../lib/format.ts";
@@ -203,6 +204,7 @@ export function CatalogueDetailPage() {
                     {t.detail.addToLibrary}
                   </Button>
                 )}
+                {!libraryGameId && game.id.startsWith("igdb-") && <WishlistButton gameId={game.id} title={game.title} />}
                 <Button icon={Layers} onClick={showSimilar}>
                   {t.detail.similar}
                 </Button>
@@ -252,6 +254,11 @@ export function CatalogueDetailPage() {
                   )}
                 </Fact>
               </dl>
+              {game.id.startsWith("igdb-") && !libraryGameId && (
+                <div className="mt-8">
+                  <GamePrices gameId={game.id} title={game.title} />
+                </div>
+              )}
               {game.id.startsWith("igdb-") && (
                 <div className="mt-8">
                   <TimeToBeat catalogId={game.id} />

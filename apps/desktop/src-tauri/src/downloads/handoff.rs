@@ -16,7 +16,8 @@ pub fn install_url(store: StoreSource, store_game_id: &str, windows: bool) -> Op
             Some(format!("com.epicgames.launcher://apps/{id}?action=install"))
         }
         StoreSource::Epic => Some(format!("heroic://launch?appName={id}&runner=legendary")),
-        StoreSource::Gog | StoreSource::Manual => None,
+        // Cove installs GOG and Amazon games itself.
+        StoreSource::Gog | StoreSource::Amazon | StoreSource::Manual => None,
     }
 }
 

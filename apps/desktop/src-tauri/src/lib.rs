@@ -13,12 +13,14 @@ mod db;
 mod downloads;
 mod emulators;
 mod error;
+mod flatpak;
 mod folders;
 mod launcher;
 mod models;
 mod mover;
 mod plugins;
 mod prefix;
+mod prices;
 mod proton;
 mod protondb;
 mod recommend;
@@ -76,6 +78,13 @@ macro_rules! cove_handlers {
             $crate::commands::catalog_time_to_beat,
             $crate::commands::library_achievements,
             $crate::commands::library_playtime,
+            $crate::commands::stats_overview,
+            $crate::commands::wishlist_list,
+            $crate::commands::wishlist_add,
+            $crate::commands::wishlist_remove,
+            $crate::commands::wishlist_update,
+            $crate::commands::wishlist_refresh,
+            $crate::commands::game_price,
             $crate::commands::achievements_recent,
             $crate::commands::game_uninstall,
             $crate::commands::game_dlcs,
@@ -267,6 +276,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         cove_achievements,
         open_url: open_url.clone(),
         protondb: Arc::new(protondb::ProtonDb::new(pool.clone())),
+        prices: Arc::new(prices::PriceService::new(pool.clone())),
         proton,
         backups: Arc::new(backups::BackupService::new(
             pool.clone(),
@@ -300,6 +310,20 @@ fn keep_proton_up_to_date<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
                 }
             }
             tokio::time::sleep(proton::CHECK_INTERVAL).await;
+        }
+    });
+}
+
+/// A few minutes after the start and then every few hours: the wishlist's
+/// prices; alerts go out as `price-alert` and as a desktop notification.
+fn watch_prices<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+        loop {
+            if let Some(state) = app.try_state::<AppState>() {
+                commands::check_prices(&app, &state, false).await;
+            }
+            tokio::time::sleep(prices::CHECK_EVERY).await;
         }
     });
 }
@@ -518,6 +542,7 @@ pub fn run() {
                 });
             },
         )
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let state = match init_state(app) {
                 Ok(state) => state,
@@ -532,6 +557,7 @@ pub fn run() {
             // After `manage`: the download hooks look up the state.
             downloads.start();
             keep_proton_up_to_date(app.handle().clone());
+            watch_prices(app.handle().clone());
             Ok(())
         })
         .invoke_handler(cove_handlers!())

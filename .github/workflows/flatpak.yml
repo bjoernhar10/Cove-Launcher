@@ -1,0 +1,79 @@
+# Flatpak bundles (Cove-<arch>.flatpak) for a published release, built from the
+# manifest in packaging/flatpak with that release's .deb packages. The same
+# manifest goes to Flathub (docs/flatpak.md); this workflow checks that it still
+# builds and attaches installable bundles to the release.
+name: Flatpak
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build (e.g. v0.6.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: Flatpak (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            deb: amd64
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            deb: arm64
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      options: --privileged
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shared modules
+        run: git clone --depth 1 https://github.com/flathub/shared-modules.git packaging/flatpak/shared-modules
+
+      - name: Point the manifest at this release
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          manifest=packaging/flatpak/io.github.bjoernhar10.Cove_Launcher.yml
+          for deb in amd64 arm64; do
+            url="https://github.com/bjoernhar10/Cove-Launcher/releases/download/${TAG}/Cove_${version}_${deb}.deb"
+            sum=$(curl -fsSL --retry 5 "$url" | sha256sum | cut -d' ' -f1)
+            # The url line of this architecture, then its sha256 line right below.
+            sed -i -E "/_${deb}\.deb$/{s#url: .*#url: ${url}#;n;s#sha256: .*#sha256: ${sum}#}" "$manifest"
+          done
+          grep -n "url: https\|sha256" "$manifest"
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/io.github.bjoernhar10.Cove_Launcher.yml
+          bundle: Cove-${{ matrix.arch }}.flatpak
+          arch: ${{ matrix.arch }}
+          cache-key: flatpak-${{ matrix.arch }}-${{ github.sha }}
+          upload-artifact: true
+
+  attach:
+    name: Attach to the release
+    needs: bundle
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: bundles
+      - name: Upload
+        run: |
+          find bundles -name '*.flatpak' -print -exec gh release upload "$TAG" {} --clobber -R "$GITHUB_REPOSITORY" \;

@@ -10,6 +10,7 @@ import type {
   ProxyGame,
   ProxyMatchResponse,
   ProxyPage,
+  ProxyPricesResponse,
   ProxyTimeToBeatResponse,
   TimeToBeat,
 } from "@cove/shared";
@@ -30,7 +31,8 @@ import {
 } from "./igdb-query.ts";
 import { mapGame, type IgdbGame } from "./mapping.ts";
 import { normalize, score } from "./match.ts";
-import { browseQuery, gameId, matchBody, searchQuery, steamAppId, steamId, timeToBeatBody } from "./schemas.ts";
+import { ItadClient } from "./itad.ts";
+import { browseQuery, gameId, matchBody, pricesBody, searchQuery, steamAppId, steamId, timeToBeatBody } from "./schemas.ts";
 import { SteamClient, steamAchievements, steamOwned, steamProfile, steamRarity, steamSchema } from "./steam.ts";
 
 const SEARCH_LIMIT = 20;
@@ -199,6 +201,31 @@ export function createApp(deps: Deps = {}) {
       return { items } satisfies ProxyTimeToBeatResponse;
     });
     return c.json(body);
+  });
+
+  // ───────────── prices (IsThereAnyDeal; key stays in the Worker) ─────────────
+
+  // One cache entry per country and title set, like times to beat.
+  app.post("/v1/prices", async (c) => {
+    const json: unknown = await c.req.json().catch(() => {
+      throw new ApiError(400, "invalid_request", "body must be JSON");
+    });
+    const { country, games } = parse(pricesBody, json);
+    const titles = [...new Set(games.map((g) => g.title))].sort();
+    const body = await cached(c.get("cache"), `prices:${country}:${await digest(titles.join("\n"))}`, TTL.prices, async () => {
+      const itad = new ItadClient(c.env, deps.fetch);
+      const ids = await itad.ids(titles);
+      const prices = await itad.prices([...new Set(ids.values())], country, new Date(now()));
+      const byTitle: Record<string, ReturnType<typeof prices.get> | null> = {};
+      for (const title of titles) {
+        const id = ids.get(title);
+        byTitle[title] = (id ? prices.get(id) : undefined) ?? null;
+      }
+      return byTitle;
+    });
+    const items: ProxyPricesResponse["items"] = {};
+    for (const game of games) items[game.key] = body[game.title] ?? null;
+    return c.json({ items } satisfies ProxyPricesResponse);
   });
 
   // ───────────── Steam (key stays in the Worker) ─────────────

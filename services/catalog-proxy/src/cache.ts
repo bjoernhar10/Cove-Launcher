@@ -14,6 +14,8 @@ export const TTL = {
   steamSchema: 7 * 24 * 60 * 60,
   /** Times to beat (change slowly) */
   timeToBeat: 7 * 24 * 60 * 60,
+  /** Prices (sales change daily) */
+  prices: 3 * 60 * 60,
 } as const;
 
 /** Bump when the response format changes, so old cached answers are ignored. */

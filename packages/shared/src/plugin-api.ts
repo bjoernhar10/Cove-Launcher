@@ -40,7 +40,7 @@ export interface PluginGame {
   playtimeMinutes: number;
   lastPlayedAt: string | null;
   genres: string[];
-  source: "steam" | "gog" | "epic" | "manual";
+  source: "steam" | "gog" | "epic" | "amazon" | "manual";
 }
 
 export interface PluginCatalogGame {

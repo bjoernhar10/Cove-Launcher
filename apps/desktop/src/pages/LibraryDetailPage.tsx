@@ -317,9 +317,9 @@ function MoveGame({ item }: { item: LibraryItem }) {
   );
 }
 
-/** A GOG or Epic game Cove installed itself (updates, moving). */
+/** A GOG, Epic or Amazon game Cove installed itself (updates, moving). */
 function ownStoreInstall(item: LibraryItem): boolean {
-  return (item.entry.source === "gog" || item.entry.source === "epic") && item.entry.installedByCove;
+  return (item.entry.source === "gog" || item.entry.source === "epic" || item.entry.source === "amazon") && item.entry.installedByCove;
 }
 
 /** Store games Cove installed: installed vs. newest build, "Aktualisieren". */

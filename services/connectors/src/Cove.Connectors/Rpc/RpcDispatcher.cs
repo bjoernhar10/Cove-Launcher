@@ -28,27 +28,34 @@ public sealed class RpcDispatcher
 
     private readonly SteamContent? _steamContent;
 
+    private readonly AmazonContent? _amazonContent;
+
     public RpcDispatcher(
         IEnumerable<IStoreConnector> connectors,
         GogContent? gogContent = null,
         EpicContent? epicContent = null,
-        SteamContent? steamContent = null)
+        SteamContent? steamContent = null,
+        AmazonContent? amazonContent = null)
     {
         _connectors = connectors.ToDictionary(c => c.Id, StringComparer.Ordinal);
         _gogContent = gogContent;
         _epicContent = epicContent;
         _steamContent = steamContent;
+        _amazonContent = amazonContent;
     }
 
     /// <summary>Production wiring: shared HttpClient and the embedded config.</summary>
     public static RpcDispatcher CreateDefault(HttpClient http)
     {
         var config = ConnectorConfig.Load();
+        var amazon = new AmazonConnector(http, config.Amazon);
         return new RpcDispatcher([
             new SteamConnector(http, config.Steam),
             new GogConnector(http, config.Gog),
             new EpicConnector(http, config.Epic),
-        ], new GogContent(http, config.Gog), new EpicContent(http, config.Epic), new SteamContent(http, config.Steam));
+            amazon,
+        ], new GogContent(http, config.Gog), new EpicContent(http, config.Epic), new SteamContent(http, config.Steam),
+        new AmazonContent(http, amazon, config.Amazon));
     }
 
     /// <summary>Handles one raw input line. Returns the serialized response, or null for notifications.</summary>
@@ -116,6 +123,9 @@ public sealed class RpcDispatcher
 
     private GogContent GogContent() =>
         _gogContent ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, "GOG downloads are not set up.");
+
+    private AmazonContent AmazonContent() =>
+        _amazonContent ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, "Amazon downloads are not set up.");
 
     private SteamContent SteamContent() =>
         _steamContent ?? throw new ConnectorException(ConnectorErrorKind.InvalidRequest, "Steam DLC lists are not set up.");
@@ -263,6 +273,26 @@ public sealed class RpcDispatcher
                     var args = Params(p, ctx.EpicAppParams);
                     var links = await EpicContent().WriteLinksAsync(args.Session, args.AppName, args.Paths ?? [], ct).ConfigureAwait(false);
                     return Node(links, ctx.EpicWriteLinks);
+                }
+
+            case "amazon.download":
+                {
+                    var args = Params(p, ctx.AmazonParams);
+                    var download = await AmazonContent().DownloadAsync(args.Session, args.ProductId ?? "", ct).ConfigureAwait(false);
+                    return Node(download, ctx.AmazonDownload);
+                }
+
+            case "amazon.versions":
+                {
+                    var args = Params(p, ctx.AmazonParams);
+                    var versions = await AmazonContent().VersionsAsync(args.Session, args.ProductIds ?? [], ct).ConfigureAwait(false);
+                    return Node(versions, ctx.AmazonVersions);
+                }
+
+            case "amazon.sdk":
+                {
+                    var args = Params(p, ctx.AmazonParams);
+                    return Node(await AmazonContent().SdkAsync(args.Session, ct).ConfigureAwait(false), ctx.AmazonSdk);
                 }
 
             default:

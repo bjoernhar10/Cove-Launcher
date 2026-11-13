@@ -34,6 +34,14 @@ export const routes = [
             path: "downloads",
             lazy: async () => ({ Component: (await import("./pages/DownloadsPage.tsx")).DownloadsPage }),
           },
+          {
+            path: "wishlist",
+            lazy: async () => ({ Component: (await import("./pages/WishlistPage.tsx")).WishlistPage }),
+          },
+          {
+            path: "stats",
+            lazy: async () => ({ Component: (await import("./pages/StatsPage.tsx")).StatsPage }),
+          },
           { path: "settings", element: <Navigate to="/settings/general" replace /> },
           {
             path: "settings/:tab",

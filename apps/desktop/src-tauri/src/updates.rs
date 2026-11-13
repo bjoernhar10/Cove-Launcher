@@ -30,7 +30,7 @@ fn updater<R: Runtime>(app: &AppHandle<R>) -> AppResult<Updater> {
 /// Whether this installation can replace itself.
 fn can_self_update() -> bool {
     if cfg!(target_os = "linux") {
-        std::env::var_os("APPIMAGE").is_some()
+        std::env::var_os("APPIMAGE").is_some() && !crate::flatpak::active()
     } else {
         true
     }
@@ -38,6 +38,9 @@ fn can_self_update() -> bool {
 
 fn install_hint() -> Option<String> {
     (!can_self_update()).then(|| {
+        if crate::flatpak::active() {
+            return tr!("Cove wurde als Flatpak installiert. Updates kommen über deine Softwareverwaltung oder „flatpak update“.", "Cove was installed as a Flatpak. Updates come through your software centre or “flatpak update”.");
+        }
         tr!("Cove wurde über ein Paket (.deb/.rpm) installiert. Aktualisiere es über deine Paketverwaltung oder lade die neue Version von GitHub.", "Cove was installed from a package (.deb/.rpm). Update it with your package manager or download the new version from GitHub.")
     })
 }

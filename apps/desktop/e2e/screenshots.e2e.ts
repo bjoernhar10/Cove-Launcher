@@ -93,8 +93,9 @@ test("screenshots", async ({ page }) => {
     ["/library", "library"],
     [`/library/${first}`, "game"],
     ["/catalogue", "catalogue"],
-    [`/catalogue/${demo.catalog[2]?.id ?? ""}`, "catalogue-game"],
     ["/downloads", "downloads"],
+    ["/stats", "stats"],
+    ["/wishlist", "wishlist"],
     ["/settings/emulators", "emulators"],
   ];
   for (const [route, name] of shots) {

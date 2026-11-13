@@ -1,6 +1,6 @@
 import { messages, useMessages } from "../i18n/index.ts";
 import type { Genre, Platform, YearRange } from "@cove/shared";
-import { Compass, SearchX, X } from "lucide-react";
+import { Bookmark, Compass, SearchX, X } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { COVER_GRID, GameCard, GameCardSkeleton } from "../components/game/GameCard.tsx";
 import { VirtualGrid, type GridCell } from "../components/game/VirtualGrid.tsx";
@@ -9,7 +9,8 @@ import { EmptyState, ErrorState, LoadingRegion, OfflineBadge } from "../componen
 import { Input, Select } from "../components/ui/Field.tsx";
 import { Page, PageHeader } from "../components/ui/Page.tsx";
 import { CheckOption, Popover, RadioOption } from "../components/ui/Popover.tsx";
-import { CoveError } from "../api/index.ts";
+import { api, CoveError } from "../api/index.ts";
+import { useQuery } from "../hooks/useQuery.ts";
 import { useCatalogBrowse } from "../hooks/useCatalog.ts";
 import { useDebounced } from "../hooks/useDebounced.ts";
 import { errorMessage } from "../stores/toasts.ts";
@@ -43,6 +44,18 @@ function summarize(labels: string[]): string | undefined {
   if (labels.length === 0) return undefined;
   if (labels.length === 1) return labels[0];
   return `${labels[0] ?? ""} +${String(labels.length - 1)}`;
+}
+
+/** "Wunschliste (3)" next to the sort field. */
+function WishlistLink() {
+  const t = useMessages();
+  const list = useQuery("wishlist", api.wishlist.list);
+  const count = list.data?.length ?? 0;
+  return (
+    <ButtonLink to="/wishlist" variant="ghost" icon={Bookmark}>
+      {count > 0 ? t.wishlist.openCount(count) : t.wishlist.open}
+    </ButtonLink>
+  );
 }
 
 function SortSelect() {
@@ -204,7 +217,14 @@ export function CataloguePage() {
             {offline && <OfflineBadge />}
           </span>
         }
-        actions={notConfigured ? undefined : <SortSelect />}
+        actions={
+          notConfigured ? undefined : (
+            <>
+              <WishlistLink />
+              <SortSelect />
+            </>
+          )
+        }
       />
 
       {notConfigured ? (

@@ -38,8 +38,8 @@ pub fn movable(item: &LibraryItem) -> AppResult<PathBuf> {
                 "Move Steam games in Steam: Properties → Installed Files → Move install folder."
             )))
         }
-        StoreSource::Epic | StoreSource::Gog if entry.installed_by_cove => {}
-        StoreSource::Epic | StoreSource::Gog => {
+        StoreSource::Epic | StoreSource::Gog | StoreSource::Amazon if entry.installed_by_cove => {}
+        StoreSource::Epic | StoreSource::Gog | StoreSource::Amazon => {
             return Err(AppError::InvalidInput(tr!(
                 "Dieses Spiel wird von seinem Store-Client verwaltet und kann nur dort verschoben werden.",
                 "This game is managed by its store client and can only be moved there."

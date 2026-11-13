@@ -110,6 +110,53 @@ async fn core_responses_match_shared_schema() {
         "PlaytimeStats",
         &db::sessions::stats(&pool, "orbit", today).await.unwrap(),
     );
+    assert_valid(
+        "PlayStats",
+        &db::stats::overview(&pool, None, today).await.unwrap(),
+    );
+    let wished = db::library::tests::sample_game("igdb-77", "Wished");
+    db::wishlist::add(&pool, &wished).await.unwrap();
+    db::wishlist::update(&pool, "igdb-77", Some(9.5), true)
+        .await
+        .unwrap();
+    let money = crate::models::Money {
+        amount: 7.99,
+        currency: "EUR".into(),
+    };
+    let deal = crate::models::PriceDeal {
+        shop: "GOG".into(),
+        price: money.clone(),
+        regular: money.clone(),
+        cut: 60,
+        url: "https://itad.link/x".into(),
+        expiry: Some("2026-11-20T18:00:00+01:00".into()),
+    };
+    let price = crate::models::GamePrice {
+        url: Some("https://isthereanydeal.com/game/x/".into()),
+        best: Some(deal.clone()),
+        deals: vec![deal.clone()],
+        history_low: Some(money),
+        checked_at: "2026-11-13T12:00:00Z".into(),
+    };
+    db::wishlist::set_price(&pool, "igdb-77", Some(&price))
+        .await
+        .unwrap();
+    for item in db::wishlist::list(&pool).await.unwrap() {
+        assert_valid("WishlistItem", &item);
+    }
+    assert_valid(
+        "PriceAlert",
+        &crate::models::PriceAlert {
+            game_id: "igdb-77".into(),
+            title: "Wished".into(),
+            deal,
+            reason: crate::models::AlertReason::Sale,
+        },
+    );
+    assert_valid(
+        "PlayStats",
+        &db::stats::overview(&pool, Some(2026), today).await.unwrap(),
+    );
     for d in db::downloads::list(&pool).await.unwrap() {
         assert_valid("DownloadItem", &d);
     }

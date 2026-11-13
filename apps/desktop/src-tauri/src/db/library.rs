@@ -327,16 +327,8 @@ pub async fn add_not_installed(pool: &SqlitePool, title: &str) -> AppResult<Libr
 }
 
 /// Stores catalogue metadata and adds the game as a (not yet set up) library entry.
-pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<LibraryItem> {
-    if game.id.trim().is_empty() || game.title.trim().is_empty() {
-        return Err(AppError::InvalidInput(tr!(
-            "Ungültiges Spiel.",
-            "Invalid game."
-        )));
-    }
-    if get(pool, &game.id).await?.is_some() {
-        return Err(AppError::AlreadyInLibrary(game.title.clone()));
-    }
+/// Stores a catalogue game's data (new row or refreshed), without a library entry.
+pub(crate) async fn upsert_game(conn: &mut sqlx::SqliteConnection, game: &Game) -> AppResult<()> {
     let now = now_iso();
     let screenshots: Vec<Option<&str>> = game
         .artwork
@@ -344,7 +336,6 @@ pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<Libra
         .iter()
         .map(|s| s.url.as_deref())
         .collect();
-    let mut tx = pool.begin().await?;
     sqlx::query(
         "INSERT INTO games (id, title, summary, description, genres, platforms, release_date, developer, publisher, \
            rating, popularity, cover_url, header_url, screenshots, created_at, features) \
@@ -372,8 +363,24 @@ pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<Libra
     .bind(serde_json::to_string(&screenshots)?)
     .bind(&now)
     .bind(game.features.as_ref().map(serde_json::to_string).transpose()?)
-    .execute(&mut *tx)
+    .execute(conn)
     .await?;
+    Ok(())
+}
+
+pub async fn add_from_catalog(pool: &SqlitePool, game: &Game) -> AppResult<LibraryItem> {
+    if game.id.trim().is_empty() || game.title.trim().is_empty() {
+        return Err(AppError::InvalidInput(tr!(
+            "Ungültiges Spiel.",
+            "Invalid game."
+        )));
+    }
+    if get(pool, &game.id).await?.is_some() {
+        return Err(AppError::AlreadyInLibrary(game.title.clone()));
+    }
+    let now = now_iso();
+    let mut tx = pool.begin().await?;
+    upsert_game(&mut tx, game).await?;
     sqlx::query(
         "INSERT INTO library_entries (game_id, source_id, installed, added_at, catalog_id, match_status) \
          VALUES (?1, 'manual', 0, ?2, ?1, 'matched')",

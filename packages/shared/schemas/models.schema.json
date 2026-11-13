@@ -214,6 +214,9 @@
         },
         "library": {
           "$ref": "#/definitions/LibrarySettings"
+        },
+        "wishlist": {
+          "$ref": "#/definitions/WishlistSettings"
         }
       },
       "required": [
@@ -223,7 +226,8 @@
         "downloads",
         "catalog",
         "backups",
-        "emulators"
+        "emulators",
+        "wishlist"
       ],
       "type": "object"
     },
@@ -589,7 +593,8 @@
       "enum": [
         "steam",
         "gog",
-        "epic"
+        "epic",
+        "amazon"
       ],
       "type": "string"
     },
@@ -917,7 +922,8 @@
         "itch",
         "steam",
         "gog",
-        "epic"
+        "epic",
+        "amazon"
       ],
       "type": "string"
     },
@@ -1297,6 +1303,59 @@
         "copiedBytes",
         "totalBytes",
         "error"
+      ],
+      "type": "object"
+    },
+    "GamePrice": {
+      "additionalProperties": false,
+      "description": "A game's prices in the user's country.",
+      "properties": {
+        "best": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PriceDeal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Cheapest current offer."
+        },
+        "checkedAt": {
+          "$ref": "#/definitions/IsoDateTime"
+        },
+        "deals": {
+          "description": "Current offers, cheapest first (at most 5).",
+          "items": {
+            "$ref": "#/definitions/PriceDeal"
+          },
+          "type": "array"
+        },
+        "historyLow": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Money"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Lowest price ever recorded."
+        },
+        "url": {
+          "description": "The game's page on IsThereAnyDeal.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "url",
+        "best",
+        "deals",
+        "historyLow",
+        "checkedAt"
       ],
       "type": "object"
     },
@@ -1777,7 +1836,8 @@
         "direct",
         "steam",
         "epicLauncher",
-        "gogGalaxy"
+        "gogGalaxy",
+        "amazonGames"
       ],
       "type": "string"
     },
@@ -2094,6 +2154,23 @@
       ],
       "type": "string"
     },
+    "Money": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "type": "number"
+        },
+        "currency": {
+          "description": "ISO 4217, e.g. EUR.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ],
+      "type": "object"
+    },
     "MoveStatus": {
       "enum": [
         "copying",
@@ -2110,6 +2187,110 @@
         "macos"
       ],
       "type": "string"
+    },
+    "PlayStats": {
+      "additionalProperties": false,
+      "description": "Statistics page: playtime over a year or all time (`stats_overview`).",
+      "properties": {
+        "achievementsUnlocked": {
+          "type": "number"
+        },
+        "daysPlayed": {
+          "description": "Days with at least one session.",
+          "type": "number"
+        },
+        "gamesPlayed": {
+          "description": "Games with playtime in the range.",
+          "type": "number"
+        },
+        "genres": {
+          "description": "Minutes per genre, most first (a game with two genres counts for both).",
+          "items": {
+            "$ref": "#/definitions/StatsGenre"
+          },
+          "type": "array"
+        },
+        "longestSession": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/StatsSession"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "longestStreakDays": {
+          "description": "Most days in a row with a session.",
+          "type": "number"
+        },
+        "months": {
+          "description": "Twelve months, oldest first: the year's months, or the last 12 for all time.",
+          "items": {
+            "$ref": "#/definitions/StatsMonth"
+          },
+          "type": "array"
+        },
+        "sessionCount": {
+          "type": "number"
+        },
+        "stores": {
+          "description": "Minutes per store, most first.",
+          "items": {
+            "$ref": "#/definitions/StatsStore"
+          },
+          "type": "array"
+        },
+        "topGames": {
+          "description": "Most played games, at most 10.",
+          "items": {
+            "$ref": "#/definitions/StatsGame"
+          },
+          "type": "array"
+        },
+        "totalMinutes": {
+          "description": "Playtime in the range. All time includes playtime imported from the stores; a year only counts sessions Cove tracked.",
+          "type": "number"
+        },
+        "weekdays": {
+          "description": "Tracked minutes per weekday, Monday first (7 entries).",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "year": {
+          "description": "The year shown; null = all time.",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "years": {
+          "description": "Years with tracked sessions, newest first.",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "year",
+        "years",
+        "totalMinutes",
+        "sessionCount",
+        "gamesPlayed",
+        "daysPlayed",
+        "longestStreakDays",
+        "longestSession",
+        "achievementsUnlocked",
+        "months",
+        "weekdays",
+        "topGames",
+        "genres",
+        "stores"
+      ],
+      "type": "object"
     },
     "PlaytimeDay": {
       "additionalProperties": false,
@@ -2348,6 +2529,77 @@
         "exists",
         "sizeBytes",
         "winetricks"
+      ],
+      "type": "object"
+    },
+    "PriceAlert": {
+      "additionalProperties": false,
+      "description": "Fired when a wishlist game reaches its target price or goes on sale.",
+      "properties": {
+        "deal": {
+          "$ref": "#/definitions/PriceDeal"
+        },
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "reason": {
+          "description": "\"target\" = at or below the target price, \"sale\" = a new discount.",
+          "enum": [
+            "target",
+            "sale"
+          ],
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "gameId",
+        "title",
+        "deal",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "PriceDeal": {
+      "additionalProperties": false,
+      "description": "One shop's current offer (from IsThereAnyDeal; links unchanged).",
+      "properties": {
+        "cut": {
+          "description": "Discount in percent (0 to 100).",
+          "type": "number"
+        },
+        "expiry": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/IsoDateTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price": {
+          "$ref": "#/definitions/Money"
+        },
+        "regular": {
+          "$ref": "#/definitions/Money"
+        },
+        "shop": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "shop",
+        "price",
+        "regular",
+        "cut",
+        "url",
+        "expiry"
       ],
       "type": "object"
     },
@@ -2668,6 +2920,64 @@
         "page",
         "hasMore",
         "total"
+      ],
+      "type": "object"
+    },
+    "ProxyPricesRequest": {
+      "additionalProperties": false,
+      "description": "`POST /v1/prices`: current prices of games, looked up by title on IsThereAnyDeal.",
+      "properties": {
+        "country": {
+          "description": "Two-letter country code (ISO 3166-1), e.g. DE.",
+          "type": "string"
+        },
+        "games": {
+          "description": "At most 50; `key` comes back as the key of the answer.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "country",
+        "games"
+      ],
+      "type": "object"
+    },
+    "ProxyPricesResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/GamePrice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "Per requested key; null = not found on IsThereAnyDeal.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "items"
       ],
       "type": "object"
     },
@@ -3130,6 +3440,99 @@
       ],
       "type": "string"
     },
+    "StatsGame": {
+      "additionalProperties": false,
+      "properties": {
+        "game": {
+          "$ref": "#/definitions/Game"
+        },
+        "minutes": {
+          "type": "number"
+        },
+        "sessionCount": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "game",
+        "minutes",
+        "sessionCount"
+      ],
+      "type": "object"
+    },
+    "StatsGenre": {
+      "additionalProperties": false,
+      "properties": {
+        "genre": {
+          "$ref": "#/definitions/Genre"
+        },
+        "minutes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "genre",
+        "minutes"
+      ],
+      "type": "object"
+    },
+    "StatsMonth": {
+      "additionalProperties": false,
+      "properties": {
+        "minutes": {
+          "type": "number"
+        },
+        "month": {
+          "description": "`YYYY-MM`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "month",
+        "minutes"
+      ],
+      "type": "object"
+    },
+    "StatsSession": {
+      "additionalProperties": false,
+      "properties": {
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "minutes": {
+          "type": "number"
+        },
+        "startedAt": {
+          "$ref": "#/definitions/IsoDateTime"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "gameId",
+        "title",
+        "minutes",
+        "startedAt"
+      ],
+      "type": "object"
+    },
+    "StatsStore": {
+      "additionalProperties": false,
+      "properties": {
+        "minutes": {
+          "type": "number"
+        },
+        "store": {
+          "$ref": "#/definitions/StoreSource"
+        }
+      },
+      "required": [
+        "store",
+        "minutes"
+      ],
+      "type": "object"
+    },
     "StoreAccount": {
       "additionalProperties": false,
       "properties": {
@@ -3277,6 +3680,7 @@
         "steam",
         "gog",
         "epic",
+        "amazon",
         "manual"
       ],
       "type": "string"
@@ -3562,6 +3966,67 @@
         "id",
         "displayName",
         "avatarUrl"
+      ],
+      "type": "object"
+    },
+    "WishlistItem": {
+      "additionalProperties": false,
+      "description": "A game on the wishlist (not owned).",
+      "properties": {
+        "addedAt": {
+          "$ref": "#/definitions/IsoDateTime"
+        },
+        "game": {
+          "$ref": "#/definitions/Game"
+        },
+        "notifyOnSale": {
+          "description": "Notify about every new discount.",
+          "type": "boolean"
+        },
+        "price": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/GamePrice"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Last known prices; null until the first check or when IsThereAnyDeal doesn't know the game."
+        },
+        "targetPrice": {
+          "description": "Notify when the best price is at or below this (in the price's currency); null = off.",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "game",
+        "addedAt",
+        "targetPrice",
+        "notifyOnSale",
+        "price"
+      ],
+      "type": "object"
+    },
+    "WishlistSettings": {
+      "additionalProperties": false,
+      "description": "Wishlist prices (IsThereAnyDeal through the Cove proxy).",
+      "properties": {
+        "country": {
+          "description": "Two-letter country code for prices and currency, e.g. DE.",
+          "type": "string"
+        },
+        "priceAlerts": {
+          "description": "Check prices every few hours and notify about alerts.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "country",
+        "priceAlerts"
       ],
       "type": "object"
     },

@@ -63,6 +63,31 @@ test.describe("Downloads", () => {
     await expect(page.getByText("„Hollow Lantern“ wird heruntergeladen").first()).toBeVisible();
   });
 
+  test("Amazon-Spiele installiert Cove selbst", async ({ page }) => {
+    await openCove(page, "/downloads");
+    await page.evaluate(() => {
+      interface Core {
+        accounts: { amazon: { connected: boolean; status: string; accountName: string | null } };
+        library: { game: { id: string }; entry: { source: string; storeGameId: string | null; installed: boolean; executablePath: string | null; launchVia: string | null } }[];
+      }
+      const cove = (window as unknown as { __cove: { core: Core } }).__cove;
+      Object.assign(cove.core.accounts.amazon, { connected: true, status: "connected", accountName: "Alex" });
+      const item = cove.core.library.find((i) => i.game.id === "game-1");
+      if (item) Object.assign(item.entry, { source: "amazon", storeGameId: "amzn1.adg.product.1", installed: false, executablePath: null, launchVia: null });
+    });
+    await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: /My Library/ }).click();
+    await page.getByRole("button", { name: /^Amazon 1/ }).click();
+    await page.getByRole("link", { name: /Hollow Lantern/ }).first().click();
+    await page.getByRole("button", { name: "Installieren", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Hollow Lantern installieren" });
+    await expect(dialog.getByText(/frei auf diesem Laufwerk/)).toBeVisible();
+    await dialog.getByRole("button", { name: "Installieren" }).click();
+    await expect(page.getByText("„Hollow Lantern“ wird heruntergeladen").first()).toBeVisible();
+    await page.getByRole("link", { name: "Settings" }).click();
+    await page.getByRole("link", { name: "Konten & Stores" }).click();
+    await expect(page.getByText(/Verbunden als Alex/)).toBeVisible();
+  });
+
   test("ungültige Links meldet der Dialog verständlich", async ({ page }) => {
     await openCove(page, "/downloads");
     await page.getByRole("button", { name: "Download per Link" }).first().click();

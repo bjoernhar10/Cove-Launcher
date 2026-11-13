@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Cove",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "identifier": "app.cove.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -41,10 +41,14 @@
       "binaries/cove-connectors"
     ],
     "category": "Game",
-    "shortDescription": "Ein ruhiger Launcher für alle deine Spiele",
+    "shortDescription": "A calm launcher for all your games",
     "publisher": "Cove",
     "homepage": "https://github.com/bjoernhar10/Cove-Launcher",
-    "license": "MIT"
+    "license": "MIT",
+    "linux": {
+      "deb": { "recommends": ["mangohud", "gamemode", "gamescope"] },
+      "rpm": { "recommends": ["mangohud", "gamemode", "gamescope"] }
+    }
   },
   "plugins": {
     "updater": {

@@ -138,6 +138,8 @@ pub struct LaunchTarget {
     pub installed_by_cove: bool,
     /// Store login arguments (Epic exchange code), before the user's arguments.
     pub extra_args: Vec<String>,
+    /// Store variables (Amazon Games SDK), before the user's variables.
+    pub extra_env: Vec<(String, String)>,
 }
 
 impl From<&LibraryItem> for LaunchTarget {
@@ -151,6 +153,7 @@ impl From<&LibraryItem> for LaunchTarget {
             options: item.entry.launch_options.clone(),
             installed_by_cove: item.entry.installed_by_cove,
             extra_args: Vec::new(),
+            extra_env: Vec::new(),
         }
     }
 }
@@ -162,7 +165,9 @@ fn store_url(source: StoreSource, id: &str) -> Option<String> {
             "com.epicgames.launcher://apps/{id}?action=launch&silent=true"
         )),
         StoreSource::Gog => Some(format!("goggalaxy://openGameView/{id}")),
-        StoreSource::Manual => None,
+        // The Amazon Games app exists only on Windows.
+        StoreSource::Amazon if cfg!(windows) => Some(format!("amazon-games://play/{id}")),
+        StoreSource::Amazon | StoreSource::Manual => None,
     }
 }
 
@@ -187,7 +192,8 @@ pub fn launch_via(
     match source {
         StoreSource::Epic => Some(LaunchVia::EpicLauncher),
         StoreSource::Gog => Some(LaunchVia::GogGalaxy),
-        StoreSource::Steam | StoreSource::Manual => None,
+        StoreSource::Amazon if cfg!(windows) => Some(LaunchVia::AmazonGames),
+        StoreSource::Amazon | StoreSource::Steam | StoreSource::Manual => None,
     }
 }
 
@@ -221,6 +227,16 @@ fn gog_task(target: &LaunchTarget, exe: &Path) -> Option<(Vec<String>, Option<Pa
     crate::downloads::gog::primary_task(Path::new(dir), product)
         .filter(|t| t.path == exe)
         .map(|t| (t.arguments, t.working_dir))
+}
+
+/// Amazon games define their start in fuel.json: arguments and working folder.
+fn amazon_task(target: &LaunchTarget, exe: &Path) -> Option<(Vec<String>, Option<PathBuf>)> {
+    let (StoreSource::Amazon, Some(dir)) = (target.source, target.install_path.as_deref()) else {
+        return None;
+    };
+    crate::downloads::amazon::fuel_start(Path::new(dir))
+        .filter(|s| s.command == exe)
+        .map(|s| (s.args, s.working_dir))
 }
 
 /// Decides how to start a game.
@@ -412,7 +428,8 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
     let mut env: Vec<(String, String)> = Vec::new();
     let mut cwd = exe.parent().map(Path::to_path_buf);
     let mut task_args = Vec::new();
-    if let Some((args, working_dir)) = gog_task(target, &exe) {
+    if let Some((args, working_dir)) = gog_task(target, &exe).or_else(|| amazon_task(target, &exe))
+    {
         task_args = args;
         if working_dir.is_some() {
             cwd = working_dir;
@@ -458,6 +475,7 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
     args.extend(target.extra_args.iter().cloned());
     args.extend(user_args);
     let (program, args) = apply_tweaks(target, host, &exe, program, args, &mut env)?;
+    env.extend(target.extra_env.iter().cloned());
     // User variables last so they can override ours.
     env.extend(
         target
@@ -563,6 +581,11 @@ impl Tracker {
                 self.known.insert(c.pid, Some(c.start_time));
             }
         }
+    }
+
+    /// Whether it adopts processes by their folder (games a store client starts).
+    pub fn watches_dir(&self) -> bool {
+        self.watch_dir.is_some()
     }
 
     pub fn is_alive(&self) -> bool {
@@ -679,15 +702,16 @@ impl Launcher {
     }
 
     pub fn launch(&self, item: &LibraryItem, host: &HostEnv) -> AppResult<LaunchResult> {
-        self.launch_with(item, host, Vec::new())
+        self.launch_with(item, host, Vec::new(), Vec::new())
     }
 
-    /// Starts with extra store arguments (Epic login).
+    /// Starts with extra store arguments (Epic login) and variables (Amazon SDK).
     pub fn launch_with(
         &self,
         item: &LibraryItem,
         host: &HostEnv,
         extra_args: Vec<String>,
+        extra_env: Vec<(String, String)>,
     ) -> AppResult<LaunchResult> {
         let game_id = item.game.id.clone();
         if self.lock().contains_key(&game_id) {
@@ -695,6 +719,7 @@ impl Launcher {
         }
         let target = LaunchTarget {
             extra_args,
+            extra_env,
             ..LaunchTarget::from(item)
         };
         let plan = plan(&target, host)?;
@@ -735,6 +760,13 @@ impl Launcher {
                 {
                     std::fs::create_dir_all(prefix)?;
                 }
+                // In Flatpak, host programs (emulators, …) run on the host.
+                let (program, args, env) = if crate::flatpak::active() {
+                    let routed = crate::flatpak::route(&program, &args, &env, cwd.as_deref());
+                    (routed.program, routed.args, routed.env)
+                } else {
+                    (program, args, env)
+                };
                 let mut command = Command::new(&program);
                 command
                     .args(&args)
@@ -838,14 +870,28 @@ impl Launcher {
                 self.timing.slow_poll
             };
             tokio::time::sleep(poll).await;
-            let procs = snapshot(&mut system);
+            // Games a store client started run outside a Flatpak sandbox.
+            let on_host = crate::flatpak::active() && tracker.watches_dir();
+            let procs = if on_host {
+                tokio::task::spawn_blocking(crate::flatpak::host_processes)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                snapshot(&mut system)
+            };
             tracker.update(&procs);
 
             if stop.load(Ordering::SeqCst) {
                 let first = *kill_requested_at.get_or_insert_with(Instant::now);
                 // Polite SIGTERM first, SIGKILL after 3 s.
                 let force = first.elapsed() > Duration::from_secs(3);
-                for pid in tracker.pids() {
+                if on_host {
+                    crate::flatpak::kill_on_host(
+                        &tracker.pids(),
+                        if force { "KILL" } else { "TERM" },
+                    );
+                }
+                for pid in tracker.pids().into_iter().filter(|_| !on_host) {
                     if let Some(p) = system.process(Pid::from_u32(pid)) {
                         if force || p.kill_with(Signal::Term).is_none() {
                             p.kill();
@@ -929,7 +975,50 @@ mod tests {
             options: LaunchOptions::default(),
             installed_by_cove: false,
             extra_args: Vec::new(),
+            extra_env: Vec::new(),
         }
+    }
+
+    #[test]
+    fn amazon_games_start_from_fuel_json_with_the_sdk_variables() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Bin")).unwrap();
+        std::fs::write(dir.path().join("Bin/game.sh"), "#!/bin/sh").unwrap();
+        std::fs::write(
+            dir.path().join("fuel.json"),
+            r#"{"Main":{"Command":"Bin\\game.sh","Args":["-fuel"],"WorkingSubdirOverride":"Bin"}}"#,
+        )
+        .unwrap();
+        let exe = dir.path().join("Bin/game.sh");
+        let mut t = target(
+            StoreSource::Amazon,
+            Some(&exe.to_string_lossy()),
+            Some("amzn1.adg.product.1"),
+        );
+        t.install_path = Some(dir.path().to_string_lossy().into_owned());
+        t.installed_by_cove = true;
+        t.extra_env = vec![("AMAZON_GAMES_FUEL_PRODUCT_SKU".into(), "SKU1".into())];
+        let LaunchPlan::Process { args, env, cwd, .. } =
+            plan(&t, &host(Platform::Linux, &[])).unwrap()
+        else {
+            panic!("expected a process");
+        };
+        assert_eq!(args, ["-fuel"]);
+        assert_eq!(cwd, Some(dir.path().join("Bin")));
+        assert!(env.contains(&("AMAZON_GAMES_FUEL_PRODUCT_SKU".into(), "SKU1".into())));
+        assert_eq!(
+            launch_via(StoreSource::Amazon, Some("p"), Some("/g/x.exe"), true),
+            Some(LaunchVia::Direct)
+        );
+        let none = if cfg!(windows) {
+            Some(LaunchVia::AmazonGames)
+        } else {
+            None
+        };
+        assert_eq!(
+            launch_via(StoreSource::Amazon, Some("p"), None, false),
+            none
+        );
     }
 
     #[test]

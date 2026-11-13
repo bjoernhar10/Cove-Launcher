@@ -9,8 +9,10 @@ pub mod library;
 pub mod sessions;
 pub mod settings;
 pub mod sources;
+pub mod stats;
 pub mod store_games;
 pub mod store_installs;
+pub mod wishlist;
 
 use std::path::Path;
 
@@ -93,6 +95,6 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!(count, 4);
+        assert_eq!(count, 5);
     }
 }

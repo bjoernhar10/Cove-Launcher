@@ -291,7 +291,7 @@ impl BackupService {
             StoreSource::Steam => Some("steam"),
             StoreSource::Gog => Some("gog"),
             StoreSource::Epic => Some("epic"),
-            StoreSource::Manual => None,
+            StoreSource::Amazon | StoreSource::Manual => None,
         };
         let base = entry.install_path.as_deref().map(PathBuf::from);
         let home = host.home.clone().unwrap_or_default();

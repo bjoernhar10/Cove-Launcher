@@ -118,7 +118,8 @@ pub async fn start<R: Runtime>(
             tauri::async_runtime::spawn(async move {
                 let outcome = tokio::select! {
                     code = login_in_window(&app, &label, &title, &url, &prefix, LOGIN_TIMEOUT) => Some(match code {
-                        Ok(code) => stores.login_complete(store, None, Some(&code), None).await,
+                        // The state goes back too: Amazon derives its PKCE verifier from it.
+                        Ok(code) => stores.login_complete(store, None, Some(&code), Some(&state)).await,
                         Err(error) => Err(error),
                     }),
                     _ = cancel => None,

@@ -53,6 +53,9 @@ pub async fn load(pool: &SqlitePool, defaults: &AppSettings) -> AppResult<AppSet
         emulators: get_json(pool, "emulators")
             .await?
             .unwrap_or_else(|| defaults.emulators.clone()),
+        wishlist: get_json(pool, "wishlist")
+            .await?
+            .unwrap_or_else(|| defaults.wishlist.clone()),
     };
     normalize(&mut settings);
     Ok(settings)
@@ -127,6 +130,13 @@ pub fn validate(settings: &AppSettings) -> AppResult<()> {
         ));
     }
     crate::emulators::validate(&settings.emulators)?;
+    let country = &settings.wishlist.country;
+    if country.len() != 2 || !country.chars().all(|c| c.is_ascii_uppercase()) {
+        return invalid(tr!(
+            "Das Land für Preise ist ein Ländercode aus zwei Buchstaben, z. B. DE.",
+            "The country for prices is a two-letter country code, e.g. DE."
+        ));
+    }
     Ok(())
 }
 
@@ -141,6 +151,7 @@ pub async fn save(pool: &SqlitePool, settings: &AppSettings) -> AppResult<()> {
     set_json(pool, "catalog", &settings.catalog).await?;
     set_json(pool, "backups", &settings.backups).await?;
     set_json(pool, "emulators", &settings.emulators).await?;
+    set_json(pool, "wishlist", &settings.wishlist).await?;
     Ok(())
 }
 
@@ -184,6 +195,7 @@ pub(crate) mod tests {
             },
             backups: crate::models::BackupSettings::default(),
             emulators: crate::models::EmulatorSettings::default(),
+            wishlist: crate::models::WishlistSettings::default(),
         }
     }
 

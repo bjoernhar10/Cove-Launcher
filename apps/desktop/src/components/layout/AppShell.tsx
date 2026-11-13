@@ -8,6 +8,7 @@ import { useMoves } from "../../stores/moves.ts";
 import { useProton } from "../../stores/proton.ts";
 import { invalidateQueries } from "../../stores/query.ts";
 import { toast } from "../../stores/toasts.ts";
+import { formatMoney } from "../../lib/format.ts";
 import { syncAppearanceWithCore } from "../../stores/preferences.ts";
 import { useRunningGames } from "../../stores/running.ts";
 import { usePlugins } from "../../stores/plugins.ts";
@@ -48,6 +49,18 @@ export function AppShell() {
       api.accounts.subscribeAchievementUnlocked((achievement) => {
         invalidateQueries();
         toast(achievement.title, "neutral", { title: messages().achievements.unlocked, kind: "achievement", durationMs: 5000 });
+      }),
+    [],
+  );
+
+  useEffect(
+    () =>
+      api.wishlist.subscribePriceAlert((alert) => {
+        invalidateQueries();
+        const m = messages().wishlist;
+        const price = formatMoney(alert.deal.price.amount, alert.deal.price.currency);
+        const text = alert.reason === "target" ? m.alertTarget(alert.title, price, alert.deal.shop) : m.alertSale(alert.title, alert.deal.cut, alert.deal.shop);
+        toast(text, "neutral", { title: m.title, action: { label: m.open, to: "/wishlist" }, durationMs: 8000 });
       }),
     [],
   );

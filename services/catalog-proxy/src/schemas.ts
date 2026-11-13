@@ -73,6 +73,15 @@ export const steamAppId = z.string().regex(/^\d{1,10}$/, "appid must be numeric"
 
 export const matchBody = z.object({ title: text(200).min(1, "title is required") });
 
+/** Prices: a country and at most 50 games (title + the client's key for the answer). */
+export const pricesBody = z.object({
+  country: z.string().regex(/^[A-Z]{2}$/, "country must be a two-letter code"),
+  games: z
+    .array(z.object({ key: text(100).min(1, "key is required"), title: text(200).min(1, "title is required") }))
+    .min(1, "games must not be empty")
+    .max(50, "at most 50 games"),
+});
+
 /** At most 500 IGDB game ids (one IGDB page). */
 export const timeToBeatBody = z.object({
   ids: z.array(gameId).min(1, "ids must not be empty").max(500, "at most 500 ids"),

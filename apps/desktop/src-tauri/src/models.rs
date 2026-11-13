@@ -12,6 +12,7 @@ pub enum StoreSource {
     Steam,
     Gog,
     Epic,
+    Amazon,
     Manual,
 }
 
@@ -21,6 +22,7 @@ impl StoreSource {
             Self::Steam => "Steam",
             Self::Gog => "GOG",
             Self::Epic => "Epic",
+            Self::Amazon => "Amazon",
             Self::Manual => "Manuell",
         }
     }
@@ -30,6 +32,7 @@ impl StoreSource {
             Self::Steam => "steam",
             Self::Gog => "gog",
             Self::Epic => "epic",
+            Self::Amazon => "amazon",
             Self::Manual => "manual",
         }
     }
@@ -39,6 +42,7 @@ impl StoreSource {
             "steam" => Some(Self::Steam),
             "gog" => Some(Self::Gog),
             "epic" => Some(Self::Epic),
+            "amazon" => Some(Self::Amazon),
             "manual" => Some(Self::Manual),
             _ => None,
         }
@@ -280,6 +284,7 @@ pub enum LaunchVia {
     Steam,
     EpicLauncher,
     GogGalaxy,
+    AmazonGames,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -353,6 +358,118 @@ pub struct PlaytimeStats {
     pub days: Vec<PlaytimeDay>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Money {
+    pub amount: f64,
+    pub currency: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceDeal {
+    pub shop: String,
+    pub price: Money,
+    pub regular: Money,
+    pub cut: i64,
+    pub url: String,
+    pub expiry: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GamePrice {
+    pub url: Option<String>,
+    pub best: Option<PriceDeal>,
+    pub deals: Vec<PriceDeal>,
+    pub history_low: Option<Money>,
+    pub checked_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WishlistItem {
+    pub game: Game,
+    pub added_at: String,
+    pub target_price: Option<f64>,
+    pub notify_on_sale: bool,
+    pub price: Option<GamePrice>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AlertReason {
+    Target,
+    Sale,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceAlert {
+    pub game_id: GameId,
+    pub title: String,
+    pub deal: PriceDeal,
+    pub reason: AlertReason,
+}
+
+/// Statistics page (`stats_overview`), mirrors `PlayStats`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayStats {
+    pub year: Option<i32>,
+    pub years: Vec<i32>,
+    pub total_minutes: i64,
+    pub session_count: i64,
+    pub games_played: i64,
+    pub days_played: i64,
+    pub longest_streak_days: i64,
+    pub longest_session: Option<StatsSession>,
+    pub achievements_unlocked: i64,
+    pub months: Vec<StatsMonth>,
+    pub weekdays: Vec<i64>,
+    pub top_games: Vec<StatsGame>,
+    pub genres: Vec<StatsGenre>,
+    pub stores: Vec<StatsStore>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsMonth {
+    pub month: String,
+    pub minutes: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsSession {
+    pub game_id: GameId,
+    pub title: String,
+    pub minutes: i64,
+    pub started_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsGame {
+    pub game: Game,
+    pub minutes: i64,
+    pub session_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsGenre {
+    pub genre: String,
+    pub minutes: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatsStore {
+    pub store: StoreSource,
+    pub minutes: i64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DownloadStatus {
@@ -405,6 +522,7 @@ pub enum DownloadOrigin {
     Steam,
     Gog,
     Epic,
+    Amazon,
 }
 
 impl DownloadOrigin {
@@ -415,12 +533,14 @@ impl DownloadOrigin {
             Self::Steam => "steam",
             Self::Gog => "gog",
             Self::Epic => "epic",
+            Self::Amazon => "amazon",
         }
     }
 
     pub fn parse(value: &str) -> Self {
         match value {
             "itch" => Self::Itch,
+            "amazon" => Self::Amazon,
             "steam" => Self::Steam,
             "gog" => Self::Gog,
             "epic" => Self::Epic,
@@ -749,6 +869,44 @@ pub struct AppSettings {
     pub backups: BackupSettings,
     #[serde(default)]
     pub emulators: EmulatorSettings,
+    #[serde(default)]
+    pub wishlist: WishlistSettings,
+}
+
+/// Wishlist prices (`IsThereAnyDeal` through the Cove proxy).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WishlistSettings {
+    /// Two-letter country code, e.g. `DE`.
+    #[serde(default = "system_country")]
+    pub country: String,
+    #[serde(default = "enabled")]
+    pub price_alerts: bool,
+}
+
+fn enabled() -> bool {
+    true
+}
+
+/// The country of the system locale (`de-DE` → `DE`), else `US`.
+pub fn system_country() -> String {
+    sys_locale::get_locale()
+        .and_then(|l| {
+            l.split(['-', '_'])
+                .nth(1)
+                .map(|c| c.chars().take(2).collect::<String>().to_ascii_uppercase())
+        })
+        .filter(|c| c.len() == 2 && c.chars().all(|ch| ch.is_ascii_uppercase()))
+        .unwrap_or_else(|| "US".to_owned())
+}
+
+impl Default for WishlistSettings {
+    fn default() -> Self {
+        Self {
+            country: system_country(),
+            price_alerts: true,
+        }
+    }
 }
 
 /// Save backups of every game (save locations from the Ludusavi manifest).

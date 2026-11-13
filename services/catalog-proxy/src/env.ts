@@ -10,4 +10,6 @@ export interface Env {
   IGDB_CLIENT_SECRET: string;
   /** Steam Web API key (https://steamcommunity.com/dev/apikey). */
   STEAM_API_KEY: string;
+  /** IsThereAnyDeal API key (https://isthereanydeal.com/apps/my/). */
+  ITAD_API_KEY: string;
 }

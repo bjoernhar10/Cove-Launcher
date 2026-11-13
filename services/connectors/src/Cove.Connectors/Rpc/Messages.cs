@@ -35,6 +35,8 @@ public sealed record GogDlcParams(StoreSession Session, string ProductId, string
 
 public sealed record EpicAppParams(StoreSession Session, string AppName, string? Platform, bool OwnershipToken, IReadOnlyList<string>? Paths, string? ProxyUrl);
 
+public sealed record AmazonParams(StoreSession Session, string? ProductId, IReadOnlyList<string>? ProductIds, string? ProxyUrl);
+
 public sealed record LibraryResult(IReadOnlyList<OwnedGame> Games);
 
 public sealed record AchievementsResult(IReadOnlyList<StoreAchievement> Achievements);
@@ -73,6 +75,10 @@ public sealed record LocalResult(IReadOnlyList<LocalGame> Games);
 [JsonSerializable(typeof(EpicLaunch))]
 [JsonSerializable(typeof(EpicSaves))]
 [JsonSerializable(typeof(EpicWriteLinks))]
+[JsonSerializable(typeof(AmazonParams))]
+[JsonSerializable(typeof(AmazonDownload))]
+[JsonSerializable(typeof(AmazonVersions))]
+[JsonSerializable(typeof(AmazonSdk))]
 internal sealed partial class RpcJsonContext : JsonSerializerContext
 {
 }

@@ -134,6 +134,10 @@ async fn app_with(
             tmp.path().to_path_buf(),
             "http://127.0.0.1:1/manifest.yaml".into(),
         )),
+        prices: Arc::new(crate::prices::PriceService::with_base(
+            pool.clone(),
+            Some("http://127.0.0.1:1".into()),
+        )),
         protondb: Arc::new(crate::protondb::ProtonDb::with_endpoints(
             pool.clone(),
             "http://127.0.0.1:1".into(),
@@ -218,6 +222,20 @@ async fn library_flow_with_frontend_payloads() {
     let list: Vec<LibraryItem> = invoke(&app, "library_list", json!({}));
     assert_eq!(list.len(), 1);
     let _: Value = invoke(&app, "library_playtime", json!({ "gameId": id }));
+    let wishlist: Vec<Value> = invoke(&app, "wishlist_list", json!({}));
+    assert_eq!(wishlist, Vec::<Value>::new());
+    let _: Value = invoke(&app, "wishlist_remove", json!({ "gameId": "igdb-1" }));
+    let update = invoke_raw(
+        &app,
+        "wishlist_update",
+        json!({ "gameId": "igdb-1", "targetPrice": 9.99, "notifyOnSale": true }),
+    )
+    .unwrap_err();
+    assert_eq!(update["kind"], "invalidInput");
+    let stats: Value = invoke(&app, "stats_overview", json!({ "year": null }));
+    assert_eq!(stats["months"].as_array().map(Vec::len), Some(12));
+    let year: Value = invoke(&app, "stats_overview", json!({ "year": 2026 }));
+    assert_eq!(year["year"], 2026);
     let _: Value = invoke(&app, "achievements_recent", json!({ "limit": 6 }));
     let running: Vec<Value> = invoke(&app, "game_running_list", json!({}));
     assert_eq!(running, Vec::<Value>::new());
@@ -356,7 +374,7 @@ async fn catalog_commands_accept_frontend_payloads() {
 async fn connector_commands_accept_frontend_payloads() {
     let app = app().await;
     let accounts: Vec<crate::models::StoreAccount> = invoke(&app, "connectors_list", json!({}));
-    assert_eq!(accounts.len(), 3);
+    assert_eq!(accounts.len(), 4);
 
     // Local detection works without login; `store: null` = all stores.
     let local: Vec<crate::models::LocalStoreGame> =

@@ -116,9 +116,20 @@ export function Sidebar() {
         <SidebarLink item={SETTINGS_NAV} collapsed={collapsed} />
       </div>
 
-      <div className={cx("flex h-14 shrink-0 items-center gap-3 border-t border-border", collapsed ? "justify-center" : "px-5")}>
+      <div className={cx("flex h-14 shrink-0 items-center border-t border-border", collapsed ? "justify-center" : "px-3")}>
         {profile.status === "success" ? (
-          <>
+          <NavLink
+            to="/stats"
+            aria-label={collapsed ? t.stats.open : undefined}
+            title={t.stats.open}
+            className={({ isActive }) =>
+              cx(
+                "flex min-w-0 items-center gap-3 rounded-md py-2 transition-colors duration-150 ease-out",
+                collapsed ? "px-2" : "flex-1 px-2",
+                isActive ? "bg-active" : "hover:bg-hover",
+              )
+            }
+          >
             <Avatar name={profile.data.displayName} />
             {!collapsed && (
               <div className="min-w-0">
@@ -126,12 +137,12 @@ export function Sidebar() {
                 <p className="truncate text-xs text-fg-subtle">{t.sidebar.localProfile}</p>
               </div>
             )}
-          </>
+          </NavLink>
         ) : (
-          <>
+          <div className={cx("flex items-center gap-3", !collapsed && "px-2")}>
             <Skeleton className="size-7 rounded-full" />
             {!collapsed && <Skeleton className="h-4 w-24" />}
-          </>
+          </div>
         )}
       </div>
     </aside>

@@ -145,6 +145,7 @@ impl UmuLaunch {
         let store = match source {
             StoreSource::Gog => Some("gog"),
             StoreSource::Epic => Some("egs"),
+            StoreSource::Amazon => Some("amazon"),
             _ => None,
         };
         Self {

@@ -2,8 +2,8 @@
 
 **A calm, universal game launcher for Linux, Windows and macOS.**
 
-Cove brings your games from Steam, GOG, Epic, itch.io, emulators and your own folders together in
-one tidy library. It installs GOG and Epic games without their launchers, runs Windows games on
+Cove brings your games from Steam, GOG, Epic, Amazon, itch.io, emulators and your own folders
+together in one tidy library. It installs GOG, Epic and Amazon games without their launchers, runs Windows games on
 Linux with Proton, backs up your saves and keeps track of playtime and achievements.
 No ads, no social feed, no account of its own.
 
@@ -17,9 +17,10 @@ No ads, no social feed, no account of its own.
 | | |
 |---|---|
 | ![My Library](docs/screenshots/library.png) | ![Game page](docs/screenshots/game.png) |
-| ![Catalogue](docs/screenshots/catalogue.png) | ![Catalogue game page](docs/screenshots/catalogue-game.png) |
+| ![Catalogue](docs/screenshots/catalogue.png) | ![Statistics](docs/screenshots/stats.png) |
 | ![Game options on Linux](docs/screenshots/game-options.png) | ![Save backups and Proton prefix](docs/screenshots/backups.png) |
 | ![Downloads](docs/screenshots/downloads.png) | ![Emulators](docs/screenshots/emulators.png) |
+| ![Wishlist](docs/screenshots/wishlist.png) | |
 
 <sub>The screenshots show invented demo games with drawn artwork.</sub>
 
@@ -27,8 +28,8 @@ No ads, no social feed, no account of its own.
 
 ### One library
 
-- **Every store in one place:** sign in to Steam, GOG and Epic on the store's own login page and
-  your games, playtime and achievements are imported. Add your itch.io key to download your
+- **Every store in one place:** sign in to Steam, GOG, Epic and Amazon (Prime Gaming) on the
+  store's own login page and your games, playtime and achievements are imported. Add your itch.io key to download your
   purchases. Games already installed through Steam, Heroic, Legendary or GOG Galaxy are found
   without any login.
 - **Your own games and emulators:** add any game folder, or a ROM folder per system (NES to
@@ -40,11 +41,14 @@ No ads, no social feed, no account of its own.
   Stays smooth with thousands of games.
 - **Playtime and achievements:** playtime follows the whole process tree, the game page shows the
   last 14 days. Achievements come from the stores, plus Cove's own and those of plugins.
+- **Statistics:** click your profile at the bottom left for your playtime per month and weekday,
+  most played games, genres, stores, streaks and longest sessions, for all time or one year.
 
 ### Installing and playing
 
-- **GOG and Epic without their launchers:** Cove downloads, installs, updates and starts GOG and
-  Epic games itself, with your choice of DLCs. Updates only download what changed. Games with
+- **GOG, Epic and Amazon without their launchers:** Cove downloads, installs, updates and starts
+  GOG, Epic and Amazon games itself (Windows builds through Proton on Linux), with your choice of
+  DLCs. Updates only download what changed. Games with
   anti-cheat or a third-party launcher are left to the Epic Launcher, and Cove says so.
 - **Steam stays Steam:** Steam games install and start through Steam. If Steam isn't running, Cove
   starts it silently first, so no Steam window pops up.
@@ -79,6 +83,9 @@ No ads, no social feed, no account of its own.
   Cove's own proxy, so you need no API keys. Works offline from a local cache.
 - **Recommendations** computed on your own computer, each with a short reason.
 - **Time to beat:** main story, main + extras and 100 % on game pages.
+- **Wishlist with price alerts:** put catalogue games on your wishlist, see the best current price
+  across 30+ shops and the lowest price ever, set a target price and get a notification when it is
+  reached or a sale starts. Prices by [IsThereAnyDeal](https://isthereanydeal.com/).
 
 ### And also
 
@@ -99,9 +106,15 @@ Download the newest version from the [releases page](https://github.com/bjoernha
 |---|---|
 | Linux x86_64 | `.AppImage` (updates itself), `.deb` (`amd64`), `.rpm` (`x86_64`) |
 | Linux ARM64 | `.AppImage`, `.deb` (`arm64`), `.rpm` (`aarch64`) |
+| Linux (Flatpak) | `Cove-x86_64.flatpak`, `Cove-aarch64.flatpak` (`flatpak install Cove-x86_64.flatpak`); Flathub is planned |
 | Windows x64 | `-setup.exe` or `.msi` |
 | macOS Apple Silicon | `_aarch64.dmg` |
 | macOS Intel | `_x64.dmg` |
+
+On Linux the `.deb` and `.rpm` packages also install MangoHud, GameMode and gamescope where the
+distribution has them (as recommended packages, so a missing one never blocks the install). With
+the AppImage, install them with your package manager if you want them, e.g.
+`sudo dnf install mangohud gamemode gamescope`.
 
 The macOS builds are not notarized yet: if macOS refuses to open Cove, right-click it in
 Applications and choose **Open**.
@@ -188,7 +201,7 @@ Never commit it.
 | Shared types & JSON schemas | TypeScript | `packages/shared` |
 
 Details in [docs/architecture.md](docs/architecture.md). Design and code rules live in [CLAUDE.md](CLAUDE.md).
-To run your own catalogue proxy, see [docs/proxy.md](docs/proxy.md).
+To run your own catalogue proxy, see [docs/proxy.md](docs/proxy.md). Flatpak and Flathub: [docs/flatpak.md](docs/flatpak.md).
 
 Game data provided by [IGDB.com](https://www.igdb.com).
 

@@ -12,6 +12,8 @@ const PAGES = [
   "/catalogue",
   "/catalogue/igdb-1",
   "/downloads",
+  "/wishlist",
+  "/stats",
   "/settings/general",
   "/settings/appearance",
   "/settings/library",

@@ -33,7 +33,7 @@ import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 import { useUi } from "../stores/ui.ts";
 
-const GROUPS: BuiltinGroup[] = ["all", "installed", "favorites", "steam", "gog", "epic", "manual"];
+const GROUPS: BuiltinGroup[] = ["all", "installed", "favorites", "steam", "gog", "epic", "amazon", "manual"];
 
 function isBuiltin(group: LibraryGroup): group is BuiltinGroup {
   return !group.startsWith("collection:");

@@ -42,7 +42,7 @@ describe("i18n", () => {
     expect(messages().common.retry).toBe("Try again");
     expect(SOURCE_LABELS.manual).toBe("Manual");
     expect(GENRE_LABELS.rpg).toBe("Role-playing");
-    expect(Object.keys(SOURCE_LABELS)).toEqual(["steam", "gog", "epic", "manual"]);
+    expect(Object.keys(SOURCE_LABELS)).toEqual(["steam", "gog", "epic", "amazon", "manual"]);
     expect(formatPlaytime(450)).toBe("7.5 h");
     expect(formatPlaytime(0)).toBe("Never played");
 

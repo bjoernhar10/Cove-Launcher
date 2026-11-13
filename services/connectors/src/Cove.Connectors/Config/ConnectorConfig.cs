@@ -42,8 +42,26 @@ public sealed record EpicConfig(
     string OwnershipTokenUrl,
     string SavesUrl);
 
+/// <param name="DeviceType">Device type of the Amazon Games app (part of the device client id).</param>
+/// <param name="LauncherAgent">Sent as the <c>UserAgent</c> header of distribution calls, like the app does.</param>
+public sealed record AmazonConfig(
+    string SigninUrl,
+    string ReturnTo,
+    string MarketplaceId,
+    string DeviceType,
+    string AppName,
+    string AppVersion,
+    string UserAgent,
+    string LauncherAgent,
+    string KeyId,
+    string RegisterUrl,
+    string TokenUrl,
+    string EntitlementsUrl,
+    string DistributionUrl,
+    string SdkChannelUrl);
+
 /// <summary>Store endpoints and client ids (Config/connectors.json, embedded).</summary>
-public sealed record ConnectorConfig(SteamConfig Steam, GogConfig Gog, EpicConfig Epic)
+public sealed record ConnectorConfig(SteamConfig Steam, GogConfig Gog, EpicConfig Epic, AmazonConfig Amazon)
 {
     /// <summary>Embedded defaults, or the file named by COVE_CONNECTORS_CONFIG.</summary>
     public static ConnectorConfig Load()

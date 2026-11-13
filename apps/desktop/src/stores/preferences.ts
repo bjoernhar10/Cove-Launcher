@@ -23,11 +23,14 @@ interface PreferencesState {
   libraryView: LibraryView;
   libraryGroup: LibraryGroup;
   libraryLength: LengthFilter;
+  /** Statistics page: "all" or a year. */
+  statsRange: string;
   setAccent: (accent: AccentColor) => void;
   toggleSidebar: () => void;
   setLibraryView: (view: LibraryView) => void;
   setLibraryGroup: (group: LibraryGroup) => void;
   setLibraryLength: (length: LengthFilter) => void;
+  setStatsRange: (range: string) => void;
 }
 
 /** Client-side UI preferences, persisted in localStorage so the accent applies before first paint. */
@@ -39,6 +42,7 @@ export const usePreferences = create<PreferencesState>()(
       libraryView: "grid",
       libraryGroup: "all",
       libraryLength: "any",
+      statsRange: "all",
       setAccent: (accent) => {
         set({ accent });
       },
@@ -53,6 +57,9 @@ export const usePreferences = create<PreferencesState>()(
       },
       setLibraryLength: (libraryLength) => {
         set({ libraryLength });
+      },
+      setStatsRange: (statsRange) => {
+        set({ statsRange });
       },
     }),
     { name: "cove.preferences" },

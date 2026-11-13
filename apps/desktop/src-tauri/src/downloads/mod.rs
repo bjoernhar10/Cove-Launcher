@@ -2,6 +2,8 @@
 //! unpacking and adding the game to the library. Store games are handed to
 //! their own client. All state is in SQLite, so downloads survive restarts.
 
+pub mod amazon;
+pub mod amazon_install;
 pub mod epic;
 mod epic_install;
 pub mod extract;
@@ -401,6 +403,7 @@ impl DownloadManager {
         let mut gog_installer = None;
         let url = match DownloadOrigin::parse(&record.origin) {
             DownloadOrigin::Epic => return self.run_epic(&record, control).await,
+            DownloadOrigin::Amazon => return self.run_amazon(&record, control).await,
             DownloadOrigin::Gog => {
                 let excluded =
                     db::store_installs::excluded_dlcs(&self.pool, &record.game_id).await?;
@@ -664,10 +667,12 @@ impl DownloadManager {
     async fn store_game(&self, game_id: &str) -> AppResult<(LibraryItem, StoreSource, String)> {
         let item = db::library::require(&self.pool, game_id).await?;
         match (item.entry.source, item.entry.store_game_id.clone()) {
-            (store @ (StoreSource::Gog | StoreSource::Epic), Some(id)) => Ok((item, store, id)),
+            (store @ (StoreSource::Gog | StoreSource::Epic | StoreSource::Amazon), Some(id)) => {
+                Ok((item, store, id))
+            }
             _ => Err(AppError::InvalidInput(tr!(
-                "Cove kann nur GOG- und Epic-Spiele selbst installieren.",
-                "Cove can only install GOG and Epic games itself."
+                "Cove kann nur GOG-, Epic- und Amazon-Spiele selbst installieren.",
+                "Cove can only install GOG, Epic and Amazon games itself."
             ))),
         }
     }
@@ -697,6 +702,16 @@ impl DownloadManager {
             download_bytes: bytes(download),
             install_bytes: bytes(install),
         };
+        if store == StoreSource::Amazon {
+            let (download, install) = self.preview_amazon(&app).await?;
+            return Ok(InstallPreview {
+                title: item.game.title,
+                download_bytes: bytes(download),
+                install_bytes: bytes(install),
+                launcher_only: None,
+                dlcs: Vec::new(),
+            });
+        }
         if store == StoreSource::Epic {
             let info = self
                 .stores()?
@@ -771,6 +786,17 @@ impl DownloadManager {
                     "Cove didn't install this game."
                 ))
             })?;
+        if store == StoreSource::Amazon {
+            let latest = self
+                .amazon_versions(&product)
+                .await?
+                .unwrap_or_else(|| installed.build_id.clone());
+            return Ok(GameUpdateInfo {
+                available: latest != installed.build_id,
+                installed_version: installed.version,
+                latest_version: latest,
+            });
+        }
         if store == StoreSource::Epic {
             let info = self
                 .stores()?
@@ -869,7 +895,7 @@ impl DownloadManager {
         let Some(dir) = record
             .install_path
             .as_deref()
-            .filter(|_| record.origin == "gog" || record.origin == "epic")
+            .filter(|_| matches!(record.origin.as_str(), "gog" | "epic" | "amazon"))
         else {
             return;
         };

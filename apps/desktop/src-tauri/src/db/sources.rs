@@ -23,7 +23,7 @@ struct SourceRow {
 pub fn login_mode(store: StoreSource) -> ConnectorLoginMode {
     match store {
         StoreSource::Steam | StoreSource::Manual => ConnectorLoginMode::Browser,
-        StoreSource::Gog | StoreSource::Epic => ConnectorLoginMode::Webview,
+        StoreSource::Gog | StoreSource::Epic | StoreSource::Amazon => ConnectorLoginMode::Webview,
     }
 }
 
@@ -57,7 +57,7 @@ const SELECT: &str =
 pub async fn list(pool: &SqlitePool) -> AppResult<Vec<StoreAccount>> {
     let rows: Vec<SourceRow> = sqlx::query_as(&format!(
         "{SELECT} WHERE s.id <> 'manual' \
-         ORDER BY CASE s.id WHEN 'steam' THEN 0 WHEN 'gog' THEN 1 ELSE 2 END"
+         ORDER BY CASE s.id WHEN 'steam' THEN 0 WHEN 'gog' THEN 1 WHEN 'epic' THEN 2 ELSE 3 END"
     ))
     .fetch_all(pool)
     .await?;
@@ -138,13 +138,18 @@ mod tests {
     use crate::models::StoreProblemKind;
 
     #[tokio::test]
-    async fn lists_three_stores_disconnected() {
+    async fn lists_the_stores_disconnected() {
         let pool = open_in_memory().await.unwrap();
         let accounts = list(&pool).await.unwrap();
         let stores: Vec<StoreSource> = accounts.iter().map(|a| a.store).collect();
         assert_eq!(
             stores,
-            [StoreSource::Steam, StoreSource::Gog, StoreSource::Epic]
+            [
+                StoreSource::Steam,
+                StoreSource::Gog,
+                StoreSource::Epic,
+                StoreSource::Amazon
+            ]
         );
         assert!(accounts
             .iter()

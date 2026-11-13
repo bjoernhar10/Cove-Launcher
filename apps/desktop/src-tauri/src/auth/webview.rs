@@ -48,7 +48,12 @@ pub fn classify(url: &str, callback_prefix: &str) -> Navigation {
         .split_once('?')
         .map(|(_, q)| parse_query(q))
         .unwrap_or_default();
-    if let Some(code) = params.get("code").filter(|c| !c.is_empty()) {
+    // Amazon names it `openid.oa2.authorization_code`.
+    if let Some(code) = params
+        .get("code")
+        .or_else(|| params.get("openid.oa2.authorization_code"))
+        .filter(|c| !c.is_empty())
+    {
         return Navigation::Code(code.clone());
     }
     if let Some(error) = params.get("error") {
@@ -178,6 +183,25 @@ mod tests {
                 GOG
             ),
             Navigation::Allow
+        );
+    }
+
+    #[test]
+    fn amazon_code_is_read_from_the_landing_page() {
+        const AMAZON: &str = "https://www.amazon.com/?openid";
+        assert_eq!(
+            classify(
+                "https://www.amazon.com/ap/signin?openid.mode=checkid_setup",
+                AMAZON
+            ),
+            Navigation::Allow
+        );
+        assert_eq!(
+            classify(
+                "https://www.amazon.com/?openid.assoc_handle=amzn_sonic_games_launcher&openid.oa2.authorization_code=ANxyz",
+                AMAZON
+            ),
+            Navigation::Code("ANxyz".into())
         );
     }
 

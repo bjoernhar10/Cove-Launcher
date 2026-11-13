@@ -19,7 +19,7 @@ export type IsoDateTime = string;
 /** Calendar date, e.g. `2026-11-03`. */
 export type IsoDate = string;
 
-export type StoreSource = "steam" | "gog" | "epic" | "manual";
+export type StoreSource = "steam" | "gog" | "epic" | "amazon" | "manual";
 
 /** Stores that support account connections (everything except manual). */
 export type ConnectableStore = Exclude<StoreSource, "manual">;
@@ -170,7 +170,7 @@ export interface LibraryEntry {
 }
 
 /** How a game is started: by Cove itself or through a store client. */
-export type LaunchVia = "direct" | "steam" | "epicLauncher" | "gogGalaxy";
+export type LaunchVia = "direct" | "steam" | "epicLauncher" | "gogGalaxy" | "amazonGames";
 
 /**
  * Catalogue matching state of a library game:
@@ -219,6 +219,118 @@ export interface PlaytimeStats {
   days: PlaytimeDay[];
 }
 
+/** Statistics page: playtime over a year or all time (`stats_overview`). */
+export interface PlayStats {
+  /** The year shown; null = all time. */
+  year: number | null;
+  /** Years with tracked sessions, newest first. */
+  years: number[];
+  /**
+   * Playtime in the range. All time includes playtime imported from the stores;
+   * a year only counts sessions Cove tracked.
+   */
+  totalMinutes: number;
+  sessionCount: number;
+  /** Games with playtime in the range. */
+  gamesPlayed: number;
+  /** Days with at least one session. */
+  daysPlayed: number;
+  /** Most days in a row with a session. */
+  longestStreakDays: number;
+  longestSession: StatsSession | null;
+  achievementsUnlocked: number;
+  /** Twelve months, oldest first: the year's months, or the last 12 for all time. */
+  months: StatsMonth[];
+  /** Tracked minutes per weekday, Monday first (7 entries). */
+  weekdays: number[];
+  /** Most played games, at most 10. */
+  topGames: StatsGame[];
+  /** Minutes per genre, most first (a game with two genres counts for both). */
+  genres: StatsGenre[];
+  /** Minutes per store, most first. */
+  stores: StatsStore[];
+}
+
+export interface StatsMonth {
+  /** `YYYY-MM`. */
+  month: string;
+  minutes: number;
+}
+
+export interface StatsSession {
+  gameId: GameId;
+  title: string;
+  minutes: number;
+  startedAt: IsoDateTime;
+}
+
+export interface StatsGame {
+  game: Game;
+  minutes: number;
+  sessionCount: number;
+}
+
+export interface StatsGenre {
+  genre: Genre;
+  minutes: number;
+}
+
+export interface StatsStore {
+  store: StoreSource;
+  minutes: number;
+}
+
+export interface Money {
+  amount: number;
+  /** ISO 4217, e.g. EUR. */
+  currency: string;
+}
+
+/** One shop's current offer (from IsThereAnyDeal; links unchanged). */
+export interface PriceDeal {
+  shop: string;
+  price: Money;
+  regular: Money;
+  /** Discount in percent (0 to 100). */
+  cut: number;
+  url: string;
+  expiry: IsoDateTime | null;
+}
+
+/** A game's prices in the user's country. */
+export interface GamePrice {
+  /** The game's page on IsThereAnyDeal. */
+  url: string | null;
+  /** Cheapest current offer. */
+  best: PriceDeal | null;
+  /** Current offers, cheapest first (at most 5). */
+  deals: PriceDeal[];
+  /** Lowest price ever recorded. */
+  historyLow: Money | null;
+  checkedAt: IsoDateTime;
+}
+
+/** A game on the wishlist (not owned). */
+export interface WishlistItem {
+  game: Game;
+  addedAt: IsoDateTime;
+  /** Notify when the best price is at or below this (in the price's currency); null = off. */
+  targetPrice: number | null;
+  /** Notify about every new discount. */
+  notifyOnSale: boolean;
+  /** Last known prices; null until the first check or when IsThereAnyDeal doesn't know the game. */
+  price: GamePrice | null;
+}
+
+/** Fired when a wishlist game reaches its target price or goes on sale. */
+export interface PriceAlert {
+  gameId: GameId;
+  title: string;
+  deal: PriceDeal;
+  /** "target" = at or below the target price, "sale" = a new discount. */
+  reason: "target" | "sale";
+}
+
 export type DownloadStatus =
   | "downloading"
   | "paused"
@@ -234,7 +346,7 @@ export type DownloadStatus =
   | "handedOff";
 
 /** Where a download comes from. Store games are never downloaded by Cove itself. */
-export type DownloadOrigin = "direct" | "itch" | "steam" | "gog" | "epic";
+export type DownloadOrigin = "direct" | "itch" | "steam" | "gog" | "epic" | "amazon";
 
 export interface Download {
   id: string;
@@ -807,6 +919,15 @@ export interface AppSettings {
   catalog: CatalogSettings;
   backups: BackupSettings;
   emulators: EmulatorSettings;
+  wishlist: WishlistSettings;
+}
+
+/** Wishlist prices (IsThereAnyDeal through the Cove proxy). */
+export interface WishlistSettings {
+  /** Two-letter country code for prices and currency, e.g. DE. */
+  country: string;
+  /** Check prices every few hours and notify about alerts. */
+  priceAlerts: boolean;
 }
 
 /** Save backups of every game (save locations from the Ludusavi manifest). */
@@ -1020,6 +1141,19 @@ export interface ProxyTimeToBeatRequest {
 /** Times per IGDB game id; ids without reports are left out. */
 export interface ProxyTimeToBeatResponse {
   items: Record<string, TimeToBeat>;
+}
+
+/** `POST /v1/prices`: current prices of games, looked up by title on IsThereAnyDeal. */
+export interface ProxyPricesRequest {
+  /** Two-letter country code (ISO 3166-1), e.g. DE. */
+  country: string;
+  /** At most 50; `key` comes back as the key of the answer. */
+  games: { key: string; title: string }[];
+}
+
+export interface ProxyPricesResponse {
+  /** Per requested key; null = not found on IsThereAnyDeal. */
+  items: Record<string, GamePrice | null>;
 }
 
 export type ProxyErrorCode =

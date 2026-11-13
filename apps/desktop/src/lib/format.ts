@@ -7,6 +7,9 @@ interface Formatters {
   dateLong: Intl.DateTimeFormat;
   dateShort: Intl.DateTimeFormat;
   weekday: Intl.DateTimeFormat;
+  month: Intl.DateTimeFormat;
+  monthLong: Intl.DateTimeFormat;
+  weekdayLong: Intl.DateTimeFormat;
 }
 
 const cache = new Map<string, Formatters>();
@@ -23,6 +26,9 @@ function fmt(): Formatters {
       dateLong: new Intl.DateTimeFormat(tag, { day: "numeric", month: "long", year: "numeric" }),
       dateShort: new Intl.DateTimeFormat(tag, { day: "numeric", month: "short" }),
       weekday: new Intl.DateTimeFormat(tag, { weekday: "short" }),
+      month: new Intl.DateTimeFormat(tag, { month: "short", timeZone: "UTC" }),
+      monthLong: new Intl.DateTimeFormat(tag, { month: "long", year: "numeric", timeZone: "UTC" }),
+      weekdayLong: new Intl.DateTimeFormat(tag, { weekday: "long", timeZone: "UTC" }),
     };
     cache.set(tag, f);
   }
@@ -85,6 +91,41 @@ export function formatDateShort(iso: string): string {
 
 export function formatWeekday(iso: string): string {
   return fmt().weekday.format(new Date(iso));
+}
+
+/** 12.99 EUR → "12,99 €" / "€12.99" (in the UI language). */
+export function formatMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(locale(), { style: "currency", currency }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
+
+/** Region name of a two-letter code in the UI language ("DE" → "Deutschland"). */
+export function formatCountry(code: string): string {
+  try {
+    return new Intl.DisplayNames([locale()], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** `2026-03` → "Mar" / "März" */
+export function formatMonthShort(month: string): string {
+  return fmt().month.format(new Date(`${month}-01T00:00:00Z`));
+}
+
+/** `2026-03` → "March 2026" / "März 2026" */
+export function formatMonthLong(month: string): string {
+  return fmt().monthLong.format(new Date(`${month}-01T00:00:00Z`));
+}
+
+/** Weekday name, 0 = Monday ("Mon" / "Monday"). */
+export function formatWeekdayIndex(index: number, long = false): string {
+  // 2024-01-01 was a Monday.
+  const date = new Date(Date.UTC(2024, 0, 1 + index, 12));
+  return (long ? fmt().weekdayLong : fmt().weekday).format(date);
 }
 
 export function formatYear(iso: string): string {

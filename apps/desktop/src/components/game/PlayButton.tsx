@@ -125,8 +125,8 @@ export function PlayButton({ item, size = "md", iconOnly = false, className }: P
     );
   }
 
-  // GOG and Epic games are installed by Cove (install dialog); Steam games by Steam.
-  const ownInstall = entry.source === "gog" || entry.source === "epic";
+  // GOG, Epic and Amazon games are installed by Cove (install dialog); Steam games by Steam.
+  const ownInstall = entry.source === "gog" || entry.source === "epic" || entry.source === "amazon";
   return (
     <>
       <Button

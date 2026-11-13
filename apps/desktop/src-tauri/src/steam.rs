@@ -35,6 +35,15 @@ struct Seen {
 }
 
 fn look(system: &mut System) -> Seen {
+    if crate::flatpak::active() {
+        // Steam runs on the host, outside the sandbox's process list.
+        let mut seen = Seen::default();
+        for name in crate::flatpak::host_process_names() {
+            seen.client |= is_client(&name);
+            seen.helper |= is_helper(&name);
+        }
+        return seen;
+    }
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
@@ -72,6 +81,9 @@ fn start_command(
             (PathBuf::from("open"), args.map(str::to_owned).to_vec())
         });
     }
+    if crate::flatpak::active() {
+        return flatpak_start_command(home);
+    }
     if let Some(steam) = find_in_path(path_var, "steam") {
         return Some((steam, silent()));
     }
@@ -81,6 +93,30 @@ fn start_command(
     let flatpak = find_in_path(path_var, "flatpak").filter(|_| flatpak_installed)?;
     let args = ["run", "com.valvesoftware.Steam", "-silent"];
     Some((flatpak, args.map(str::to_owned).to_vec()))
+}
+
+/// Inside Flatpak: Steam of the host (installed by the system or as Flatpak).
+fn flatpak_start_command(home: Option<&Path>) -> Option<(PathBuf, Vec<String>)> {
+    let host_dirs = crate::flatpak::host_path_dirs(home);
+    let host_steam = host_dirs
+        .iter()
+        .map(|d| d.join("steam"))
+        .find(|p| p.is_file())
+        .map(|p| crate::flatpak::to_host(&p.to_string_lossy()));
+    let spawn = PathBuf::from("flatpak-spawn");
+    if let Some(steam) = host_steam {
+        return Some((spawn, vec!["--host".into(), steam, "-silent".into()]));
+    }
+    crate::flatpak::host_app_installed("com.valvesoftware.Steam").then(|| {
+        let args = [
+            "--host",
+            "flatpak",
+            "run",
+            "com.valvesoftware.Steam",
+            "-silent",
+        ];
+        (spawn, args.map(str::to_owned).to_vec())
+    })
 }
 
 #[cfg(windows)]
