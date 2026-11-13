@@ -10,6 +10,9 @@
 #
 # Run manually with `tag` (e.g. v0.2.2) to add builds to an existing release
 # from the current branch; `platforms` limits it (e.g. only macOS).
+# `macos-arm-on-intel` cross-compiles the Apple Silicon build on the Intel
+# runner when GitHub has no arm64 macOS runners free (the recommender sidecar
+# is then an x86_64 binary that runs through Rosetta).
 #
 # Secrets (Settings → Secrets and variables → Actions), only needed for tags:
 #   TAURI_SIGNING_PRIVATE_KEY           contents of ~/.tauri/cove-updater.key
@@ -29,7 +32,7 @@ on:
       platforms:
         description: "Platforms to build"
         type: choice
-        options: [all, linux, windows, macos]
+        options: [all, linux, windows, macos, macos-arm-on-intel]
         default: all
 
 concurrency:
@@ -77,6 +80,10 @@ jobs:
             {"platform":"macos","name":"macOS Apple Silicon (dmg)","os":"macos-15","bundles":"app,dmg"},
             {"platform":"macos","name":"macOS Intel (dmg)","os":"macos-15-intel","bundles":"app,dmg"}
           ]'
+          if [ "$PLATFORMS" = "macos-arm-on-intel" ]; then
+            echo 'matrix=[{"platform":"macos","name":"macOS Apple Silicon (dmg, cross-built)","os":"macos-15-intel","bundles":"app,dmg","target":"aarch64-apple-darwin"}]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "matrix=$(jq -c --arg p "$PLATFORMS" 'map(select($p == "all" or .platform == $p))' <<<"$all")" >> "$GITHUB_OUTPUT"
 
   bundle:
@@ -97,6 +104,8 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libayatana-appindicator3-dev libdbus-1-dev libudev-dev patchelf clang zlib1g-dev rpm
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target || '' }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
@@ -119,7 +128,7 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         with:
           projectPath: apps/desktop
-          args: --bundles ${{ matrix.bundles }}
+          args: --bundles ${{ matrix.bundles }}${{ matrix.target && format(' --target {0}', matrix.target) || '' }}
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: "cove-[platform]-[arch]-[bundle]"
 
@@ -132,7 +141,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
-          args: --bundles ${{ matrix.bundles }} --config src-tauri/tauri.release.conf.json
+          args: --bundles ${{ matrix.bundles }}${{ matrix.target && format(' --target {0}', matrix.target) || '' }} --config src-tauri/tauri.release.conf.json
           # The release the plan job created (draft) or found (a manual run with `tag`).
           releaseId: ${{ needs.plan.outputs.release_id }}
           tagName: ${{ inputs.tag || github.ref_name }}
