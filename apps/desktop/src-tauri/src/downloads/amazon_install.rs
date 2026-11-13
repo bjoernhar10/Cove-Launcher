@@ -430,7 +430,8 @@ mod tests {
         assert_eq!(
             get("FUEL_DIR"),
             Some(
-                sdk.join("Amazon Games Services").join("Legacy")
+                sdk.join("Amazon Games Services")
+                    .join("Legacy")
                     .to_string_lossy()
                     .into_owned()
             )
