@@ -74,7 +74,7 @@ jobs:
             {"platform":"linux","name":"Linux (AppImage, deb, rpm)","os":"ubuntu-22.04","bundles":"appimage,deb,rpm"},
             {"platform":"linux","name":"Linux ARM (AppImage, deb, rpm)","os":"ubuntu-22.04-arm","bundles":"appimage,deb,rpm"},
             {"platform":"windows","name":"Windows (MSI, NSIS)","os":"windows-latest","bundles":"msi,nsis"},
-            {"platform":"macos","name":"macOS Apple Silicon (dmg)","os":"macos-latest","bundles":"app,dmg"},
+            {"platform":"macos","name":"macOS Apple Silicon (dmg)","os":"macos-15","bundles":"app,dmg"},
             {"platform":"macos","name":"macOS Intel (dmg)","os":"macos-15-intel","bundles":"app,dmg"}
           ]'
           echo "matrix=$(jq -c --arg p "$PLATFORMS" 'map(select($p == "all" or .platform == $p))' <<<"$all")" >> "$GITHUB_OUTPUT"
