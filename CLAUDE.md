@@ -155,7 +155,7 @@ cargo fmt --check
 cargo test
 ```
 
-CI: `.github/workflows/ci.yml` (lint + tests for all five languages, E2E, Rust on Linux and Windows) and `release.yml` (AppImage, .deb, .rpm for Linux x86_64 on `ubuntu-22.04` and ARM64 on `ubuntu-22.04-arm`; MSI, NSIS; .dmg for Apple Silicon on `macos-15` and Intel on `macos-15-intel`; every build native on its own runner; draft release on `v*` tags).
+CI: `.github/workflows/ci.yml` (lint + tests for all five languages, E2E, Rust on Linux and Windows) and `release.yml` (AppImage, .deb, .rpm for Linux x86_64 on `ubuntu-22.04` and ARM64 on `ubuntu-22.04-arm`; MSI, NSIS; .dmg for Apple Silicon on `macos-14` and Intel on `macos-15-intel`; every build native on its own runner; draft release on `v*` tags).
 
 App data (SQLite `cove.db`, Proton prefixes under `compat/`, plugins under `plugins/`) lives in Tauri's app data folder, on Linux `~/.local/share/app.cove.desktop/`. In the browser (`npm run dev -w @cove/desktop`) only the catalogue works; everything from the core shows "only available in the desktop app".
 
