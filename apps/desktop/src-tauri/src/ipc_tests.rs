@@ -134,6 +134,7 @@ async fn app_with(
             tmp.path().to_path_buf(),
             "http://127.0.0.1:1/manifest.yaml".into(),
         )),
+        gamepads: Arc::new(crate::gamepad::Gamepads::default()),
         prices: Arc::new(crate::prices::PriceService::with_base(
             pool.clone(),
             Some("http://127.0.0.1:1".into()),
@@ -222,6 +223,14 @@ async fn library_flow_with_frontend_payloads() {
     let list: Vec<LibraryItem> = invoke(&app, "library_list", json!({}));
     assert_eq!(list.len(), 1);
     let _: Value = invoke(&app, "library_playtime", json!({ "gameId": id }));
+    let pads: Vec<Value> = invoke(&app, "gamepad_list", json!({}));
+    assert_eq!(pads, Vec::<Value>::new());
+    let _: bool = invoke(&app, "system_tv_hint", json!({}));
+    let _: Value = invoke(
+        &app,
+        "window_set_fullscreen",
+        json!({ "fullscreen": false }),
+    );
     let wishlist: Vec<Value> = invoke(&app, "wishlist_list", json!({}));
     assert_eq!(wishlist, Vec::<Value>::new());
     let _: Value = invoke(&app, "wishlist_remove", json!({ "gameId": "igdb-1" }));

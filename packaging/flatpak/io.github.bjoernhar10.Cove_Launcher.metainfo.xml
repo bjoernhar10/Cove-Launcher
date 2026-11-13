@@ -80,6 +80,12 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.7.0" date="2026-11-13">
+      <description>
+        <p>A TV mode for controllers: a full-screen interface for the TV and the Steam Deck, with the
+        buttons of your controller (Xbox, PlayStation, Switch, Steam Deck) on screen.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-11-13">
       <description>
         <p>Amazon Games (Prime Gaming) without the Amazon app, a wishlist with price alerts, a statistics

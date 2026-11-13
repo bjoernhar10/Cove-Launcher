@@ -22,6 +22,8 @@ import type {
   ManualGameInput,
   PlaytimeStats,
   PlayStats,
+  GamepadInfo,
+  GamepadInput,
   WishlistItem,
   GamePrice,
   PriceAlert,
@@ -98,6 +100,9 @@ export interface CoveCommands {
   library_achievements: { args: { gameId: GameId }; result: Achievement[] };
   library_playtime: { args: { gameId: GameId }; result: PlaytimeStats };
   stats_overview: { args: { year: number | null }; result: PlayStats };
+  gamepad_list: { args: NoArgs; result: GamepadInfo[] };
+  system_tv_hint: { args: NoArgs; result: boolean };
+  window_set_fullscreen: { args: { fullscreen: boolean }; result: null };
   wishlist_list: { args: NoArgs; result: WishlistItem[] };
   wishlist_add: { args: { gameId: GameId }; result: WishlistItem };
   wishlist_remove: { args: { gameId: GameId }; result: null };
@@ -253,6 +258,8 @@ export interface CoveEvents {
   "game-move-progress": GameMoveProgress;
   "proton-progress": ProtonProgress;
   "price-alert": PriceAlert;
+  "gamepad-input": GamepadInput;
+  "gamepads-changed": GamepadInfo[];
 }
 
 export type CoveEvent = keyof CoveEvents;

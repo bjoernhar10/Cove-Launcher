@@ -37,6 +37,7 @@ import type {
   ScanCandidate,
   UpdateInfo,
   PlayStats,
+  GamepadInfo,
   WishlistItem,
   GamePrice,
   StoreSource,
@@ -123,7 +124,7 @@ export const FAKE_SCAN: ScanCandidate[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  general: { language: "de", launchOnStartup: false, minimizeToTray: false, startPage: "home" },
+  general: { startInTvMode: false, language: "de", launchOnStartup: false, minimizeToTray: false, startPage: "home" },
   appearance: { theme: "dark", accent: "blue" },
   library: { scanFolders: [], scanOnStartup: false, gameFolders: ["/home/u/Games"], steamSilentStart: true, epicCloudSaves: true, gogCloudSaves: true, defaultProton: "latest", useUmu: true },
   downloads: { directory: "/home/u/Games", bandwidthLimitBytesPerSecond: null, maxConcurrent: 1 },
@@ -268,6 +269,9 @@ export interface FakeCore {
   systems: SystemInfo[];
   /** ROM file names per ROM folder path (what a scan finds). */
   romFiles: Record<string, string[]>;
+  gamepads: GamepadInfo[];
+  tvHint: boolean;
+  fullscreen: boolean;
   wishlist: WishlistItem[];
   /** Prices per catalogue id; missing = not found on IsThereAnyDeal. */
   prices: Record<string, GamePrice>;
@@ -413,6 +417,9 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     backups: {},
     systems: FAKE_SYSTEMS,
     romFiles: {},
+    gamepads: [],
+    tvHint: false,
+    fullscreen: false,
     wishlist: [],
     prices: {},
     openedUrls: [],
@@ -563,6 +570,12 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     },
     library_achievements: () => [],
     stats_overview: ({ year }) => fakeStats(core.library, year),
+    gamepad_list: () => core.gamepads,
+    system_tv_hint: () => core.tvHint,
+    window_set_fullscreen: ({ fullscreen }) => {
+      core.fullscreen = fullscreen;
+      return null;
+    },
     wishlist_list: () => core.wishlist.filter((w) => !core.library.some((i) => i.game.id === w.game.id || i.entry.catalogId === w.game.id)),
     wishlist_add: ({ gameId }) => {
       const game = FAKE_CATALOG.find((g) => g.id === gameId) ?? reject("catalogProvider", "Spiel nicht gefunden.");

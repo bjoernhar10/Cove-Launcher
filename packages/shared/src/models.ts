@@ -331,6 +331,41 @@ export interface PriceAlert {
   reason: "target" | "sale";
 }
 
+/** Which button names and symbols to show (A/B/X/Y, ✕/○/□/△, Nintendo's B/A/Y/X). */
+export type ControllerKind = "xbox" | "playstation" | "switch" | "steam" | "generic";
+
+/**
+ * What a controller button means for Cove. Face buttons by position:
+ * `confirm` is the bottom one, `back` the right one, `secondary` the left one,
+ * `tertiary` the top one (the label on them depends on the controller).
+ */
+export type PadAction =
+  | "up"
+  | "down"
+  | "left"
+  | "right"
+  | "confirm"
+  | "back"
+  | "secondary"
+  | "tertiary"
+  | "prevTab"
+  | "nextTab"
+  | "menu"
+  | "view"
+  | "home";
+
+export interface GamepadInfo {
+  id: number;
+  name: string;
+  kind: ControllerKind;
+}
+
+/** A controller action (event `gamepad-input`); `kind` is the controller it came from. */
+export interface GamepadInput {
+  action: PadAction;
+  kind: ControllerKind;
+}
+
 export type DownloadStatus =
   | "downloading"
   | "paused"
@@ -871,6 +906,8 @@ export type Language = "de" | "en";
 export type StartPage = "home" | "library";
 
 export interface GeneralSettings {
+  /** Open in the TV mode (also automatic on the Steam Deck and in gamescope sessions). */
+  startInTvMode: boolean;
   language: Language;
   launchOnStartup: boolean;
   minimizeToTray: boolean;

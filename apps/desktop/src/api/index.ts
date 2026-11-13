@@ -8,6 +8,7 @@
 import * as accounts from "./accounts.ts";
 import * as catalog from "./catalog.ts";
 import * as emulators from "./emulators.ts";
+import * as gamepad from "./gamepad.ts";
 import * as collections from "./collections.ts";
 import * as downloads from "./downloads.ts";
 import * as home from "./home.ts";
@@ -19,7 +20,7 @@ import * as stats from "./stats.ts";
 import * as system from "./system.ts";
 import * as wishlist from "./wishlist.ts";
 
-export const api = { accounts, catalog, collections, downloads, emulators, home, library, plugins, proton, settings, stats, system, wishlist } as const;
+export const api = { accounts, catalog, collections, downloads, emulators, gamepad, home, library, plugins, proton, settings, stats, system, wishlist } as const;
 
 export { DEFAULT_CATALOG_FILTER, DEFAULT_CATALOG_SORT } from "./catalog.ts";
 export { CoveError } from "./transport.ts";

@@ -322,6 +322,33 @@ pub async fn game_price(
         .await
 }
 
+/// Connected controllers.
+#[tauri::command]
+pub fn gamepad_list(state: State<'_, AppState>) -> Vec<crate::models::GamepadInfo> {
+    state.gamepads.list()
+}
+
+/// True on the Steam Deck's gaming mode and in gamescope sessions (start in the TV mode).
+#[tauri::command]
+pub fn system_tv_hint() -> bool {
+    crate::gamepad::tv_hint()
+}
+
+/// The TV mode fills the screen.
+#[tauri::command]
+pub fn window_set_fullscreen<R: Runtime>(app: AppHandle<R>, fullscreen: bool) -> AppResult<()> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.set_fullscreen(fullscreen).map_err(|e| {
+            eprintln!("[cove] Vollbild: {e}");
+            AppError::InvalidInput(tr!(
+                "Der Vollbildmodus ließ sich nicht umschalten.",
+                "Full screen couldn't be switched."
+            ))
+        })?;
+    }
+    Ok(())
+}
+
 /// The statistics page: a year (None = all time).
 #[tauri::command]
 pub async fn stats_overview(state: State<'_, AppState>, year: Option<i32>) -> AppResult<PlayStats> {

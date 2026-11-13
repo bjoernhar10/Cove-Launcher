@@ -43,12 +43,15 @@ pub struct AppState {
     pub backups: Arc<crate::backups::BackupService>,
     /// Wishlist prices and price alerts.
     pub prices: Arc<crate::prices::PriceService>,
+    /// Connected controllers (TV mode).
+    pub gamepads: Arc<crate::gamepad::Gamepads>,
 }
 
 pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
     let games_dir = home.map_or_else(|| PathBuf::from("Games"), |h| h.join("Games"));
     AppSettings {
         general: GeneralSettings {
+            start_in_tv_mode: false,
             language: "de".into(),
             launch_on_startup: false,
             minimize_to_tray: false,

@@ -1,6 +1,9 @@
 import { messages } from "../../i18n/index.ts";
-import { useEffect } from "react";
-import { Outlet, useLocation } from "react-router";
+import { useEffect, useRef } from "react";
+import { Outlet, useLocation, useNavigate } from "react-router";
+import { useGamepadNavigation } from "../../hooks/useGamepadNavigation.ts";
+import { useHotkey } from "../../hooks/useHotkey.ts";
+import { useGamepads } from "../../stores/gamepad.ts";
 import { AddGameDialog } from "../../features/AddGameDialog.tsx";
 import { api } from "../../api/index.ts";
 import { useDownloads } from "../../stores/downloads.ts";
@@ -22,7 +25,29 @@ export function AppShell() {
   const connectRunning = useRunningGames((s) => s.connect);
   const connectMoves = useMoves((s) => s.connect);
   const connectProton = useProton((s) => s.connect);
+  const connectGamepads = useGamepads((s) => s.connect);
   const location = useLocation();
+  const navigate = useNavigate();
+  const tv = location.pathname.startsWith("/tv");
+  useGamepadNavigation();
+  useEffect(() => connectGamepads(), [connectGamepads]);
+
+  // The TV mode at the start (once): when asked for, and always on the Steam Deck's gaming mode.
+  const startChecked = useRef(false);
+  useEffect(() => {
+    if (startChecked.current) return;
+    startChecked.current = true;
+    Promise.all([api.settings.getSettings(), api.gamepad.tvHint()]).then(
+      ([settings, hint]) => {
+        if ((settings.general.startInTvMode || hint) && !window.location.hash.startsWith("#/tv")) void navigate("/tv");
+      },
+      () => undefined,
+    );
+  }, [navigate]);
+
+  useHotkey("F11", () => {
+    if (!tv) void navigate("/tv");
+  });
 
   useEffect(() => connectDownloads(), [connectDownloads]);
   useEffect(() => connectRunning(), [connectRunning]);
@@ -98,6 +123,15 @@ export function AppShell() {
   useEffect(() => {
     document.getElementById("main")?.scrollTo({ top: 0 });
   }, [location.pathname]);
+
+  if (tv) {
+    return (
+      <>
+        <Outlet />
+        <Toaster />
+      </>
+    );
+  }
 
   return (
     <div className="flex h-full">

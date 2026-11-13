@@ -1,5 +1,5 @@
 import { useMessages } from "../../i18n/index.ts";
-import { Download } from "lucide-react";
+import { Download, Tv } from "lucide-react";
 import { NavLink } from "react-router";
 import { api } from "../../api/index.ts";
 import { useQuery } from "../../hooks/useQuery.ts";
@@ -113,6 +113,7 @@ export function Sidebar() {
 
       <div className={cx("pb-3", collapsed ? "px-0" : "px-3")}>
         <DownloadIndicator collapsed={collapsed} />
+        <SidebarLink item={{ to: "/tv", label: t.tv.enter, icon: Tv }} collapsed={collapsed} />
         <SidebarLink item={SETTINGS_NAV} collapsed={collapsed} />
       </div>
 

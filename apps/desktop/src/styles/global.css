@@ -26,6 +26,12 @@
     outline-offset: 2px;
   }
 
+  /* A controller moves the focus by script: show it like keyboard focus. */
+  html[data-pad-nav] :focus {
+    outline: 2px solid var(--cove-accent-text);
+    outline-offset: 2px;
+  }
+
   /* Numbers are always tabular */
   .num,
   time,

@@ -20,7 +20,7 @@ No ads, no social feed, no account of its own.
 | ![Catalogue](docs/screenshots/catalogue.png) | ![Statistics](docs/screenshots/stats.png) |
 | ![Game options on Linux](docs/screenshots/game-options.png) | ![Save backups and Proton prefix](docs/screenshots/backups.png) |
 | ![Downloads](docs/screenshots/downloads.png) | ![Emulators](docs/screenshots/emulators.png) |
-| ![Wishlist](docs/screenshots/wishlist.png) | |
+| ![Wishlist](docs/screenshots/wishlist.png) | ![TV mode](docs/screenshots/tv.png) |
 
 <sub>The screenshots show invented demo games with drawn artwork.</sub>
 
@@ -36,6 +36,10 @@ No ads, no social feed, no account of its own.
   PlayStation 2, Dreamcast, PSP …). Every ROM becomes a game in your library and starts with
   RetroArch, a standalone emulator (Dolphin, PCSX2, DuckStation, PPSSPP, mGBA, melonDS, Flycast)
   or your own program. Cove brings no emulators, BIOS files or ROMs.
+- **TV mode for controllers:** a full-screen interface for the TV, the Steam Deck or the sofa,
+  made for Xbox, PlayStation, Switch and Steam Deck controllers. The buttons on screen match your
+  controller (A or ✕, B or ○ …). On the Steam Deck's gaming mode Cove starts in it by itself; the
+  controller also moves through the normal interface.
 - **Tidy:** grid or list, groups for installed games, favourites and each store, your own
   collections ("With friends", "Started" …), a length filter and a command palette (`Ctrl+K`).
   Stays smooth with thousands of games.

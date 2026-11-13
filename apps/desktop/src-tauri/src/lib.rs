@@ -15,6 +15,7 @@ mod emulators;
 mod error;
 mod flatpak;
 mod folders;
+mod gamepad;
 mod launcher;
 mod models;
 mod mover;
@@ -79,6 +80,9 @@ macro_rules! cove_handlers {
             $crate::commands::library_achievements,
             $crate::commands::library_playtime,
             $crate::commands::stats_overview,
+            $crate::commands::gamepad_list,
+            $crate::commands::system_tv_hint,
+            $crate::commands::window_set_fullscreen,
             $crate::commands::wishlist_list,
             $crate::commands::wishlist_add,
             $crate::commands::wishlist_remove,
@@ -277,6 +281,7 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         open_url: open_url.clone(),
         protondb: Arc::new(protondb::ProtonDb::new(pool.clone())),
         prices: Arc::new(prices::PriceService::new(pool.clone())),
+        gamepads: Arc::new(gamepad::Gamepads::default()),
         proton,
         backups: Arc::new(backups::BackupService::new(
             pool.clone(),
@@ -552,12 +557,14 @@ pub fn run() {
                 }
             };
             let downloads = state.downloads.clone();
+            let gamepads = state.gamepads.clone();
             app.manage(state);
             app.manage(updates::UpdaterRegistered);
             // After `manage`: the download hooks look up the state.
             downloads.start();
             keep_proton_up_to_date(app.handle().clone());
             watch_prices(app.handle().clone());
+            gamepad::watch(app.handle().clone(), gamepads);
             Ok(())
         })
         .invoke_handler(cove_handlers!())

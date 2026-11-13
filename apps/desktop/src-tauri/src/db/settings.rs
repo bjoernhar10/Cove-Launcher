@@ -166,6 +166,7 @@ pub(crate) mod tests {
     pub(crate) fn defaults() -> AppSettings {
         AppSettings {
             general: GeneralSettings {
+                start_in_tv_mode: false,
                 language: "de".into(),
                 launch_on_startup: false,
                 minimize_to_tray: true,

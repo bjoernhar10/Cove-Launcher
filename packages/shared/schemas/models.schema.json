@@ -667,6 +667,17 @@
       ],
       "type": "object"
     },
+    "ControllerKind": {
+      "description": "Which button names and symbols to show (A/B/X/Y, ✕/○/□/△, Nintendo's B/A/Y/X).",
+      "enum": [
+        "xbox",
+        "playstation",
+        "switch",
+        "steam",
+        "generic"
+      ],
+      "type": "string"
+    },
     "CoveAchievement": {
       "additionalProperties": false,
       "description": "Cove's own achievements, evaluated locally (definitions: JSON, plugins can add more).",
@@ -1496,6 +1507,43 @@
       ],
       "type": "object"
     },
+    "GamepadInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "number"
+        },
+        "kind": {
+          "$ref": "#/definitions/ControllerKind"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "GamepadInput": {
+      "additionalProperties": false,
+      "description": "A controller action (event `gamepad-input`); `kind` is the controller it came from.",
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/PadAction"
+        },
+        "kind": {
+          "$ref": "#/definitions/ControllerKind"
+        }
+      },
+      "required": [
+        "action",
+        "kind"
+      ],
+      "type": "object"
+    },
     "GeneralSettings": {
       "additionalProperties": false,
       "properties": {
@@ -1508,11 +1556,16 @@
         "minimizeToTray": {
           "type": "boolean"
         },
+        "startInTvMode": {
+          "description": "Open in the TV mode (also automatic on the Steam Deck and in gamescope sessions).",
+          "type": "boolean"
+        },
         "startPage": {
           "$ref": "#/definitions/StartPage"
         }
       },
       "required": [
+        "startInTvMode",
         "language",
         "launchOnStartup",
         "minimizeToTray",
@@ -2177,6 +2230,25 @@
         "verifying",
         "completed",
         "failed"
+      ],
+      "type": "string"
+    },
+    "PadAction": {
+      "description": "What a controller button means for Cove. Face buttons by position: `confirm` is the bottom one, `back` the right one, `secondary` the left one, `tertiary` the top one (the label on them depends on the controller).",
+      "enum": [
+        "up",
+        "down",
+        "left",
+        "right",
+        "confirm",
+        "back",
+        "secondary",
+        "tertiary",
+        "prevTab",
+        "nextTab",
+        "menu",
+        "view",
+        "home"
       ],
       "type": "string"
     },

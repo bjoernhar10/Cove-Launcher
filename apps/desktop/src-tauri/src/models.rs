@@ -412,6 +412,51 @@ pub struct PriceAlert {
     pub reason: AlertReason,
 }
 
+/// Which button names and symbols the UI shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ControllerKind {
+    Xbox,
+    Playstation,
+    Switch,
+    Steam,
+    Generic,
+}
+
+/// A controller button's meaning (face buttons by position).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PadAction {
+    Up,
+    Down,
+    Left,
+    Right,
+    Confirm,
+    Back,
+    Secondary,
+    Tertiary,
+    PrevTab,
+    NextTab,
+    Menu,
+    View,
+    Home,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GamepadInfo {
+    pub id: u32,
+    pub name: String,
+    pub kind: ControllerKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GamepadInput {
+    pub action: PadAction,
+    pub kind: ControllerKind,
+}
+
 /// Statistics page (`stats_overview`), mirrors `PlayStats`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -796,6 +841,9 @@ pub struct AboutInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeneralSettings {
+    /// Open in the TV mode.
+    #[serde(default)]
+    pub start_in_tv_mode: bool,
     pub language: String,
     pub launch_on_startup: bool,
     pub minimize_to_tray: bool,

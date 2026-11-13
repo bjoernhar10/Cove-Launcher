@@ -35,6 +35,18 @@ export const routes = [
             lazy: async () => ({ Component: (await import("./pages/DownloadsPage.tsx")).DownloadsPage }),
           },
           {
+            path: "tv",
+            lazy: async () => ({ Component: (await import("./tv/TvShell.tsx")).TvShell }),
+            children: [
+              { index: true, lazy: async () => ({ Component: (await import("./tv/TvHome.tsx")).TvHome }) },
+              { path: "library", lazy: async () => ({ Component: (await import("./tv/TvLibrary.tsx")).TvLibrary }) },
+              { path: "game/:gameId", lazy: async () => ({ Component: (await import("./tv/TvGame.tsx")).TvGame }) },
+              { path: "search", lazy: async () => ({ Component: (await import("./tv/TvSearch.tsx")).TvSearch }) },
+              { path: "downloads", lazy: async () => ({ Component: (await import("./tv/TvDownloads.tsx")).TvDownloads }) },
+              { path: "settings", lazy: async () => ({ Component: (await import("./tv/TvSettings.tsx")).TvSettings }) },
+            ],
+          },
+          {
             path: "wishlist",
             lazy: async () => ({ Component: (await import("./pages/WishlistPage.tsx")).WishlistPage }),
           },

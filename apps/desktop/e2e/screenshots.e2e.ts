@@ -103,6 +103,15 @@ test("screenshots", async ({ page }) => {
     await page.screenshot({ path: `${OUT}/${name}.png` });
   }
 
+  // The TV mode with a PlayStation controller, the focus on the first game.
+  await go(page, "/tv");
+  await page.evaluate(() => {
+    (window as unknown as { __cove: { emit: (event: string, payload: unknown) => void } }).__cove.emit("gamepad-input", { action: "down", kind: "playstation" });
+  });
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/tv.png` });
+  await go(page, "/library");
+
   // The Proton game's settings tab: Proton version, game options, prefix and save backups.
   const protonId = await page.evaluate(() => {
     interface Item {
