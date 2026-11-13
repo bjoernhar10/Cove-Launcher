@@ -92,8 +92,8 @@ modules:
       - type: file
         dest-filename: cove.deb
         only-arches: [x86_64]
-        url: https://github.com/bjoernhar10/Cove-Launcher/releases/download/v0.6.0/Cove_0.6.0_amd64.deb
-        sha256: 3c23e10fe242e5cd84e4b31b42ad5ea95332974fb9cb55609c46520655c2f0f3
+        url: https://github.com/bjoernhar10/Cove-Launcher/releases/download/v0.7.0/Cove_0.7.0_amd64.deb
+        sha256: 002cc6c31544031b35e12cd3ee65eae1c4898ad027b4e65788148b6013d8b6cd
         x-checker-data:
           type: json
           url: https://api.github.com/repos/bjoernhar10/Cove-Launcher/releases/latest
@@ -102,8 +102,8 @@ modules:
       - type: file
         dest-filename: cove.deb
         only-arches: [aarch64]
-        url: https://github.com/bjoernhar10/Cove-Launcher/releases/download/v0.6.0/Cove_0.6.0_arm64.deb
-        sha256: 3b5f86270510b5e083581f6222668fbc5cb1eec5f94dfff2f7ecc547482766e5
+        url: https://github.com/bjoernhar10/Cove-Launcher/releases/download/v0.7.0/Cove_0.7.0_arm64.deb
+        sha256: 12d034f7188e8902982870cc62852b8c252430dcd8d1c4f0546ec810f5121c74
         x-checker-data:
           type: json
           url: https://api.github.com/repos/bjoernhar10/Cove-Launcher/releases/latest
