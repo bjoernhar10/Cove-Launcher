@@ -13,8 +13,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const project = join(root, "src", "Cove.Connectors");
 const binaries = join(root, "..", "..", "apps", "desktop", "src-tauri", "binaries");
 
-const triple = (process.env.TAURI_ENV_TARGET_TRIPLE ?? "").trim() ||
-  /host: (\S+)/.exec(execFileSync("rustc", ["-vV"], { encoding: "utf8" }))?.[1];
+const hostTriple = /host: (\S+)/.exec(execFileSync("rustc", ["-vV"], { encoding: "utf8" }))?.[1];
+const triple = (process.env.TAURI_ENV_TARGET_TRIPLE ?? "").trim() || hostTriple;
 if (!triple) throw new Error("Could not determine the Rust target triple (is rustc installed?)");
 
 const rids = {
@@ -59,6 +59,9 @@ const aot = isWindows || triple.includes("apple") || has("clang");
 const out = join(root, "bin", "sidecar", rid);
 rmSync(out, { recursive: true, force: true });
 const args = ["publish", project, "-c", "Release", "-r", rid, "-o", out, "--nologo"];
+// Cross-compiling with Native AOT needs the build machine's compiler package as well.
+const hostRid = hostTriple ? rids[hostTriple] : undefined;
+if (aot && hostRid && hostRid !== rid) args.push(`-p:CoveHostRid=${hostRid}`);
 if (!aot) {
   console.warn("clang not found: building a self-contained single file instead of Native AOT.");
   args.push("-p:PublishAot=false", "-p:SelfContained=true", "-p:PublishSingleFile=true", "-p:EnableCompressionInSingleFile=true");

@@ -19,4 +19,10 @@
     <PackageReference Include="Microsoft.DotNet.ILCompiler" Version="9.0.23" />
   </ItemGroup>
 
+  <!-- Cross-compiling (e.g. Apple Silicon on an Intel Mac) needs the compiler for the build machine too;
+       scripts/build_sidecar.mjs sets CoveHostRid then. -->
+  <ItemGroup Condition="'$(CoveHostRid)' != ''">
+    <PackageReference Include="runtime.$(CoveHostRid).Microsoft.DotNet.ILCompiler" Version="9.0.23" />
+  </ItemGroup>
+
 </Project>
