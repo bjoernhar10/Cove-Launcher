@@ -8,6 +8,7 @@
 //! A missing or closed Discord is never an error: the next status tries again.
 
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::path::PathBuf;
 use std::sync::mpsc;
 
