@@ -51,6 +51,10 @@ export const routes = [
             lazy: async () => ({ Component: (await import("./pages/WishlistPage.tsx")).WishlistPage }),
           },
           {
+            path: "storage",
+            lazy: async () => ({ Component: (await import("./pages/StoragePage.tsx")).StoragePage }),
+          },
+          {
             path: "stats",
             lazy: async () => ({ Component: (await import("./pages/StatsPage.tsx")).StatsPage }),
           },

@@ -35,6 +35,8 @@ pub const ALLOWED_HOSTS: &[&str] = &[
     "images-2.gog-statics.com",
     "images-3.gog-statics.com",
     "images-4.gog-statics.com",
+    // Giveaway images (free games through GamerPower)
+    "www.gamerpower.com",
 ];
 const MAX_BYTES: usize = 15 * 1024 * 1024;
 

@@ -43,6 +43,8 @@ pub struct AppState {
     pub backups: Arc<crate::backups::BackupService>,
     /// Wishlist prices and price alerts.
     pub prices: Arc<crate::prices::PriceService>,
+    pub free_games: Arc<crate::free_games::FreeGames>,
+    pub discord: Arc<crate::discord::Discord>,
     /// Connected controllers (TV mode).
     pub gamepads: Arc<crate::gamepad::Gamepads>,
 }
@@ -56,6 +58,7 @@ pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
             launch_on_startup: false,
             minimize_to_tray: false,
             start_page: "home".into(),
+            discord_status: false,
         },
         appearance: AppearanceSettings {
             theme: "system".into(),
@@ -75,6 +78,7 @@ pub fn default_settings(home: Option<&PathBuf>) -> AppSettings {
             directory: games_dir.to_string_lossy().into_owned(),
             bandwidth_limit_bytes_per_second: None,
             max_concurrent: 1,
+            schedule: crate::models::DownloadSchedule::default(),
         },
         catalog: CatalogSettings {
             use_cove_service: true,

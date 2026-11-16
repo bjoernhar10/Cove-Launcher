@@ -96,12 +96,23 @@ test("screenshots", async ({ page }) => {
     ["/downloads", "downloads"],
     ["/stats", "stats"],
     ["/wishlist", "wishlist"],
+    ["/storage", "storage"],
     ["/settings/emulators", "emulators"],
   ];
   for (const [route, name] of shots) {
     await go(page, route);
     await page.screenshot({ path: `${OUT}/${name}.png` });
   }
+
+  // Downloads at night (after the downloads page, which would show the waiting queue).
+  await page.evaluate(() => {
+    interface Cove {
+      core: { settings: { downloads: { schedule: { enabled: boolean; from: string; until: string } } } };
+    }
+    (window as unknown as { __cove: Cove }).__cove.core.settings.downloads.schedule = { enabled: true, from: "01:00", until: "07:00" };
+  });
+  await go(page, "/settings/downloads");
+  await page.screenshot({ path: `${OUT}/schedule.png` });
 
   // The TV mode with a PlayStation controller, the focus on the first game.
   await go(page, "/tv");

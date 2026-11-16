@@ -1,4 +1,4 @@
-import type { GameId, GamePrice, PriceAlert, WishlistItem } from "@cove/shared";
+import type { FreeGame, GameId, GamePrice, PriceAlert, WishlistItem } from "@cove/shared";
 import { call, subscribe } from "./transport.ts";
 
 export function list(): Promise<WishlistItem[]> {
@@ -26,6 +26,11 @@ export function refresh(): Promise<WishlistItem[]> {
 /** Prices of a catalogue game (IsThereAnyDeal); null = not found. */
 export function gamePrice(gameId: GameId): Promise<GamePrice | null> {
   return call("game_price", { gameId });
+}
+
+/** Games free to keep now and soon (Epic, GOG, other shops through GamerPower). */
+export function freeGames(): Promise<FreeGame[]> {
+  return call("free_games_list", {});
 }
 
 export function subscribePriceAlert(handler: (alert: PriceAlert) => void): () => void {

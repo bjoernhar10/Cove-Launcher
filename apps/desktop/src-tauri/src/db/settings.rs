@@ -129,6 +129,7 @@ pub fn validate(settings: &AppSettings) -> AppResult<()> {
             "Backups kept: 1 to 100."
         ));
     }
+    crate::downloads::schedule::validate(&settings.downloads.schedule)?;
     crate::emulators::validate(&settings.emulators)?;
     let country = &settings.wishlist.country;
     if country.len() != 2 || !country.chars().all(|c| c.is_ascii_uppercase()) {
@@ -171,6 +172,7 @@ pub(crate) mod tests {
                 launch_on_startup: false,
                 minimize_to_tray: true,
                 start_page: "home".into(),
+                discord_status: false,
             },
             appearance: AppearanceSettings {
                 theme: "system".into(),
@@ -190,6 +192,7 @@ pub(crate) mod tests {
                 directory: "/home/u/Games".into(),
                 bandwidth_limit_bytes_per_second: None,
                 max_concurrent: 1,
+                schedule: crate::models::DownloadSchedule::default(),
             },
             catalog: CatalogSettings {
                 use_cove_service: true,

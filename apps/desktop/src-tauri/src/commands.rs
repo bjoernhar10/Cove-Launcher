@@ -308,6 +308,124 @@ pub async fn wishlist_refresh<R: Runtime>(
     }
 }
 
+/// Shows the newest running game as the Discord status (when switched on), else none.
+pub async fn refresh_discord(state: &AppState) {
+    use crate::discord::Status;
+    let enabled = db::settings::load(&state.pool, &state.defaults)
+        .await
+        .is_ok_and(|s| s.general.discord_status);
+    let running = state.launcher.running();
+    let status = match running.last().filter(|_| enabled) {
+        Some(game) => match db::library::require(&state.pool, &game.game_id).await {
+            Ok(item) => Status::Playing {
+                title: item.game.title,
+                image: item.game.artwork.cover.url,
+                started_at: chrono::DateTime::parse_from_rfc3339(&game.started_at)
+                    .map_or_else(|_| chrono::Utc::now().timestamp(), |t| t.timestamp()),
+            },
+            Err(_) => Status::Clear,
+        },
+        None => Status::Clear,
+    };
+    state.discord.set(status);
+}
+
+/// "Speicherplatz": measures the installed games and the drives they are on.
+#[tauri::command]
+pub async fn storage_overview(
+    state: State<'_, AppState>,
+) -> AppResult<crate::models::StorageOverview> {
+    let settings = db::settings::load(&state.pool, &state.defaults).await?;
+    crate::storage::overview(&state.pool, &settings.library.game_folders).await
+}
+
+/// Games free to keep now and soon (Epic, GOG, other shops), without those in the library.
+#[tauri::command]
+pub async fn free_games_list(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::models::FreeGame>> {
+    let settings = db::settings::load(&state.pool, &state.defaults).await?;
+    state
+        .free_games
+        .list(
+            &settings.wishlist.country,
+            &settings.general.language,
+            false,
+        )
+        .await
+}
+
+/// Announces free games that are new since the last check (setting `wishlist.freeGames`).
+pub async fn check_free_games<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: &AppState) {
+    use tauri_plugin_notification::NotificationExt;
+    let Ok(settings) = db::settings::load(&state.pool, &state.defaults).await else {
+        return;
+    };
+    if !settings.wishlist.free_games {
+        return;
+    }
+    let language = &settings.general.language;
+    let fresh = match state
+        .free_games
+        .list(&settings.wishlist.country, language, true)
+        .await
+    {
+        Ok(games) => state.free_games.new_ones(&games).await,
+        Err(error) => Err(error),
+    };
+    match fresh {
+        // Many at once (the first check, a big bundle day): one summary instead.
+        Ok(games) if games.len() > 3 => {
+            let shops: std::collections::BTreeSet<&str> =
+                games.iter().map(|g| g.shop.as_str()).collect();
+            let shops = shops.into_iter().collect::<Vec<_>>().join(", ");
+            let _ = app
+                .notification()
+                .builder()
+                .title(tr!(
+                    "{} Spiele gerade gratis",
+                    "{} games free right now",
+                    games.len()
+                ))
+                .body(tr!(
+                    "Bei {shops}. Du findest sie auf der Startseite.",
+                    "On {shops}. You'll find them on Home."
+                ))
+                .show();
+        }
+        Ok(games) => {
+            for game in games {
+                let store = &game.shop;
+                let until = game
+                    .ends_at
+                    .as_deref()
+                    .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                    .map(|t| t.with_timezone(&chrono::Local));
+                let body = if let Some(t) = until {
+                    tr!(
+                        "Gratis bei {store}, bis zum {}.",
+                        "Free on {store} until {}.",
+                        if language == "de" {
+                            t.format("%-d.%-m.").to_string()
+                        } else {
+                            t.format("%B %-d").to_string()
+                        }
+                    )
+                } else {
+                    tr!("Gerade gratis bei {store}.", "Free on {store} right now.")
+                };
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title(&game.title)
+                    .body(&body)
+                    .show();
+            }
+        }
+        Err(error) => eprintln!("[free-games] {error}"),
+    }
+}
+
 /// Prices of a catalogue game (catalogue page).
 #[tauri::command]
 pub async fn game_price(
@@ -902,6 +1020,9 @@ pub async fn settings_update(
     }
     // Bandwidth limit and parallel downloads apply at once.
     state.downloads.wake();
+    if before.general.discord_status != settings.general.discord_status {
+        refresh_discord(&state).await;
+    }
     db::settings::load(&state.pool, &state.defaults).await
 }
 
@@ -1104,6 +1225,12 @@ pub async fn downloads_set_status(
     status: DownloadStatus,
 ) -> AppResult<()> {
     state.downloads.control(&id, status).await
+}
+
+/// "Jetzt starten": starts a download outside the schedule's window.
+#[tauri::command]
+pub async fn downloads_start_now(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    state.downloads.start_now(&id).await
 }
 
 #[tauri::command]
@@ -1347,6 +1474,7 @@ pub fn about(recommender: SidecarStatus, connectors: SidecarStatus) -> AboutInfo
             },
         ],
         platform: Platform::current(),
+        discord: crate::discord::available(),
     }
 }
 

@@ -21,6 +21,7 @@ No ads, no social feed, no account of its own.
 | ![Game options on Linux](docs/screenshots/game-options.png) | ![Save backups and Proton prefix](docs/screenshots/backups.png) |
 | ![Downloads](docs/screenshots/downloads.png) | ![Emulators](docs/screenshots/emulators.png) |
 | ![Wishlist](docs/screenshots/wishlist.png) | ![TV mode](docs/screenshots/tv.png) |
+| ![Storage](docs/screenshots/storage.png) | ![Downloads on a schedule](docs/screenshots/schedule.png) |
 
 <sub>The screenshots show invented demo games with drawn artwork.</sub>
 
@@ -60,6 +61,10 @@ No ads, no social feed, no account of its own.
   and direct links for DRM-free games, mods and patches. Parallel chunks, pause and resume, a
   bandwidth limit, checksum checks and unpacking. Before each install Cove shows the sizes, the
   target folder and the free space; installed games can be moved between drives.
+- **Downloads on a schedule:** let downloads run only in a time window, for example at night.
+  A download still running at the end continues in the next window; "Start now" skips the wait.
+- **Storage:** see how much room each installed game takes and what is left on every drive,
+  sorted by size or by the games you haven't played for longest, with uninstall at hand.
 
 ### Linux gaming
 
@@ -99,9 +104,15 @@ No ads, no social feed, no account of its own.
   across 30+ shops and the lowest price ever, set a target price and get a notification when it is
   reached or a sale starts. Games on sale show up on the home page too. Prices by
   [IsThereAnyDeal](https://isthereanydeal.com/).
+- **Free games:** Epic's weekly free games, GOG giveaways and free-to-keep games on Steam, itch.io
+  and other shops show up on the home page, with a desktop notification for new ones. Claim them
+  in the store; games you own are left out. Giveaways outside Epic and GOG come from
+  [GamerPower](https://www.gamerpower.com/).
 
 ### And also
 
+- **Discord status:** if you switch it on, Discord shows the game you're playing in Cove. It talks
+  only to the Discord app on your computer.
 - **Private by design:** Cove never sees your store passwords; tokens live only in your system's
   keyring. Recommendations are computed locally.
 - **Calm design:** a dark, quiet interface with five muted accent colours, fully usable with the

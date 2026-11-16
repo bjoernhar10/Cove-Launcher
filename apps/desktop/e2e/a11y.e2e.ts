@@ -14,6 +14,7 @@ const PAGES = [
   "/downloads",
   "/wishlist",
   "/stats",
+  "/storage",
   "/settings/general",
   "/settings/appearance",
   "/settings/library",

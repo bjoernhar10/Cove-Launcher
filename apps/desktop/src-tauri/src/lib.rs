@@ -11,11 +11,13 @@ mod catalog;
 mod commands;
 mod cove_achievements;
 mod db;
+mod discord;
 mod downloads;
 mod emulators;
 mod error;
 mod flatpak;
 mod folders;
+mod free_games;
 mod gamepad;
 mod launcher;
 mod models;
@@ -30,6 +32,7 @@ mod scanner;
 mod sidecar;
 mod state;
 mod steam;
+mod storage;
 mod stores;
 mod umu;
 mod updates;
@@ -142,6 +145,9 @@ macro_rules! cove_handlers {
             $crate::commands::itch_lookup,
             $crate::commands::itch_uploads,
             $crate::commands::downloads_set_status,
+            $crate::commands::downloads_start_now,
+            $crate::commands::free_games_list,
+            $crate::commands::storage_overview,
             $crate::commands::downloads_reorder,
             $crate::commands::downloads_clear_history,
             $crate::commands::system_profile,
@@ -185,6 +191,7 @@ fn build_stores(pool: &sqlx::SqlitePool) -> Arc<stores::StoreService> {
     ))
 }
 
+#[allow(clippy::too_many_lines)] // the one place that builds every service
 fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> {
     // Until the saved settings are read (or if they can't be), follow the system.
     i18n::set_language(i18n::system_default());
@@ -225,6 +232,12 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
             checker.check_in_background();
             after_session(&handle, event.game_id.clone());
         }
+        let discord_handle = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Some(state) = discord_handle.try_state::<AppState>() {
+                commands::refresh_discord(&state).await;
+            }
+        });
         let _ = handle.emit(GAME_STATE_CHANGED, event);
     });
     let opener_handle = app.handle().clone();
@@ -282,6 +295,8 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         open_url: open_url.clone(),
         protondb: Arc::new(protondb::ProtonDb::new(pool.clone())),
         prices: Arc::new(prices::PriceService::new(pool.clone())),
+        free_games: Arc::new(free_games::FreeGames::new(pool.clone())),
+        discord: Arc::new(discord::Discord::default()),
         gamepads: Arc::new(gamepad::Gamepads::default()),
         proton,
         backups: Arc::new(backups::BackupService::new(
@@ -330,6 +345,20 @@ fn watch_prices<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
                 commands::check_prices(&app, &state, false).await;
             }
             tokio::time::sleep(prices::CHECK_EVERY).await;
+        }
+    });
+}
+
+/// A few minutes after the start and then every few hours: new free games
+/// (Epic, GOG) as desktop notifications.
+fn watch_free_games<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(180)).await;
+        loop {
+            if let Some(state) = app.try_state::<AppState>() {
+                commands::check_free_games(&app, &state).await;
+            }
+            tokio::time::sleep(free_games::CHECK_EVERY).await;
         }
     });
 }
@@ -565,6 +594,7 @@ pub fn run() {
             downloads.start();
             keep_proton_up_to_date(app.handle().clone());
             watch_prices(app.handle().clone());
+            watch_free_games(app.handle().clone());
             gamepad::watch(app.handle().clone(), gamepads);
             Ok(())
         })

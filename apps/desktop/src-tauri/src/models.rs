@@ -850,12 +850,15 @@ pub struct AboutInfo {
     pub app_version: String,
     pub components: Vec<ComponentVersion>,
     pub platform: Platform,
+    /// This build can show the Discord status (it knows Cove's Discord application).
+    pub discord: bool,
 }
 
 // ───────────── settings ─────────────
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(clippy::struct_excessive_bools)] // independent switches of the settings page
 pub struct GeneralSettings {
     /// Open in the TV mode.
     #[serde(default)]
@@ -864,6 +867,9 @@ pub struct GeneralSettings {
     pub launch_on_startup: bool,
     pub minimize_to_tray: bool,
     pub start_page: String,
+    /// Show the running game as the Discord status.
+    #[serde(default)]
+    pub discord_status: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -913,6 +919,29 @@ pub struct DownloadSettings {
     pub directory: String,
     pub bandwidth_limit_bytes_per_second: Option<i64>,
     pub max_concurrent: i64,
+    /// Downloads only run inside this daily time window.
+    #[serde(default)]
+    pub schedule: DownloadSchedule,
+}
+
+/// A daily time window for downloads, in local time ("HH:MM"). `until` before
+/// `from` goes over midnight; the same time means all day.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadSchedule {
+    pub enabled: bool,
+    pub from: String,
+    pub until: String,
+}
+
+impl Default for DownloadSchedule {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            from: "01:00".into(),
+            until: "07:00".into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -946,6 +975,9 @@ pub struct WishlistSettings {
     pub country: String,
     #[serde(default = "enabled")]
     pub price_alerts: bool,
+    /// Notify about games that are free to keep for a while (Epic, GOG, other shops).
+    #[serde(default = "enabled")]
+    pub free_games: bool,
 }
 
 fn enabled() -> bool {
@@ -969,6 +1001,7 @@ impl Default for WishlistSettings {
         Self {
             country: system_country(),
             price_alerts: true,
+            free_games: true,
         }
     }
 }
@@ -1241,6 +1274,55 @@ pub struct LibraryMatchEvent {
 }
 
 // ───────────── library commands ─────────────
+
+/// "Speicherplatz": installed games and the drives they are on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageOverview {
+    pub drives: Vec<DriveUsage>,
+    /// Biggest first; games that couldn't be measured last.
+    pub games: Vec<StorageGame>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriveUsage {
+    pub name: String,
+    pub mount_point: String,
+    pub total_bytes: i64,
+    pub free_bytes: i64,
+    /// Taken by the games in the library.
+    pub games_bytes: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageGame {
+    pub game_id: GameId,
+    /// Null when the folder is missing or shared with other games (ROM folders).
+    pub size_bytes: Option<i64>,
+    pub mount_point: Option<String>,
+}
+
+/// A game that is free to keep for a while (Epic's free games, GOG giveaways,
+/// and giveaways on Steam, itch.io and other shops through `GamerPower`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FreeGame {
+    /// `epic:<offer id>`, `gog:<product id>` or `gp:<GamerPower id>`.
+    pub id: String,
+    /// Where the game is claimed: "Epic Games", "GOG", "Steam", "itch.io" …
+    pub shop: String,
+    pub title: String,
+    /// The store page, where the game is claimed.
+    pub url: String,
+    pub cover: ImageRef,
+    pub starts_at: Option<String>,
+    /// When the offer ends; null when the store doesn't say.
+    pub ends_at: Option<String>,
+    /// Free from `startsAt` on (Epic shows next week's games).
+    pub upcoming: bool,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -26,6 +26,8 @@ import type {
   GamepadInput,
   WishlistItem,
   GamePrice,
+  FreeGame,
+  StorageOverview,
   PriceAlert,
   PluginInfo,
   ProtonOverview,
@@ -109,6 +111,10 @@ export interface CoveCommands {
   wishlist_update: { args: { gameId: GameId; targetPrice: number | null; notifyOnSale: boolean }; result: WishlistItem };
   wishlist_refresh: { args: NoArgs; result: WishlistItem[] };
   game_price: { args: { gameId: GameId }; result: GamePrice | null };
+  /** Games free to keep now and soon (Epic, GOG, other shops through GamerPower), without those in the library. */
+  free_games_list: { args: NoArgs; result: FreeGame[] };
+  /** Measures the installed games and the drives they are on. */
+  storage_overview: { args: NoArgs; result: StorageOverview };
   achievements_recent: { args: { limit: number }; result: AchievementUnlock[] };
   game_launch: { args: { gameId: GameId }; result: LaunchResult };
   game_stop: { args: { gameId: GameId }; result: null };
@@ -212,6 +218,8 @@ export interface CoveCommands {
   itch_lookup: { args: { url: string }; result: ItchGame };
   itch_uploads: { args: { gameId: number; downloadKeyId: number | null }; result: ItchUpload[] };
   downloads_set_status: { args: { id: string; status: DownloadStatus }; result: null };
+  /** Starts a download now, outside the download schedule's window too. */
+  downloads_start_now: { args: { id: string }; result: null };
   downloads_reorder: { args: { orderedIds: string[] }; result: null };
   downloads_clear_history: { args: NoArgs; result: null };
   system_profile: { args: NoArgs; result: UserProfile };

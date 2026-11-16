@@ -75,6 +75,11 @@ export async function cancelDownload(id: string): Promise<void> {
   await call("downloads_set_status", { id, status: "cancelled" });
 }
 
+/** Starts a download now, also outside the download schedule. */
+export async function startDownloadNow(id: string): Promise<void> {
+  await call("downloads_start_now", { id });
+}
+
 export async function retryDownload(id: string): Promise<void> {
   await call("downloads_set_status", { id, status: "queued" });
 }

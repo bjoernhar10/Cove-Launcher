@@ -3,6 +3,7 @@
  * Tauri's `mockIPC`. Keeps the UI tests independent of a running app.
  */
 import type {
+  FreeGame,
   AppErrorKind,
   AppSettings,
   CatalogPage,
@@ -127,14 +128,14 @@ export const FAKE_SCAN: ScanCandidate[] = [
 ];
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  general: { startInTvMode: false, language: "de", launchOnStartup: false, minimizeToTray: false, startPage: "home" },
+  general: { startInTvMode: false, language: "de", launchOnStartup: false, minimizeToTray: false, startPage: "home", discordStatus: false },
   appearance: { theme: "dark", accent: "blue" },
   library: { scanFolders: [], scanOnStartup: false, gameFolders: ["/home/u/Games"], steamSilentStart: true, epicCloudSaves: true, gogCloudSaves: true, defaultProton: "latest", useUmu: true },
-  downloads: { directory: "/home/u/Games", bandwidthLimitBytesPerSecond: null, maxConcurrent: 1 },
+  downloads: { directory: "/home/u/Games", bandwidthLimitBytesPerSecond: null, maxConcurrent: 1, schedule: { enabled: false, from: "01:00", until: "07:00" } },
   catalog: { useCoveService: true },
   backups: { enabled: true, directory: "", keep: 10 },
   emulators: { romFolders: [] },
-  wishlist: { country: "DE", priceAlerts: true },
+  wishlist: { country: "DE", priceAlerts: true, freeGames: true },
 };
 
 /** Systems the fake core offers (a few of the real ones). */
@@ -278,6 +279,10 @@ export interface FakeCore {
   wishlist: WishlistItem[];
   /** Prices per catalogue id; missing = not found on IsThereAnyDeal. */
   prices: Record<string, GamePrice>;
+  /** Free games of Epic and GOG (`free_games_list`). */
+  freeGames: FreeGame[];
+  /** Measured sizes per game id (`storage_overview`); installed games without one are "unknown". */
+  gameSizes: Record<string, number>;
   /** Linux game tools that are installed. */
   gameTools: GameTools;
   /** Times to beat per catalogue id (IGDB); missing ids have none. */
@@ -425,6 +430,8 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     fullscreen: false,
     wishlist: [],
     prices: {},
+    freeGames: [],
+    gameSizes: {},
     openedUrls: [],
     itchExtras: [],
   };
@@ -603,6 +610,21 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       return core.wishlist;
     },
     game_price: ({ gameId }) => core.prices[gameId] ?? null,
+    free_games_list: () => {
+      const owned = new Set(core.library.map((i) => i.game.title.toLowerCase()));
+      return core.freeGames.filter((g) => !owned.has(g.title.toLowerCase()));
+    },
+    storage_overview: () => {
+      const games = core.library
+        .filter((i) => i.entry.installed)
+        .map((i) => ({ gameId: i.game.id, sizeBytes: core.gameSizes[i.game.id] ?? null, mountPoint: "/" }))
+        .sort((a, b) => (b.sizeBytes ?? -1) - (a.sizeBytes ?? -1));
+      const gamesBytes = games.reduce((sum, g) => sum + (g.sizeBytes ?? 0), 0);
+      return {
+        drives: [{ name: "nvme0n1p3", mountPoint: "/", totalBytes: Math.max(1e12, gamesBytes + 600e9), freeBytes: 412e9, gamesBytes }],
+        games,
+      };
+    },
     library_playtime: ({ gameId }) => ({
       gameId,
       totalMinutes: 90,
@@ -873,6 +895,11 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       if (status === "cancelled") item.download.queuePosition = null;
       return null;
     },
+    downloads_start_now: ({ id }) => {
+      const item = core.downloads.find((d) => d.download.id === id) ?? reject("invalidInput", "Download nicht gefunden");
+      item.download.status = "downloading";
+      return null;
+    },
     downloads_preview_store: ({ gameId }) => {
       const item = core.library.find((i) => i.game.id === gameId) ?? reject("notInLibrary", `${gameId} ist nicht in der Bibliothek.`);
       const store = item.entry.source;
@@ -960,6 +987,7 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     system_about: () => ({
       appVersion: "0.1.0",
       platform: "linux",
+      discord: true,
       components: [
         { name: "core", version: "0.1.0", status: "running" },
         { name: "connectors", version: "0.1.0", status: "idle" },

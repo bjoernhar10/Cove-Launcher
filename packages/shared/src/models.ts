@@ -330,6 +330,46 @@ export interface WishlistItem {
 }
 
 /** Fired when a wishlist game reaches its target price or goes on sale. */
+/** A game that is free to keep for a while (Epic's free games, GOG giveaways, other shops through GamerPower). */
+export interface FreeGame {
+  /** `epic:<offer id>`, `gog:<product id>` or `gp:<GamerPower id>`. */
+  id: string;
+  /** Where the game is claimed: "Epic Games", "GOG", "Steam", "itch.io" … */
+  shop: string;
+  title: string;
+  /** The store page, where the game is claimed. */
+  url: string;
+  cover: ImageRef;
+  startsAt: string | null;
+  /** When the offer ends; null when the store doesn't say. */
+  endsAt: string | null;
+  /** Free from `startsAt` on (Epic shows next week's games). */
+  upcoming: boolean;
+}
+
+/** "Speicherplatz": installed games and the drives they are on. */
+export interface StorageOverview {
+  drives: DriveUsage[];
+  /** Biggest first; games that couldn't be measured last. */
+  games: StorageGame[];
+}
+
+export interface DriveUsage {
+  name: string;
+  mountPoint: string;
+  totalBytes: number;
+  freeBytes: number;
+  /** Taken by the games in the library. */
+  gamesBytes: number;
+}
+
+export interface StorageGame {
+  gameId: GameId;
+  /** Null when the folder is missing or shared with other games (ROM folders). */
+  sizeBytes: number | null;
+  mountPoint: string | null;
+}
+
 export interface PriceAlert {
   gameId: GameId;
   title: string;
@@ -919,6 +959,8 @@ export interface GeneralSettings {
   launchOnStartup: boolean;
   minimizeToTray: boolean;
   startPage: StartPage;
+  /** Show the running game as the Discord status. */
+  discordStatus: boolean;
 }
 
 export interface AppearanceSettings {
@@ -948,6 +990,15 @@ export interface DownloadSettings {
   /** Bandwidth limit in bytes/second, null = unlimited. */
   bandwidthLimitBytesPerSecond: number | null;
   maxConcurrent: number;
+  /** Downloads only run inside this daily time window. */
+  schedule: DownloadSchedule;
+}
+
+/** A daily window in local time ("HH:MM"); `until` before `from` goes over midnight, the same time means all day. */
+export interface DownloadSchedule {
+  enabled: boolean;
+  from: string;
+  until: string;
 }
 
 export interface CatalogSettings {
@@ -972,6 +1023,8 @@ export interface WishlistSettings {
   country: string;
   /** Check prices every few hours and notify about alerts. */
   priceAlerts: boolean;
+  /** Notify about games that are free to keep for a while (Epic, GOG, other shops). */
+  freeGames: boolean;
 }
 
 /** Save backups of every game (save locations from the Ludusavi manifest). */
@@ -1149,6 +1202,8 @@ export interface AboutInfo {
   appVersion: string;
   components: ComponentVersion[];
   platform: Platform;
+  /** This build can show the Discord status (it knows Cove's Discord application). */
+  discord: boolean;
 }
 
 // ───────────── Cove catalogue proxy (services/catalog-proxy) ─────────────

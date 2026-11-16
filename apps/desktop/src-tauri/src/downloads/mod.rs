@@ -13,6 +13,7 @@ pub mod gog_saves;
 pub mod handoff;
 pub mod itch;
 pub mod limiter;
+pub mod schedule;
 pub mod transfer;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -65,6 +66,8 @@ pub struct DownloadManager {
     hooks: Hooks,
     /// Steam uninstalls waiting for the app manifest to disappear: (game id, app id).
     uninstalls: Mutex<Vec<(GameId, String)>>,
+    /// Downloads started with "Jetzt starten": they ignore the schedule.
+    forced: Mutex<HashSet<String>>,
 }
 
 fn validate_url(raw: &str) -> AppResult<String> {
@@ -140,6 +143,7 @@ impl DownloadManager {
             stores,
             hooks,
             uninstalls: Mutex::new(Vec::new()),
+            forced: Mutex::new(HashSet::new()),
         }
     }
 
@@ -288,12 +292,21 @@ impl DownloadManager {
                 .and_then(|b| u64::try_from(b).ok()),
         );
         let max = usize::try_from(settings.downloads.max_concurrent.max(1)).unwrap_or(1);
+        let open = schedule::open_now(&settings.downloads.schedule);
+        let forced = self
+            .forced
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if !open {
+            self.hold_outside_schedule(&forced).await?;
+        }
         let running = self.running_ids();
         let free = max.saturating_sub(running.len());
         for id in db::downloads::queued(&self.pool)
             .await?
             .into_iter()
-            .filter(|id| !running.contains(id))
+            .filter(|id| !running.contains(id) && (open || forced.contains(id)))
             .take(free)
         {
             let (tx, rx) = watch::channel(Control::Run);
@@ -307,12 +320,52 @@ impl DownloadManager {
         Ok(())
     }
 
+    /// Outside the schedule's window running downloads stop and wait in the
+    /// queue for the next window, unless they were started by hand.
+    async fn hold_outside_schedule(&self, forced: &HashSet<String>) -> AppResult<()> {
+        let held: Vec<String> = self
+            .running
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|(id, tx)| !forced.contains(*id) && *tx.borrow() == Control::Run)
+            .map(|(id, tx)| {
+                let _ = tx.send(Control::Pause);
+                id.clone()
+            })
+            .collect();
+        for id in held {
+            self.set_status(&id, DownloadStatus::Queued).await?;
+        }
+        Ok(())
+    }
+
+    /// "Jetzt starten": a queued or paused download starts at once, outside
+    /// the schedule's window too.
+    pub async fn start_now(&self, id: &str) -> AppResult<()> {
+        self.forced
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id.to_owned());
+        let record = db::downloads::record(&self.pool, id).await?;
+        if matches!(record.status.as_str(), "queued" | "paused" | "failed") {
+            self.control(id, DownloadStatus::Queued).await?;
+        }
+        Ok(())
+    }
+
     async fn run(self: Arc<Self>, id: String, control: watch::Receiver<Control>) {
         let result = self.transfer(&id, control).await;
         self.running
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .remove(&id);
+        if !matches!(result, Ok(Outcome::Paused)) {
+            self.forced
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&id);
+        }
         match result {
             Ok(Outcome::Completed | Outcome::Paused) => {}
             Ok(Outcome::Cancelled) => {
@@ -1515,6 +1568,46 @@ mod tests {
                 .unwrap()
                 .download
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn waits_for_the_schedule_unless_started_by_hand() {
+        use chrono::Timelike;
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/files/lantern-1.0.zip"))
+            .respond_with(transfer::tests::RangeServer {
+                data: zip_with_game(),
+                etag: "\"1\"".into(),
+            })
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let (manager, _) = manager(dir.path()).await;
+        // A window that starts in two hours.
+        let hour = (chrono::Local::now().hour() + 2) % 24;
+        let mut settings = manager.settings().await.unwrap();
+        settings.downloads.schedule = crate::models::DownloadSchedule {
+            enabled: true,
+            from: format!("{hour:02}:00"),
+            until: format!("{:02}:00", (hour + 1) % 24),
+        };
+        db::settings::save(&manager.pool, &settings).await.unwrap();
+        manager.start();
+        let id = manager
+            .add_url_to(&DirectDownloadInput {
+                url: format!("{}/files/lantern-1.0.zip", server.uri()),
+                title: None,
+                sha256: None,
+            })
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let item = db::downloads::get(&manager.pool, &id).await.unwrap();
+        assert_eq!(item.download.status, DownloadStatus::Queued);
+
+        manager.start_now(&id).await.unwrap();
+        wait_for(&manager, &id, DownloadStatus::Completed).await;
     }
 
     #[tokio::test(flavor = "multi_thread")]

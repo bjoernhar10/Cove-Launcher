@@ -216,6 +216,24 @@ if (demo) {
     core.wishlist.push({ game, addedAt: new Date(Date.UTC(2026, 10, 10 - i)).toISOString(), targetPrice: i === 0 ? 12 : i === 2 ? 15 : null, notifyOnSale: i !== 3, price });
   });
 }
+// Free games on Home (catalogue games that aren't owned) and measured sizes for "Speicherplatz".
+{
+  const owned = new Set(core.library.map((i) => i.game.title));
+  const free = FAKE_CATALOG.filter((g) => !owned.has(g.title)).slice(-2);
+  core.freeGames = free.map((game, i) => ({
+    id: `${i === 0 ? "epic" : "gp"}:${game.id}`,
+    shop: i === 0 ? "Epic Games" : "Steam",
+    title: game.title,
+    url: "https://example.com/free",
+    cover: game.artwork.cover,
+    startsAt: null,
+    endsAt: i === 0 ? new Date(Date.UTC(2026, 10, 19, 16)).toISOString() : null,
+    upcoming: false,
+  }));
+  core.library.forEach((item, i) => {
+    if (item.entry.installed) core.gameSizes[item.game.id] = ((i * 7919) % 90 + 2) * 1_000_000_000;
+  });
+}
 
 
 // ── live behaviour of the Rust core ──

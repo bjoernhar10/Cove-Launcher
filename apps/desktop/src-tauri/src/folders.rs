@@ -50,7 +50,7 @@ pub fn unique_dir(root: &Path, title: &str) -> PathBuf {
 }
 
 /// The folder itself or its closest existing parent.
-fn nearest_existing(path: &Path) -> Option<PathBuf> {
+pub(crate) fn nearest_existing(path: &Path) -> Option<PathBuf> {
     path.ancestors().find(|p| p.is_dir()).map(|p| {
         p.canonicalize()
             .map_or_else(|_| p.to_path_buf(), without_verbatim)
@@ -71,7 +71,7 @@ fn without_verbatim(path: PathBuf) -> PathBuf {
 }
 
 /// Is `dir` on the disk mounted at `mount`? Windows paths ignore case.
-fn on_disk(dir: &Path, mount: &Path) -> bool {
+pub(crate) fn on_disk(dir: &Path, mount: &Path) -> bool {
     if cfg!(windows) {
         dir.to_string_lossy()
             .to_lowercase()

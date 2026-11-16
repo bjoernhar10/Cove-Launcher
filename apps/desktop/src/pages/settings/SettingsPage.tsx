@@ -46,6 +46,8 @@ const TAB_LABELS: Record<TabId, string> = localized((m) => m.settings.tabs);
 function GeneralTab() {
   const t = useMessages();
   const { settings, error, retry, save } = useSettings();
+  // The Discord status needs Cove's Discord application in the build.
+  const about = useQuery("about", api.system.getAbout);
   if (error) return <ErrorState message={error} onRetry={retry} />;
   if (!settings) return <SettingsSkeleton />;
   const g = settings.general;
@@ -102,6 +104,17 @@ function GeneralTab() {
             }}
           />
         </SettingRow>
+        {about.status === "success" && about.data.discord && (
+          <SettingRow title={t.settings.discordStatus} description={t.settings.discordStatusHint}>
+            <Switch
+              label={t.settings.discordStatus}
+              checked={g.discordStatus}
+              onChange={(discordStatus) => {
+                set({ discordStatus });
+              }}
+            />
+          </SettingRow>
+        )}
       </Group>
     </Panel>
   );
@@ -630,6 +643,42 @@ function DownloadsTab() {
               ]}
             />
           </SettingRow>
+        </Group>
+        <Group>
+          <SettingRow title={t.settings.schedule} description={t.settings.scheduleHint}>
+            <Switch
+              label={t.settings.schedule}
+              checked={d.schedule.enabled}
+              onChange={(enabled) => {
+                set({ schedule: { ...d.schedule, enabled } });
+              }}
+            />
+          </SettingRow>
+          {d.schedule.enabled && (
+            <SettingRow title={t.settings.scheduleWindow} description={t.settings.scheduleWindowHint}>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="time"
+                  aria-label={t.settings.scheduleFrom}
+                  className="num w-36"
+                  value={d.schedule.from}
+                  onChange={(e) => {
+                    if (e.target.value) set({ schedule: { ...d.schedule, from: e.target.value } });
+                  }}
+                />
+                <span className="text-sm text-fg-muted">{t.settings.scheduleTo}</span>
+                <Input
+                  type="time"
+                  aria-label={t.settings.scheduleUntil}
+                  className="num w-36"
+                  value={d.schedule.until}
+                  onChange={(e) => {
+                    if (e.target.value) set({ schedule: { ...d.schedule, until: e.target.value } });
+                  }}
+                />
+              </div>
+            </SettingRow>
+          )}
         </Group>
       </div>
     </Panel>

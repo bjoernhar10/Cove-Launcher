@@ -1237,3 +1237,63 @@ describe("Plugins settings", () => {
     expect(screen.queryByRole("switch")).toBeNull();
   });
 });
+
+describe("Download schedule, storage, free games and Discord", () => {
+  it("holds the queue outside the schedule and starts a download by hand", async () => {
+    const hour = (new Date().getHours() + 2) % 24;
+    core.settings.downloads.schedule = {
+      enabled: true,
+      from: `${String(hour).padStart(2, "0")}:00`,
+      until: `${String((hour + 1) % 24).padStart(2, "0")}:00`,
+    };
+    core.downloads = [fakeDownload("q1", "Lantern", { status: "queued", queuePosition: 0, totalBytes: 1000, downloadedBytes: 0 })];
+    renderAt("/downloads");
+    expect(await screen.findByText(/Downloads warten auf das Zeitfenster/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Lantern jetzt starten" }));
+    await waitFor(() => {
+      expect(core.calls.some((c) => c.command === "downloads_start_now")).toBe(true);
+    });
+  });
+
+  it("sets the schedule and the Discord status in the settings", async () => {
+    renderAt("/settings/downloads");
+    fireEvent.click(await screen.findByRole("switch", { name: "Nach Zeitplan herunterladen" }));
+    const from = await screen.findByLabelText("Von");
+    fireEvent.change(from, { target: { value: "23:30" } });
+    await waitFor(() => {
+      expect(core.settings.downloads.schedule).toEqual({ enabled: true, from: "23:30", until: "07:00" });
+    });
+    window.location.hash = "#/settings/general";
+    fireEvent.click(await screen.findByRole("switch", { name: "Discord-Status" }));
+    await waitFor(() => {
+      expect(core.settings.general.discordStatus).toBe(true);
+    });
+  });
+
+  it("shows how much room installed games take", async () => {
+    core.gameSizes = { tidewater: 5_000_000_000 };
+    for (const item of core.library) if (item.game.id === "tidewater") item.entry.installedByCove = true;
+    renderAt("/storage");
+    expect(await screen.findByRole("heading", { name: "Speicherplatz" })).toBeDefined();
+    const main = within(screen.getByRole("main"));
+    expect(await main.findByText(formatBytes(5_000_000_000))).toBeDefined();
+    expect(main.getByRole("link", { name: /^Tidewater/ })).toBeDefined();
+    expect(main.queryByText("Orbit")).toBeNull();
+    expect(main.getByRole("button", { name: "Tidewater deinstallieren" })).toBeDefined();
+  });
+
+  it("lists free games on Home without the ones already owned", async () => {
+    const cover = { url: null, alt: "" };
+    core.freeGames = [
+      { id: "epic:1", shop: "Epic Games", title: "Lantern Keeper", url: "https://store.epicgames.com/de/p/lantern", cover, startsAt: null, endsAt: "2026-11-19T16:00:00.000Z", upcoming: false },
+      { id: "gp:3", shop: "Steam", title: "Hollow Peak", url: "https://www.gamerpower.com/open/hollow", cover, startsAt: null, endsAt: null, upcoming: false },
+      { id: "gog:2", shop: "GOG", title: "Tidewater", url: "https://www.gog.com/de/game/tidewater", cover, startsAt: null, endsAt: null, upcoming: false },
+    ];
+    renderAt("/");
+    expect(await screen.findByRole("heading", { name: "Gerade gratis" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Lantern Keeper bei Epic Games öffnen" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Hollow Peak bei Steam öffnen" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Giveaways von GamerPower" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Tidewater bei GOG öffnen" })).toBeNull();
+  });
+});

@@ -454,6 +454,18 @@ pub async fn set_compat_if_native(
     Ok(())
 }
 
+/// The measured size of an installed game's folder ("Speicherplatz").
+pub async fn set_install_size(pool: &SqlitePool, game_id: &str, bytes: i64) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE library_entries SET install_size_bytes = ? WHERE game_id = ? AND installed = 1",
+    )
+    .bind(bytes)
+    .bind(game_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// The game stays in the library, but is no longer installed.
 pub async fn mark_uninstalled(pool: &SqlitePool, game_id: &str) -> AppResult<()> {
     for table in ["store_installs", "store_install_dlcs"] {

@@ -16,9 +16,9 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { DownloadItem } from "@cove/shared";
-import { CircleAlert, CircleCheck, CircleX, Download, ExternalLink, Gamepad2, GripVertical, Link2, Pause, Play, RotateCcw, ShieldCheck, X } from "lucide-react";
-import { useState } from "react";
+import type { DownloadItem, DownloadSchedule } from "@cove/shared";
+import { CircleAlert, CircleCheck, CircleX, Clock, Download, ExternalLink, Gamepad2, GripVertical, HardDrive, Link2, Pause, Play, RotateCcw, ShieldCheck, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api/index.ts";
 import { GameCover } from "../components/game/GameCover.tsx";
@@ -26,6 +26,8 @@ import { Button, ButtonLink } from "../components/ui/Button.tsx";
 import { EmptyState, ErrorState, LoadingRegion, ProgressBar, Skeleton } from "../components/ui/Feedback.tsx";
 import { Page, PageHeader, Section } from "../components/ui/Page.tsx";
 import { cx } from "../lib/cx.ts";
+import { scheduleOpen } from "../lib/schedule.ts";
+import { useQuery } from "../hooks/useQuery.ts";
 import { formatBytes, formatEta, formatPercent, formatRelative, formatSpeed } from "../lib/format.ts";
 import { AddDownloadDialog } from "../features/AddDownloadDialog.tsx";
 import { ItchDialog } from "../features/ItchDialog.tsx";
@@ -143,7 +145,7 @@ function ActiveDownload({ item }: { item: DownloadItem }) {
   );
 }
 
-function QueueRow({ item, position }: { item: DownloadItem; position: number }) {
+function QueueRow({ item, position, waiting }: { item: DownloadItem; position: number; waiting: boolean }) {
   const t = useMessages();
   const { download, game } = item;
   const title = downloadTitle(item, t);
@@ -172,6 +174,16 @@ function QueueRow({ item, position }: { item: DownloadItem; position: number }) 
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-fg">{title}</span>
       <span className="num text-xs text-fg-muted">{formatBytes(download.totalBytes)}</span>
       <span className="w-14 text-xs text-fg-subtle">{ORIGIN_LABELS[download.origin]}</span>
+      {waiting && (
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          icon={Play}
+          label={t.downloads.startNow(title)}
+          onClick={() => void act(() => api.downloads.startDownloadNow(download.id))}
+        />
+      )}
       <Button
         variant="ghost"
         size="sm"
@@ -184,7 +196,7 @@ function QueueRow({ item, position }: { item: DownloadItem; position: number }) 
   );
 }
 
-function Queue({ items }: { items: DownloadItem[] }) {
+function Queue({ items, waiting }: { items: DownloadItem[]; waiting: boolean }) {
   const t = useMessages();
   const [order, setOrder] = useState<string[] | null>(null);
   const sensors = useSensors(
@@ -219,7 +231,7 @@ function Queue({ items }: { items: DownloadItem[] }) {
         <ul className="rounded-lg border border-border" aria-label={t.downloads.queue}>
           {effective.map((id, index) => {
             const item = byId.get(id);
-            return item ? <QueueRow key={id} item={item} position={index + 1} /> : null;
+            return item ? <QueueRow key={id} item={item} position={index + 1} waiting={waiting} /> : null;
           })}
         </ul>
       </SortableContext>
@@ -279,8 +291,41 @@ function HistoryRow({ item }: { item: DownloadItem }) {
   );
 }
 
+/** The note above the queue while the schedule holds downloads back. */
+function ScheduleNote({ schedule }: { schedule: DownloadSchedule }) {
+  const t = useMessages();
+  return (
+    <p className="mb-3 flex items-center gap-2 text-sm text-fg-muted">
+      <Clock aria-hidden className="shrink-0" />
+      <span>
+        {t.downloads.scheduleWaiting(schedule.from, schedule.until)}{" "}
+        <Link to="/settings/downloads" className="text-fg underline-offset-2 hover:underline">
+          {t.downloads.scheduleChange}
+        </Link>
+      </span>
+    </p>
+  );
+}
+
+/** Whether the schedule holds downloads back now; checked every minute. */
+function useScheduleWaiting(schedule: DownloadSchedule | null): boolean {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 60_000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+  return schedule !== null && !scheduleOpen(schedule, now);
+}
+
 export function DownloadsPage() {
   const t = useMessages();
+  const settings = useQuery("settings", api.settings.getSettings);
+  const schedule = settings.status === "success" ? settings.data.downloads.schedule : null;
+  const waiting = useScheduleWaiting(schedule);
   const items = useDownloads((s) => s.items);
   const loaded = useDownloads((s) => s.loaded);
   const error = useDownloads((s) => s.error);
@@ -295,6 +340,9 @@ export function DownloadsPage() {
   };
   const addActions = (
     <>
+      <ButtonLink to="/storage" variant="ghost" icon={HardDrive}>
+        {t.downloads.storage}
+      </ButtonLink>
       <Button
         icon={Gamepad2}
         onClick={() => {
@@ -364,10 +412,11 @@ export function DownloadsPage() {
           </Section>
 
           <Section title={t.downloads.queue} description={queued.length > 1 ? t.downloads.reorderHint : undefined}>
+            {waiting && schedule && queued.length > 0 && <ScheduleNote schedule={schedule} />}
             {queued.length === 0 ? (
               <p className="rounded-lg border border-border px-4 py-6 text-center text-sm text-fg-muted">{t.downloads.queueEmpty}</p>
             ) : (
-              <Queue items={queued} />
+              <Queue items={queued} waiting={waiting} />
             )}
           </Section>
 

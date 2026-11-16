@@ -14,6 +14,10 @@
           },
           "type": "array"
         },
+        "discord": {
+          "description": "This build can show the Discord status (it knows Cove's Discord application).",
+          "type": "boolean"
+        },
         "platform": {
           "$ref": "#/definitions/Platform"
         }
@@ -21,7 +25,8 @@
       "required": [
         "appVersion",
         "components",
-        "platform"
+        "platform",
+        "discord"
       ],
       "type": "object"
     },
@@ -967,6 +972,27 @@
       ],
       "type": "object"
     },
+    "DownloadSchedule": {
+      "additionalProperties": false,
+      "description": "A daily window in local time (\"HH:MM\"); `until` before `from` goes over midnight, the same time means all day.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "from": {
+          "type": "string"
+        },
+        "until": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "from",
+        "until"
+      ],
+      "type": "object"
+    },
     "DownloadSettings": {
       "additionalProperties": false,
       "properties": {
@@ -982,12 +1008,17 @@
         },
         "maxConcurrent": {
           "type": "number"
+        },
+        "schedule": {
+          "$ref": "#/definitions/DownloadSchedule",
+          "description": "Downloads only run inside this daily time window."
         }
       },
       "required": [
         "directory",
         "bandwidthLimitBytesPerSecond",
-        "maxConcurrent"
+        "maxConcurrent",
+        "schedule"
       ],
       "type": "object"
     },
@@ -1004,6 +1035,35 @@
         "handedOff"
       ],
       "type": "string"
+    },
+    "DriveUsage": {
+      "additionalProperties": false,
+      "properties": {
+        "freeBytes": {
+          "type": "number"
+        },
+        "gamesBytes": {
+          "description": "Taken by the games in the library.",
+          "type": "number"
+        },
+        "mountPoint": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "totalBytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "mountPoint",
+        "totalBytes",
+        "freeBytes",
+        "gamesBytes"
+      ],
+      "type": "object"
     },
     "EmulatorInfo": {
       "additionalProperties": false,
@@ -1096,6 +1156,58 @@
         "freeBytes",
         "writable",
         "needsAdmin"
+      ],
+      "type": "object"
+    },
+    "FreeGame": {
+      "additionalProperties": false,
+      "description": "A game that is free to keep for a while (Epic's free games, GOG giveaways, other shops through GamerPower).",
+      "properties": {
+        "cover": {
+          "$ref": "#/definitions/ImageRef"
+        },
+        "endsAt": {
+          "description": "When the offer ends; null when the store doesn't say.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "`epic:<offer id>`, `gog:<product id>` or `gp:<GamerPower id>`.",
+          "type": "string"
+        },
+        "shop": {
+          "description": "Where the game is claimed: \"Epic Games\", \"GOG\", \"Steam\", \"itch.io\" …",
+          "type": "string"
+        },
+        "startsAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "upcoming": {
+          "description": "Free from `startsAt` on (Epic shows next week's games).",
+          "type": "boolean"
+        },
+        "url": {
+          "description": "The store page, where the game is claimed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "shop",
+        "title",
+        "url",
+        "cover",
+        "startsAt",
+        "endsAt",
+        "upcoming"
       ],
       "type": "object"
     },
@@ -1566,6 +1678,10 @@
     "GeneralSettings": {
       "additionalProperties": false,
       "properties": {
+        "discordStatus": {
+          "description": "Show the running game as the Discord status.",
+          "type": "boolean"
+        },
         "language": {
           "$ref": "#/definitions/Language"
         },
@@ -1588,7 +1704,8 @@
         "language",
         "launchOnStartup",
         "minimizeToTray",
-        "startPage"
+        "startPage",
+        "discordStatus"
       ],
       "type": "object"
     },
@@ -2625,7 +2742,6 @@
     },
     "PriceAlert": {
       "additionalProperties": false,
-      "description": "Fired when a wishlist game reaches its target price or goes on sale.",
       "properties": {
         "deal": {
           "$ref": "#/definitions/PriceDeal"
@@ -3624,6 +3740,57 @@
       ],
       "type": "object"
     },
+    "StorageGame": {
+      "additionalProperties": false,
+      "properties": {
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "mountPoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sizeBytes": {
+          "description": "Null when the folder is missing or shared with other games (ROM folders).",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "gameId",
+        "sizeBytes",
+        "mountPoint"
+      ],
+      "type": "object"
+    },
+    "StorageOverview": {
+      "additionalProperties": false,
+      "description": "\"Speicherplatz\": installed games and the drives they are on.",
+      "properties": {
+        "drives": {
+          "items": {
+            "$ref": "#/definitions/DriveUsage"
+          },
+          "type": "array"
+        },
+        "games": {
+          "description": "Biggest first; games that couldn't be measured last.",
+          "items": {
+            "$ref": "#/definitions/StorageGame"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "drives",
+        "games"
+      ],
+      "type": "object"
+    },
     "StoreAccount": {
       "additionalProperties": false,
       "properties": {
@@ -4110,6 +4277,10 @@
           "description": "Two-letter country code for prices and currency, e.g. DE.",
           "type": "string"
         },
+        "freeGames": {
+          "description": "Notify about games that are free to keep for a while (Epic, GOG, other shops).",
+          "type": "boolean"
+        },
         "priceAlerts": {
           "description": "Check prices every few hours and notify about alerts.",
           "type": "boolean"
@@ -4117,7 +4288,8 @@
       },
       "required": [
         "country",
-        "priceAlerts"
+        "priceAlerts",
+        "freeGames"
       ],
       "type": "object"
     },

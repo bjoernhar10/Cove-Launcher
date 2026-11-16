@@ -1,6 +1,6 @@
 import { useMessages } from "../i18n/index.ts";
 import type { LibraryItem } from "@cove/shared";
-import { Compass, Library, Medal, Plus, Trophy } from "lucide-react";
+import { Compass, ExternalLink, Library, Medal, Plus, Trophy } from "lucide-react";
 import { Link } from "react-router";
 import { api } from "../api/index.ts";
 import { GameCard, GameCardSkeleton } from "../components/game/GameCard.tsx";
@@ -11,7 +11,7 @@ import { Button, ButtonLink } from "../components/ui/Button.tsx";
 import { EmptyState, ErrorState, LoadingRegion, ProgressBar, Skeleton } from "../components/ui/Feedback.tsx";
 import { Page, Section } from "../components/ui/Page.tsx";
 import { useQuery } from "../hooks/useQuery.ts";
-import { formatMoney, formatPercent, formatPlaytime, formatRelative } from "../lib/format.ts";
+import { formatDateShort, formatMoney, formatPercent, formatPlaytime, formatRelative } from "../lib/format.ts";
 import { useUi } from "../stores/ui.ts";
 
 function ContinueCard({ item }: { item: LibraryItem }) {
@@ -179,6 +179,58 @@ function WishlistDeals() {
   );
 }
 
+const GAMERPOWER_URL = "https://www.gamerpower.com";
+
+/** Games free to keep for a while (Epic, GOG, others through GamerPower); opens the page to claim them. */
+function FreeGames() {
+  const t = useMessages();
+  const query = useQuery("free-games", api.wishlist.freeGames);
+  if (query.status !== "success" || query.data.length === 0) return null;
+  return (
+    <ScrollRow
+      title={t.home.freeTitle}
+      description={t.home.freeText}
+      extraActions={
+        query.data.some((free) => free.id.startsWith("gp:")) ? (
+          <Button variant="ghost" size="sm" icon={ExternalLink} onClick={() => void api.system.openExternal(GAMERPOWER_URL)}>
+            {t.home.freeCredit}
+          </Button>
+        ) : undefined
+      }
+    >
+      {query.data.map((free) => {
+        const store = free.shop;
+        const when = free.upcoming
+          ? free.startsAt
+            ? t.home.freeFrom(store, formatDateShort(free.startsAt))
+            : store
+          : free.endsAt
+            ? t.home.freeUntil(store, formatDateShort(free.endsAt))
+            : t.home.freeNow(store);
+        return (
+          <ScrollItem key={free.id}>
+            <button
+              type="button"
+              onClick={() => void api.system.openExternal(free.url)}
+              aria-label={t.home.freeOpen(free.title, store)}
+              className="group block w-full rounded-lg text-left focus-visible:outline-offset-4"
+            >
+              <GameCover
+                game={{ id: free.id, title: free.title, artwork: { cover: free.cover, header: { url: null, alt: "" }, screenshots: [] } }}
+                className="border border-border transition-colors duration-150 ease-out group-hover:border-border-strong"
+              />
+              <span className="mt-3 block min-w-0">
+                <span className="block truncate text-sm font-medium text-fg">{free.title}</span>
+                <span className="mt-1 block truncate text-xs text-fg-muted">{when}</span>
+              </span>
+            </button>
+          </ScrollItem>
+        );
+      })}
+    </ScrollRow>
+  );
+}
+
 function RecentAchievements() {
   const t = useMessages();
   const query = useQuery("home/achievements", api.home.getRecentAchievements);
@@ -287,6 +339,7 @@ export function HomePage() {
       <h1 className="sr-only">Home</h1>
       <ContinuePlaying />
       <WishlistDeals />
+      <FreeGames />
       <Recommended />
       <Discover />
       <RecentAchievements />

@@ -135,6 +135,14 @@ async fn app_with(
             "http://127.0.0.1:1/manifest.yaml".into(),
         )),
         gamepads: Arc::new(crate::gamepad::Gamepads::default()),
+        discord: Arc::new(crate::discord::Discord::default()),
+        // Nothing listens there: tests never talk to Epic or GOG.
+        free_games: Arc::new(crate::free_games::FreeGames::with_urls(
+            pool.clone(),
+            "http://127.0.0.1:1/epic",
+            "http://127.0.0.1:1/gog",
+            "http://127.0.0.1:1/gamerpower",
+        )),
         prices: Arc::new(crate::prices::PriceService::with_base(
             pool.clone(),
             Some("http://127.0.0.1:1".into()),
@@ -489,6 +497,7 @@ async fn download_commands_accept_frontend_payloads() {
         json!({ "id": id, "status": "paused" }),
     )
     .unwrap();
+    invoke_raw(&app, "downloads_start_now", json!({ "id": id })).unwrap();
     invoke_raw(
         &app,
         "downloads_set_status",

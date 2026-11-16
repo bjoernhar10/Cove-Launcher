@@ -1,6 +1,6 @@
 import { useMessages } from "../../i18n/index.ts";
 import type { Game } from "@cove/shared";
-import { Bookmark, ChartColumn, CornerDownLeft, Tv, Plus, Search, type LucideIcon } from "lucide-react";
+import { Bookmark, ChartColumn, CornerDownLeft, HardDrive, Tv, Plus, Search, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../../api/index.ts";
@@ -87,6 +87,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
     }));
     nav.push({ id: "nav-/tv", group: t.palette.navigation, label: t.palette.goTo(t.tv.enter), icon: Tv, run: go("/tv") });
     nav.push({ id: "nav-/wishlist", group: t.palette.navigation, label: t.palette.goTo(t.wishlist.title), icon: Bookmark, run: go("/wishlist") });
+    nav.push({ id: "nav-/storage", group: t.palette.navigation, label: t.palette.goTo(t.storage.title), icon: HardDrive, run: go("/storage") });
     nav.push({ id: "nav-/stats", group: t.palette.navigation, label: t.palette.goTo(t.stats.title), icon: ChartColumn, run: go("/stats") });
     const actions: Command[] = [
       {

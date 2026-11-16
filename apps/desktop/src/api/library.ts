@@ -10,6 +10,7 @@ import type {
   LibraryMatchEvent,
   LibraryUpdate,
   ManualGameInput,
+  StorageOverview,
   MatchCandidate,
   PlaytimeStats,
   PrefixAction,
@@ -88,6 +89,11 @@ export function launchGame(gameId: GameId): Promise<LaunchResult> {
 /** Steam: opens Steam's uninstall dialog. Games Cove installed: deletes the game folder. */
 export function uninstallGame(gameId: GameId): Promise<UninstallMethod> {
   return call("game_uninstall", { gameId });
+}
+
+/** "Speicherplatz": measures the installed games and their drives (takes a moment). */
+export function storageOverview(): Promise<StorageOverview> {
+  return call("storage_overview", {});
 }
 
 /** DLCs of a Steam game (installed ones marked). */

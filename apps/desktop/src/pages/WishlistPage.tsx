@@ -149,7 +149,7 @@ function PriceSettings() {
   const t = useMessages();
   const { settings, save } = useSettings();
   if (!settings) return null;
-  const { country, priceAlerts } = settings.wishlist;
+  const { country, priceAlerts, freeGames } = settings.wishlist;
   const codes = COUNTRIES.includes(country) ? COUNTRIES : [...COUNTRIES, country].sort();
   return (
     <div className="flex flex-wrap items-center gap-6">
@@ -173,6 +173,16 @@ function PriceSettings() {
           }}
         />
         <span aria-hidden>{t.wishlistSettings.alerts}</span>
+      </div>
+      <div className="flex items-center gap-3 text-sm text-fg-muted">
+        <Switch
+          label={t.wishlistSettings.freeGames}
+          checked={freeGames}
+          onChange={(value) => {
+            save((s) => ({ ...s, wishlist: { ...s.wishlist, freeGames: value } }));
+          }}
+        />
+        <span aria-hidden>{t.wishlistSettings.freeGames}</span>
       </div>
     </div>
   );
