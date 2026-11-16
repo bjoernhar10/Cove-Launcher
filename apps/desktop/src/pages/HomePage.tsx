@@ -1,4 +1,4 @@
-import { messages, useMessages } from "../i18n/index.ts";
+import { useMessages } from "../i18n/index.ts";
 import type { LibraryItem } from "@cove/shared";
 import { Compass, Library, Medal, Plus, Trophy } from "lucide-react";
 import { Link } from "react-router";
@@ -11,16 +11,8 @@ import { Button, ButtonLink } from "../components/ui/Button.tsx";
 import { EmptyState, ErrorState, LoadingRegion, ProgressBar, Skeleton } from "../components/ui/Feedback.tsx";
 import { Page, Section } from "../components/ui/Page.tsx";
 import { useQuery } from "../hooks/useQuery.ts";
-import { formatPlaytime, formatRelative } from "../lib/format.ts";
+import { formatMoney, formatPercent, formatPlaytime, formatRelative } from "../lib/format.ts";
 import { useUi } from "../stores/ui.ts";
-
-function greeting(): string {
-  const hour = new Date().getHours();
-  const h = messages().home;
-  if (hour < 11) return h.morning;
-  if (hour < 18) return h.hello;
-  return h.evening;
-}
 
 function ContinueCard({ item }: { item: LibraryItem }) {
   const t = useMessages();
@@ -162,6 +154,31 @@ function Discover() {
   );
 }
 
+/** Discounted games from the wishlist; nothing when there are none (or prices can't be had). */
+function WishlistDeals() {
+  const t = useMessages();
+  const query = useQuery("wishlist", api.wishlist.list);
+  if (query.status !== "success") return null;
+  const deals = query.data.filter((item) => (item.price?.best?.cut ?? 0) > 0);
+  if (deals.length === 0) return null;
+  return (
+    <ScrollRow title={t.home.dealsTitle} description={t.home.dealsText}>
+      {deals.map(({ game, price }) => {
+        const best = price?.best;
+        return (
+          <ScrollItem key={game.id}>
+            <GameCard
+              game={game}
+              to={`/catalogue/${game.id}`}
+              meta={best ? `−${formatPercent(best.cut / 100)} · ${formatMoney(best.price.amount, best.price.currency)}` : undefined}
+            />
+          </ScrollItem>
+        );
+      })}
+    </ScrollRow>
+  );
+}
+
 function RecentAchievements() {
   const t = useMessages();
   const query = useQuery("home/achievements", api.home.getRecentAchievements);
@@ -265,14 +282,11 @@ function CoveAchievements() {
 }
 
 export function HomePage() {
-  const t = useMessages();
   return (
     <Page>
-      <header className="mb-8">
-        <h1 className="text-xl font-semibold tracking-tight text-fg">{greeting()}</h1>
-        <p className="mt-1 text-sm text-fg-muted">{t.home.subtitle}</p>
-      </header>
+      <h1 className="sr-only">Home</h1>
       <ContinuePlaying />
+      <WishlistDeals />
       <Recommended />
       <Discover />
       <RecentAchievements />

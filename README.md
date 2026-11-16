@@ -72,6 +72,14 @@ No ads, no social feed, no account of its own.
 - **Prefix tools:** see each game's Proton prefix size, open it, reset it or run winetricks.
 - **Linux compatibility at a glance:** every game page shows its ProtonDB rating.
 
+### Windows and macOS
+
+- **Performance mode (Windows):** starts a game with high priority and switches to the "High
+  performance" power plan while you play; your own plan comes back afterwards.
+- **Performance overlay:** RivaTuner Statistics Server (it comes with MSI Afterburner) starts with
+  the game on Windows; on macOS Apple's Metal HUD shows frame rate, frame times and GPU load. Cove
+  never injects anything into a game itself.
+
 ### Your saves
 
 - **Save backups for every game:** after each session Cove backs up the game's saves into a folder
@@ -89,7 +97,8 @@ No ads, no social feed, no account of its own.
 - **Time to beat:** main story, main + extras and 100 % on game pages.
 - **Wishlist with price alerts:** put catalogue games on your wishlist, see the best current price
   across 30+ shops and the lowest price ever, set a target price and get a notification when it is
-  reached or a sale starts. Prices by [IsThereAnyDeal](https://isthereanydeal.com/).
+  reached or a sale starts. Games on sale show up on the home page too. Prices by
+  [IsThereAnyDeal](https://isthereanydeal.com/).
 
 ### And also
 

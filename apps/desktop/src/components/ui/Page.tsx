@@ -33,7 +33,7 @@ interface SectionProps {
 
 export function Section({ title, description, actions, children, className }: SectionProps) {
   return (
-    <section className={cx("mt-12 first:mt-0", className)} aria-label={title}>
+    <section className={cx("mt-12 first:mt-0 [.sr-only+&]:mt-0", className)} aria-label={title}>
       <div className="mb-4 flex items-end justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-fg">{title}</h2>

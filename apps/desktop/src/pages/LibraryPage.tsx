@@ -33,7 +33,9 @@ import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 import { useUi } from "../stores/ui.ts";
 
-const GROUPS: BuiltinGroup[] = ["all", "installed", "favorites", "steam", "gog", "epic", "amazon", "manual"];
+const STATUS_GROUPS: BuiltinGroup[] = ["all", "installed", "favorites"];
+const STORE_GROUPS: BuiltinGroup[] = ["steam", "gog", "epic", "amazon", "manual"];
+const GROUPS: BuiltinGroup[] = [...STATUS_GROUPS, ...STORE_GROUPS];
 
 function isBuiltin(group: LibraryGroup): group is BuiltinGroup {
   return !group.startsWith("collection:");
@@ -110,7 +112,7 @@ function menuAnchor(event: MouseEvent<HTMLElement>): MenuAnchor {
   return { x: rect.left + 16, y: rect.top + 16 };
 }
 
-function FavoriteButton({ item, onToggle }: { item: LibraryItem; onToggle: FavoriteHandler }) {
+function FavoriteButton({ item, onToggle, quiet = false }: { item: LibraryItem; onToggle: FavoriteHandler; quiet?: boolean }) {
   const t = useMessages();
   const { favorite } = item.entry;
   return (
@@ -125,6 +127,8 @@ function FavoriteButton({ item, onToggle }: { item: LibraryItem; onToggle: Favor
       className={cx(
         "inline-flex size-8 items-center justify-center rounded-md transition-colors duration-150 ease-out hover:bg-hover",
         favorite ? "text-accent-text" : "text-fg-subtle hover:text-fg",
+        // Grid cards show the star of a non-favourite only on hover or focus.
+        quiet && !favorite && "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100",
       )}
     >
       <Star aria-hidden className={favorite ? "fill-current" : undefined} />
@@ -164,9 +168,8 @@ const GridCard = memo(function GridCard({ item, onFavorite, onMenu }: GameRowPro
             {entry.matchStatus === "pending" && ` · ${t.library.checkMatch}`}
           </p>
         </div>
-        <FavoriteButton item={item} onToggle={onFavorite} />
+        <FavoriteButton item={item} onToggle={onFavorite} quiet />
       </div>
-      <AchievementMeter progress={entry.achievements} className="mt-2" />
     </div>
   );
 });
@@ -353,9 +356,10 @@ export function LibraryPage() {
         />
       ) : (
         <>
-          <div className="mb-8 flex items-start justify-between gap-4">
-            <nav aria-label={t.library.grouping} className="flex min-w-0 flex-1 flex-wrap gap-1">
-              {GROUPS.map((g) => {
+          <div className="mb-8 flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-4">
+            <nav aria-label={t.library.grouping} className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+              {GROUPS.filter((g) => !STORE_GROUPS.includes(g) || query.status !== "success" || counts[g] > 0 || g === group).map((g) => {
                 const selected = !collection && g === group;
                 return (
                   <button
@@ -365,14 +369,31 @@ export function LibraryPage() {
                     onClick={() => {
                       setGroup(g);
                     }}
-                    className={cx(CHIP, selected ? "bg-active font-medium text-fg" : CHIP_IDLE, g === "steam" && "ml-3")}
+                    className={cx(CHIP, selected ? "bg-active font-medium text-fg" : CHIP_IDLE)}
                   >
                     {groupLabel(g)}
                     {query.status === "success" && <span className="num text-xs text-fg-subtle">{counts[g]}</span>}
                   </button>
                 );
-              })}
-              {collections.map((c, index) => {
+              }).flatMap((chip, index) => (index === STATUS_GROUPS.length ? [<span key="divider" aria-hidden className="mx-2 h-5 w-px bg-border" />, chip] : [chip]))}
+            </nav>
+            <div className="flex shrink-0 items-center gap-2">
+              <LengthPopover value={length} onChange={setLength} />
+              <Segmented
+                label={t.library.view}
+                value={view}
+                onChange={setView}
+                options={[
+                  { value: "grid", label: t.library.grid, icon: LayoutGrid, iconOnly: true },
+                  { value: "list", label: t.library.list, icon: List, iconOnly: true },
+                ]}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <nav aria-label={t.collections.title} className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+              <span className="mr-2 text-xs text-fg-subtle">{t.collections.title}</span>
+              {collections.map((c) => {
                 const selected = c.id === collection?.id;
                 return (
                   <button
@@ -382,7 +403,7 @@ export function LibraryPage() {
                     onClick={() => {
                       setGroup(collectionGroup(c.id));
                     }}
-                    className={cx(CHIP, "max-w-56", selected ? "bg-active font-medium text-fg" : CHIP_IDLE, index === 0 && "ml-3")}
+                    className={cx(CHIP, "max-w-56", selected ? "bg-active font-medium text-fg" : CHIP_IDLE)}
                   >
                     <span className="truncate">{c.name}</span>
                     <span className="num text-xs text-fg-subtle">{c.gameIds.length}</span>
@@ -395,7 +416,7 @@ export function LibraryPage() {
                   onClick={() => {
                     setNaming({ collection: null });
                   }}
-                  className={cx(CHIP, CHIP_IDLE, collections.length === 0 && "ml-3")}
+                  className={cx(CHIP, CHIP_IDLE)}
                 >
                   <Plus aria-hidden />
                   {t.collections.create}
@@ -421,26 +442,14 @@ export function LibraryPage() {
                     iconOnly
                     icon={Trash2}
                     label={t.collections.delete}
-                    className="mr-2"
                     onClick={() => {
                       setDeleting(collection);
                     }}
                   />
                 </>
               )}
-              <div className="mr-2">
-                <LengthPopover value={length} onChange={setLength} />
-              </div>
-              <Segmented
-                label={t.library.view}
-                value={view}
-                onChange={setView}
-                options={[
-                  { value: "grid", label: t.library.grid, icon: LayoutGrid, iconOnly: true },
-                  { value: "list", label: t.library.list, icon: List, iconOnly: true },
-                ]}
-              />
             </div>
+          </div>
           </div>
 
           {(query.status === "loading" || (query.status === "success" && lengthLoading)) &&

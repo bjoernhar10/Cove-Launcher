@@ -88,7 +88,7 @@ test.describe("Bibliothek", () => {
   test("ein Spiel per Rechtsklick in eine eigene Sammlung legen", async ({ page }) => {
     await openCove(page, "/library");
     const games = page.getByRole("list", { name: "Spiele" });
-    const groups = page.getByRole("navigation", { name: "Gruppierung" });
+    const groups = page.getByRole("navigation", { name: "Sammlungen" });
     await games.getByRole("listitem").filter({ hasText: "Tidewater" }).click({ button: "right" });
     const menu = page.getByRole("dialog", { name: "Sammlungen für Tidewater" });
     await expect(menu.getByRole("checkbox", { name: "Mit Freunden" })).not.toBeChecked();
@@ -117,7 +117,7 @@ test.describe("Bibliothek", () => {
     await page.getByRole("button", { name: "Sammlung löschen" }).click();
     await page.getByRole("dialog", { name: "Sammlung „Durchgespielt“ löschen?" }).getByRole("button", { name: "Sammlung löschen" }).click();
     await expect(toasts(page).getByText("Sammlung „Durchgespielt“ gelöscht.")).toBeVisible();
-    await expect(groups.getByRole("button", { name: /Alle/ })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("navigation", { name: "Gruppierung" }).getByRole("button", { name: /^Alle/ })).toHaveAttribute("aria-pressed", "true");
     await expect(games.getByRole("listitem").filter({ hasText: "Tidewater" })).toBeVisible();
   });
 
@@ -132,7 +132,7 @@ test.describe("Bibliothek", () => {
     await expect(menu).toBeHidden();
 
     await page.getByRole("navigation", { name: "Bereiche" }).getByRole("link", { name: /My Library/ }).click();
-    await page.getByRole("navigation", { name: "Gruppierung" }).getByRole("button", { name: /Mit Freunden/ }).click();
+    await page.getByRole("navigation", { name: "Sammlungen" }).getByRole("button", { name: /Mit Freunden/ }).click();
     await expect(page.getByRole("list", { name: "Spiele" }).getByRole("listitem")).toHaveCount(3);
   });
 

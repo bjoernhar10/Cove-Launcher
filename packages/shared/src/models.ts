@@ -127,13 +127,20 @@ export interface GameTweaks {
   dxvk: boolean;
   /** Proton: Direct3D 12 through VKD3D-Proton (off = no D3D12). */
   vkd3d: boolean;
+  /** macOS: Apple's Metal performance HUD (`MTL_HUD_ENABLED=1`). */
+  metalHud: boolean;
+  /** Windows: high process priority and the "High performance" power plan while the game runs. */
+  performanceMode: boolean;
+  /** Windows: start RivaTuner Statistics Server (its overlay) before the game. */
+  rtss: boolean;
 }
 
-/** Which Linux game tools are installed. */
+/** Which game tools are installed (Linux: MangoHud, GameMode, gamescope; Windows: RivaTuner Statistics Server). */
 export interface GameTools {
   mangohud: boolean;
   gamemode: boolean;
   gamescope: boolean;
+  rtss: boolean;
 }
 
 export interface AchievementProgress {

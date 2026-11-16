@@ -39,6 +39,8 @@ pub enum LaunchPlan {
         args: Vec<String>,
         env: Vec<(String, String)>,
         cwd: Option<PathBuf>,
+        /// Windows: performance mode and RTSS.
+        boost: crate::boost::Boost,
     },
 }
 
@@ -255,17 +257,24 @@ pub struct ToolPaths {
     pub mangohud: Option<PathBuf>,
     pub gamemode: Option<PathBuf>,
     pub gamescope: Option<PathBuf>,
+    /// Windows: `RivaTuner` Statistics Server.
+    pub rtss: Option<PathBuf>,
 }
 
 impl ToolPaths {
     pub fn detect() -> Self {
-        if Platform::current() != Platform::Linux {
-            return Self::default();
-        }
-        Self {
-            mangohud: crate::sidecar::which("mangohud"),
-            gamemode: crate::sidecar::which("gamemoderun"),
-            gamescope: crate::sidecar::which("gamescope"),
+        match Platform::current() {
+            Platform::Linux => Self {
+                mangohud: crate::sidecar::which("mangohud"),
+                gamemode: crate::sidecar::which("gamemoderun"),
+                gamescope: crate::sidecar::which("gamescope"),
+                rtss: None,
+            },
+            Platform::Windows => Self {
+                rtss: crate::boost::find_rtss(),
+                ..Self::default()
+            },
+            Platform::Macos => Self::default(),
         }
     }
 
@@ -274,6 +283,7 @@ impl ToolPaths {
             mangohud: self.mangohud.is_some(),
             gamemode: self.gamemode.is_some(),
             gamescope: self.gamescope.is_some(),
+            rtss: self.rtss.is_some(),
         }
     }
 }
@@ -297,6 +307,10 @@ fn apply_tweaks(
     env: &mut Vec<(String, String)>,
 ) -> AppResult<(PathBuf, Vec<String>)> {
     let tweaks = &target.options.tweaks;
+    if host.platform == Platform::Macos && tweaks.metal_hud {
+        // Apple's own overlay for Metal games (macOS 13 and later).
+        env.push(("MTL_HUD_ENABLED".into(), "1".into()));
+    }
     if host.platform != Platform::Linux {
         return Ok((program, args));
     }
@@ -494,11 +508,35 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
             .filter(|e| !e.key.is_empty())
             .map(|e| (e.key.clone(), e.value.clone())),
     );
+    let boost = boost_of(target, host)?;
     Ok(LaunchPlan::Process {
         program,
         args,
         env,
         cwd,
+        boost,
+    })
+}
+
+/// Windows options around the game: performance mode and the RTSS overlay.
+fn boost_of(target: &LaunchTarget, host: &HostEnv) -> AppResult<crate::boost::Boost> {
+    let tweaks = &target.options.tweaks;
+    if host.platform != Platform::Windows {
+        return Ok(crate::boost::Boost::default());
+    }
+    let rtss = if tweaks.rtss {
+        Some(
+            host.tools
+                .rtss
+                .clone()
+                .ok_or_else(|| tool_missing("RivaTuner Statistics Server"))?,
+        )
+    } else {
+        None
+    };
+    Ok(crate::boost::Boost {
+        performance: tweaks.performance_mode,
+        rtss,
     })
 }
 
@@ -755,6 +793,7 @@ impl Launcher {
                 args,
                 env,
                 cwd,
+                boost,
             } => {
                 if program.is_absolute() && !program.exists() {
                     return Err(AppError::Launch(tr!(
@@ -791,6 +830,16 @@ impl Launcher {
                     use std::os::unix::process::CommandExt;
                     command.process_group(0);
                 }
+                #[cfg(windows)]
+                {
+                    use std::os::windows::process::CommandExt;
+                    if boost.performance {
+                        command.creation_flags(crate::boost::HIGH_PRIORITY_CLASS);
+                    }
+                }
+                if let Some(rtss) = &boost.rtss {
+                    crate::boost::start_rtss(rtss);
+                }
                 let mut child = command.spawn().map_err(|e| {
                     AppError::Launch(tr!(
                         "{} konnte nicht gestartet werden: {e}",
@@ -803,7 +852,8 @@ impl Launcher {
                 std::thread::spawn(move || {
                     let _ = child.wait();
                 });
-                self.start_monitor(game_id.clone(), Tracker::for_pid(pid), true);
+                let power = boost.performance.then(crate::boost::PowerGuard::acquire);
+                self.start_monitor_with(game_id.clone(), Tracker::for_pid(pid), true, power);
                 Ok(LaunchResult {
                     game_id,
                     method: LaunchMethod::Process,
@@ -824,6 +874,17 @@ impl Launcher {
     }
 
     fn start_monitor(&self, game_id: GameId, tracker: Tracker, started: bool) {
+        self.start_monitor_with(game_id, tracker, started, None);
+    }
+
+    /// Like [`Self::start_monitor`]; `power` is held until the game ends.
+    fn start_monitor_with(
+        &self,
+        game_id: GameId,
+        tracker: Tracker,
+        started: bool,
+        power: Option<crate::boost::PowerGuard>,
+    ) {
         let stop = Arc::new(AtomicBool::new(false));
         let started_at = started.then(now_iso);
         self.lock().insert(
@@ -839,6 +900,8 @@ impl Launcher {
                 eprintln!("[cove] Überwachung von {game_id} fehlgeschlagen: {error}");
             }
             this.lock().remove(&game_id);
+            // The power plan goes back when the game has ended.
+            drop(power);
         });
     }
 
@@ -1173,6 +1236,7 @@ mod tests {
             args,
             env,
             cwd,
+            ..
         } = plan(&t, &host(Platform::Linux, &[])).unwrap()
         else {
             panic!("expected process")
@@ -1275,6 +1339,7 @@ mod tests {
             fsr: true,
             dxvk: false,
             vkd3d: false,
+            ..crate::models::GameTweaks::default()
         };
         let mut host = host(Platform::Linux, &["GE-Proton10-25"]);
         // Nothing installed: say which tool is missing instead of starting.
@@ -1286,6 +1351,7 @@ mod tests {
             mangohud: Some(PathBuf::from("/usr/bin/mangohud")),
             gamemode: Some(PathBuf::from("/usr/bin/gamemoderun")),
             gamescope: Some(PathBuf::from("/usr/bin/gamescope")),
+            rtss: None,
         };
         let LaunchPlan::Process {
             program, args, env, ..
@@ -1354,6 +1420,47 @@ mod tests {
             plan(&native, &self::host(Platform::Windows, &[])).unwrap(),
             LaunchPlan::Process { program, .. } if program == Path::new("/g/game.sh")
         ));
+    }
+
+    #[test]
+    fn windows_and_mac_options_go_into_the_plan() {
+        let mut t = target(StoreSource::Manual, Some("/g/game"), None);
+        t.options.tweaks = crate::models::GameTweaks {
+            metal_hud: true,
+            performance_mode: true,
+            rtss: true,
+            ..crate::models::GameTweaks::default()
+        };
+        // macOS: Apple's Metal HUD through its variable, nothing else.
+        let LaunchPlan::Process { env, boost, .. } = plan(&t, &host(Platform::Macos, &[])).unwrap()
+        else {
+            panic!()
+        };
+        assert!(env.contains(&("MTL_HUD_ENABLED".into(), "1".into())));
+        assert_eq!(boost, crate::boost::Boost::default());
+
+        // Windows: RTSS must be installed.
+        let mut windows = host(Platform::Windows, &[]);
+        assert!(matches!(plan(&t, &windows), Err(AppError::Launch(_))));
+        windows.tools.rtss = Some(PathBuf::from("C:/RTSS/RTSS.exe"));
+        let LaunchPlan::Process { env, boost, .. } = plan(&t, &windows).unwrap() else {
+            panic!()
+        };
+        assert!(!env.iter().any(|(k, _)| k == "MTL_HUD_ENABLED"));
+        assert_eq!(
+            boost,
+            crate::boost::Boost {
+                performance: true,
+                rtss: Some(PathBuf::from("C:/RTSS/RTSS.exe")),
+            }
+        );
+
+        // Linux ignores both.
+        let LaunchPlan::Process { boost, .. } = plan(&t, &host(Platform::Linux, &[])).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(boost, crate::boost::Boost::default());
     }
 
     #[test]

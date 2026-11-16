@@ -55,6 +55,9 @@ export const FAKE_TWEAKS: GameTweaks = {
   fsr: false,
   dxvk: true,
   vkd3d: true,
+  metalHud: false,
+  performanceMode: false,
+  rtss: false,
 };
 
 /** Rejects like the Rust core: an error carrying `kind` + `message`. */
@@ -413,7 +416,7 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     prefixes: {},
     prefixActions: [],
     timesToBeat: {},
-    gameTools: { mangohud: true, gamemode: true, gamescope: false },
+    gameTools: { mangohud: true, gamemode: true, gamescope: false, rtss: false },
     backups: {},
     systems: FAKE_SYSTEMS,
     romFiles: {},

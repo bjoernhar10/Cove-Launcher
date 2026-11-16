@@ -37,10 +37,22 @@ const TABS: Tab[] = ["overview", "achievements", "settings"];
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-border px-4 py-3">
-      <p className="text-xs text-fg-subtle">{label}</p>
-      <p className="num mt-1 text-base font-medium text-fg">{children}</p>
+    <div className="flex flex-col gap-1">
+      <dt className="text-xs text-fg-subtle">{label}</dt>
+      <dd className="num text-base font-medium text-fg">{children}</dd>
     </div>
+  );
+}
+
+/** The store's own client is already said by the store badge ("Steam" + "Über Steam"). */
+function ownClient(item: LibraryItem): boolean {
+  const via = item.entry.launchVia;
+  const source = item.entry.source;
+  return (
+    (via === "steam" && source === "steam") ||
+    (via === "epicLauncher" && source === "epic") ||
+    (via === "gogGalaxy" && source === "gog") ||
+    (via === "amazonGames" && source === "amazon")
   );
 }
 
@@ -755,8 +767,9 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
         />
       )}
 
-      {isLinux && item.entry.launchVia === "direct" && (
+      {item.entry.launchVia === "direct" && (
         <GameTweaks
+          platform={detectPlatform()}
           value={draft.tweaks}
           proton={draft.compatibilityTool === "proton" && executable.trim().toLowerCase().endsWith(".exe")}
           onChange={(tweaks) => {
@@ -851,12 +864,15 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
 function HeaderSkeleton() {
   const t = useMessages();
   return (
-    <LoadingRegion label={t.detail.loading} className="flex gap-8">
-      <Skeleton className="aspect-[3/4] w-44 rounded-lg" />
-      <div className="flex-1 pt-2">
-        <Skeleton className="h-9 w-1/3" />
-        <Skeleton className="mt-3 h-4 w-1/4" />
-        <Skeleton className="mt-8 h-9 w-32" />
+    <LoadingRegion label={t.detail.loading}>
+      <Skeleton className="aspect-[5/1] w-full rounded-xl" />
+      <div className="flex gap-8 px-6">
+        <Skeleton className="-mt-16 aspect-[3/4] w-36 rounded-lg" />
+        <div className="flex-1 pt-6">
+          <Skeleton className="h-9 w-1/3" />
+          <Skeleton className="mt-3 h-4 w-1/4" />
+          <Skeleton className="mt-6 h-9 w-32" />
+        </div>
       </div>
     </LoadingRegion>
   );
@@ -907,31 +923,36 @@ export function LibraryDetailPage() {
       )}
       {query.status === "success" && query.data !== null && (
         <>
-          <header className="flex flex-col gap-8 sm:flex-row">
-            <GameCover game={query.data.game} className="w-44 shrink-0 border border-border" titleSize="sm" />
-            <div className="flex min-w-0 flex-1 flex-col justify-end pb-1">
-              <div className="flex items-center gap-2">
-                <Badge>{SOURCE_LABELS[query.data.entry.source]}</Badge>
-                {query.data.entry.launchVia && <Badge>{LAUNCH_VIA_LABELS[query.data.entry.launchVia]}</Badge>}
-                {!query.data.entry.installed && <Badge>{t.library.notInstalled}</Badge>}
+          <header>
+            <GameCover game={query.data.game} kind="header" aspect="banner" showTitle={false} className="w-full rounded-xl border border-border" />
+            <div className="flex flex-col gap-6 px-6 sm:flex-row sm:items-end">
+              <GameCover game={query.data.game} className="-mt-16 w-36 shrink-0 rounded-lg border-4 border-bg" titleSize="sm" />
+              <div className="flex min-w-0 flex-1 flex-col pb-1">
+                <div className="flex items-center gap-2">
+                  <Badge>{SOURCE_LABELS[query.data.entry.source]}</Badge>
+                  {query.data.entry.launchVia && !ownClient(query.data) && <Badge>{LAUNCH_VIA_LABELS[query.data.entry.launchVia]}</Badge>}
+                  {!query.data.entry.installed && <Badge>{t.library.notInstalled}</Badge>}
+                </div>
+                <h1 className="mt-3 text-xl font-semibold tracking-tight text-fg">{query.data.game.title}</h1>
+                <p className="mt-1 text-sm text-fg-muted">{query.data.game.summary}</p>
               </div>
-              <h1 className="mt-3 text-xl font-semibold tracking-tight text-fg">{query.data.game.title}</h1>
-              <p className="mt-1 text-sm text-fg-muted">{query.data.game.summary}</p>
-              <div className="mt-6 flex flex-wrap items-center gap-2">
+            </div>
+            <div className="mt-6 flex flex-wrap items-center gap-2">
                 <PlayButton item={query.data} />
                 <Button
                   aria-pressed={query.data.entry.favorite}
                   icon={Star}
+                  iconOnly
+                  label={query.data.entry.favorite ? t.game.favorite : t.library.favorite}
                   onClick={() => {
                     if (query.data) void toggleFavorite(query.data);
                   }}
                   className={query.data.entry.favorite ? "[&_svg]:fill-current [&_svg]:text-accent-text" : undefined}
-                >
-                  {query.data.entry.favorite ? t.game.favorite : t.library.favorite}
-                </Button>
+                />
                 <CollectionsButton game={query.data.game} />
+                <span aria-hidden className="mx-2 h-5 w-px bg-border" />
                 {query.data.entry.catalogId && (
-                  <ButtonLink to={`/catalogue/${query.data.entry.catalogId}`} variant="ghost">
+                  <ButtonLink to={`/catalogue/${query.data.entry.catalogId}`} variant="ghost" icon={Compass}>
                     {t.game.cataloguePage}
                   </ButtonLink>
                 )}
@@ -944,7 +965,6 @@ export function LibraryDetailPage() {
                 >
                   {query.data.entry.catalogId ? t.game.changeMatch : t.game.matchInCatalogue}
                 </Button>
-              </div>
             </div>
           </header>
 
@@ -976,7 +996,7 @@ export function LibraryDetailPage() {
             }}
           />
 
-          <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <dl className="mt-8 grid grid-cols-2 gap-6 border-y border-border py-4 lg:grid-cols-4">
             <Stat label={t.game.totalPlaytime}>{formatPlaytime(query.data.entry.playtimeMinutes)}</Stat>
             <Stat label={t.library.colLastPlayed}>{query.data.entry.lastPlayedAt ? formatRelative(query.data.entry.lastPlayedAt) : t.game.never}</Stat>
             <Stat label="Achievements">
@@ -985,7 +1005,7 @@ export function LibraryDetailPage() {
                 : "—"}
             </Stat>
             <Stat label={t.game.size}>{query.data.entry.installSizeBytes === null ? "—" : formatBytes(query.data.entry.installSizeBytes)}</Stat>
-          </div>
+          </dl>
 
           <div className="mt-10">
             <Tabs

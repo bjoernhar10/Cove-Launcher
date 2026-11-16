@@ -4,6 +4,7 @@ import { NavLink } from "react-router";
 import { api } from "../../api/index.ts";
 import { useQuery } from "../../hooks/useQuery.ts";
 import { CoveLogo } from "../ui/CoveLogo.tsx";
+import { GameCover } from "../game/GameCover.tsx";
 import { cx } from "../../lib/cx.ts";
 import { formatPercent } from "../../lib/format.ts";
 import { selectActive, selectQueued, selectRunning, useDownloads } from "../../stores/downloads.ts";
@@ -69,13 +70,51 @@ function DownloadIndicator({ collapsed }: { collapsed: boolean }) {
       {collapsed ? (
         <Download aria-hidden className="mx-auto text-accent-text" />
       ) : (
-        <div className="flex items-center justify-between gap-2 text-xs">
-          <span className="min-w-0 truncate text-fg-muted">{running.game.title}</span>
-          <span className="num shrink-0 text-fg-subtle">{pct}</span>
-        </div>
+        <>
+          <p className="flex items-center gap-2 text-xs text-fg-subtle">
+            <Download aria-hidden className="text-accent-text" />
+            {t.sidebar.downloading}
+          </p>
+          <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+            <span className="min-w-0 truncate text-fg-muted">{running.game.title}</span>
+            <span className="num shrink-0 text-fg-subtle">{pct}</span>
+          </div>
+        </>
       )}
       <ProgressBar value={downloadedBytes} max={totalBytes} label={t.sidebar.downloadProgress} className="mt-2" />
     </NavLink>
+  );
+}
+
+/** The last played games, one click away (hidden when the sidebar is collapsed). */
+function RecentGames() {
+  const t = useMessages();
+  const library = useQuery("library", api.library.listLibrary);
+  if (library.status !== "success") return null;
+  const recent = library.data
+    .filter((i) => i.entry.lastPlayedAt !== null)
+    .sort((a, b) => (b.entry.lastPlayedAt ?? "").localeCompare(a.entry.lastPlayedAt ?? ""))
+    .slice(0, 5);
+  if (recent.length === 0) return null;
+  return (
+    <nav aria-label={t.sidebar.recent} className="mt-6 flex min-h-0 flex-col gap-1 overflow-hidden px-3">
+      <p className="px-3 pb-1 text-xs text-fg-subtle">{t.sidebar.recent}</p>
+      {recent.map(({ game }) => (
+        <NavLink
+          key={game.id}
+          to={`/library/${game.id}`}
+          className={({ isActive }) =>
+            cx(
+              "flex h-9 items-center gap-3 rounded-md px-3 text-sm transition-colors duration-150 ease-out",
+              isActive ? "bg-active text-fg" : "text-fg-muted hover:bg-hover hover:text-fg",
+            )
+          }
+        >
+          <GameCover game={game} aspect="square" showTitle={false} className="w-5 shrink-0 rounded-none" />
+          <span className="min-w-0 truncate">{game.title}</span>
+        </NavLink>
+      ))}
+    </nav>
   );
 }
 
@@ -108,6 +147,8 @@ export function Sidebar() {
       </nav>
 
       <PluginSidebarItems collapsed={collapsed} />
+
+      {!collapsed && <RecentGames />}
 
       <div className="flex-1" data-tauri-drag-region />
 

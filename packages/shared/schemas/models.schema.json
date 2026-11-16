@@ -1408,7 +1408,7 @@
     },
     "GameTools": {
       "additionalProperties": false,
-      "description": "Which Linux game tools are installed.",
+      "description": "Which game tools are installed (Linux: MangoHud, GameMode, gamescope; Windows: RivaTuner Statistics Server).",
       "properties": {
         "gamemode": {
           "type": "boolean"
@@ -1418,12 +1418,16 @@
         },
         "mangohud": {
           "type": "boolean"
+        },
+        "rtss": {
+          "type": "boolean"
         }
       },
       "required": [
         "mangohud",
         "gamemode",
-        "gamescope"
+        "gamescope",
+        "rtss"
       ],
       "type": "object"
     },
@@ -1468,6 +1472,18 @@
           "description": "Performance overlay (`mangohud`).",
           "type": "boolean"
         },
+        "metalHud": {
+          "description": "macOS: Apple's Metal performance HUD (`MTL_HUD_ENABLED=1`).",
+          "type": "boolean"
+        },
+        "performanceMode": {
+          "description": "Windows: high process priority and the \"High performance\" power plan while the game runs.",
+          "type": "boolean"
+        },
+        "rtss": {
+          "description": "Windows: start RivaTuner Statistics Server (its overlay) before the game.",
+          "type": "boolean"
+        },
         "vkd3d": {
           "description": "Proton: Direct3D 12 through VKD3D-Proton (off = no D3D12).",
           "type": "boolean"
@@ -1482,7 +1498,10 @@
         "gamescopeFullscreen",
         "fsr",
         "dxvk",
-        "vkd3d"
+        "vkd3d",
+        "metalHud",
+        "performanceMode",
+        "rtss"
       ],
       "type": "object"
     },

@@ -1,6 +1,6 @@
 import { formatBytes } from "./lib/format.ts";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.tsx";
 import { usePreferences } from "./stores/preferences.ts";
 import { invalidateQueries } from "./stores/query.ts";
@@ -58,7 +58,7 @@ describe("App shell", () => {
 describe("Collections", () => {
   it("creates a collection, fills it by right-click and filters the library by it", async () => {
     renderAt("/library");
-    const groups = await screen.findByRole("navigation", { name: "Gruppierung" });
+    const groups = await screen.findByRole("navigation", { name: "Sammlungen" });
     fireEvent.click(await within(groups).findByRole("button", { name: "Neue Sammlung" }));
     const dialog = await screen.findByRole("dialog", { name: "Neue Sammlung" });
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "  Mit   Freunden " } });
@@ -69,7 +69,7 @@ describe("Collections", () => {
     expect(chip.getAttribute("aria-pressed")).toBe("true");
     expect(await screen.findByText("Diese Sammlung ist noch leer")).toBeDefined();
 
-    fireEvent.click(within(groups).getByRole("button", { name: /Alle/ }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Gruppierung" })).getByRole("button", { name: /^Alle/ }));
     const list = await screen.findByRole("list", { name: "Spiele" });
     fireEvent.contextMenu(within(list).getByRole("link", { name: "Tidewater" }), { clientX: 120, clientY: 160 });
     const menu = await screen.findByRole("dialog", { name: "Sammlungen für Tidewater" });
@@ -97,7 +97,7 @@ describe("Collections", () => {
     ];
     usePreferences.setState({ libraryGroup: "collection:1" });
     renderAt("/library");
-    const groups = await screen.findByRole("navigation", { name: "Gruppierung" });
+    const groups = await screen.findByRole("navigation", { name: "Sammlungen" });
     expect((await within(groups).findByRole("button", { name: /Angefangen/ })).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Sammlung umbenennen" }));
@@ -119,7 +119,7 @@ describe("Collections", () => {
     expect(core.collections.map((c) => c.name)).toEqual(["Mit Freunden"]);
     expect(core.library).toHaveLength(2);
     await waitFor(() => {
-      expect(within(groups).getByRole("button", { name: /Alle/ }).getAttribute("aria-pressed")).toBe("true");
+      expect(within(screen.getByRole("navigation", { name: "Gruppierung" })).getByRole("button", { name: /^Alle/ }).getAttribute("aria-pressed")).toBe("true");
     });
     expect(within(groups).queryByRole("button", { name: /Durchgespielt/ })).toBeNull();
   });
@@ -159,9 +159,8 @@ describe("Collections", () => {
     renderAt("/library");
     const list = await screen.findByRole("list", { name: "Spiele" });
     expect(within(list).getByRole("link", { name: "Orbit" })).toBeDefined();
-    const groups = screen.getByRole("navigation", { name: "Gruppierung" });
-    await within(groups).findByRole("button", { name: "Neue Sammlung" });
-    expect(within(groups).getByRole("button", { name: /Alle/ }).getAttribute("aria-pressed")).toBe("true");
+    await within(screen.getByRole("navigation", { name: "Sammlungen" })).findByRole("button", { name: "Neue Sammlung" });
+    expect(within(screen.getByRole("navigation", { name: "Gruppierung" })).getByRole("button", { name: /^Alle/ }).getAttribute("aria-pressed")).toBe("true");
   });
 });
 
@@ -897,7 +896,7 @@ describe("Proton (Linux)", () => {
 
   it("saves the game options: MangoHud, gamescope with a resolution, no DXVK", async () => {
     windowsGame();
-    core.gameTools = { mangohud: true, gamemode: true, gamescope: true };
+    core.gameTools = { mangohud: true, gamemode: true, gamescope: true, rtss: false };
     renderAt("/library/tidewater?tab=settings");
     fireEvent.click(await screen.findByRole("switch", { name: "MangoHud" }));
     fireEvent.click(screen.getByRole("switch", { name: "gamescope" }));
@@ -927,6 +926,40 @@ describe("Proton (Linux)", () => {
     expect(gamescope.disabled).toBe(true);
     expect(screen.getByText(/Startet das Spiel in Valves Compositor.*Nicht installiert/)).toBeDefined();
     expect(screen.getByRole<HTMLButtonElement>("switch", { name: "MangoHud" }).disabled).toBe(false);
+  });
+
+  it("offers performance mode and the RTSS overlay on Windows", async () => {
+    const ua = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+    try {
+      windowsGame();
+      renderAt("/library/tidewater?tab=settings");
+      fireEvent.click(await screen.findByRole("switch", { name: "Leistungsmodus" }));
+      expect(screen.queryByRole("switch", { name: "MangoHud" })).toBeNull();
+      const rtss = screen.getByRole<HTMLButtonElement>("switch", { name: "RTSS-Overlay" });
+      expect(rtss.disabled).toBe(true);
+      expect(screen.getByText(/Nicht installiert, kommt mit MSI Afterburner/)).toBeDefined();
+      fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+      await waitFor(() => {
+        expect(core.library[0]?.entry.launchOptions.tweaks).toEqual({ ...FAKE_TWEAKS, performanceMode: true });
+      });
+    } finally {
+      ua.mockRestore();
+    }
+  });
+
+  it("offers the Metal HUD on macOS", async () => {
+    const ua = vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
+    try {
+      windowsGame();
+      renderAt("/library/tidewater?tab=settings");
+      fireEvent.click(await screen.findByRole("switch", { name: "Leistungs-Overlay" }));
+      fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+      await waitFor(() => {
+        expect(core.library[0]?.entry.launchOptions.tweaks).toEqual({ ...FAKE_TWEAKS, metalHud: true });
+      });
+    } finally {
+      ua.mockRestore();
+    }
   });
 
   it("cancels a running install", async () => {
@@ -1076,18 +1109,19 @@ describe("Time to beat", () => {
   it("filters the library by length", async () => {
     renderAt("/library");
     await screen.findAllByText("Lantern");
+    const main = within(screen.getByRole("main"));
     fireEvent.click(screen.getByRole("button", { name: /^Spieldauer/ }));
     fireEvent.click(screen.getByRole("radio", { name: "Unter 5 Std." }));
     await waitFor(() => {
-      expect(screen.queryByText("Tidewater")).toBeNull();
+      expect(main.queryByText("Tidewater")).toBeNull();
     });
-    expect(screen.getAllByText("Orbit").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Lantern")).toBeNull();
+    expect(main.getAllByText("Orbit").length).toBeGreaterThan(0);
+    expect(main.queryByText("Lantern")).toBeNull();
 
     fireEvent.click(screen.getByRole("radio", { name: "Über 40 Std." }));
     expect(await screen.findByText("Keine Spiele dieser Länge")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Alle zeigen" }));
-    expect((await screen.findAllByText("Lantern")).length).toBeGreaterThan(0);
+    expect((await main.findAllByText("Lantern")).length).toBeGreaterThan(0);
   });
 });
 

@@ -6,6 +6,7 @@
 mod i18n;
 mod auth;
 mod backups;
+mod boost;
 mod catalog;
 mod commands;
 mod cove_achievements;

@@ -3,12 +3,13 @@ import type { Game } from "@cove/shared";
 import { useState, type CSSProperties } from "react";
 import { cx, unlessSet } from "../../lib/cx.ts";
 
-type Aspect = "portrait" | "landscape" | "wide" | "square";
+type Aspect = "portrait" | "landscape" | "wide" | "banner" | "square";
 
 const ASPECTS: Record<Aspect, string> = {
   portrait: "aspect-[3/4]",
   landscape: "aspect-video",
   wide: "aspect-[3/1]",
+  banner: "aspect-[5/1]",
   square: "aspect-square",
 };
 

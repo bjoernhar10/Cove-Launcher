@@ -218,6 +218,16 @@ pub struct GameTweaks {
     /// Proton: Direct3D 12 through VKD3D-Proton (off = no D3D12).
     #[serde(default = "default_true")]
     pub vkd3d: bool,
+    /// macOS: Apple's Metal performance HUD (`MTL_HUD_ENABLED=1`).
+    #[serde(default)]
+    pub metal_hud: bool,
+    /// Windows: high process priority and the "High performance" power plan
+    /// while the game runs.
+    #[serde(default)]
+    pub performance_mode: bool,
+    /// Windows: start `RivaTuner` Statistics Server (its overlay) before the game.
+    #[serde(default)]
+    pub rtss: bool,
 }
 
 impl Default for GameTweaks {
@@ -232,17 +242,23 @@ impl Default for GameTweaks {
             fsr: false,
             dxvk: true,
             vkd3d: true,
+            metal_hud: false,
+            performance_mode: false,
+            rtss: false,
         }
     }
 }
 
-/// Which Linux game tools are installed.
+/// Which game tools are installed (Linux: `MangoHud`, `GameMode`, gamescope;
+/// Windows: `RivaTuner` Statistics Server).
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GameTools {
     pub mangohud: bool,
     pub gamemode: bool,
     pub gamescope: bool,
+    pub rtss: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
