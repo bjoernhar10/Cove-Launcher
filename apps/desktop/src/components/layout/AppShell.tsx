@@ -5,6 +5,7 @@ import { useGamepadNavigation } from "../../hooks/useGamepadNavigation.ts";
 import { useHotkey } from "../../hooks/useHotkey.ts";
 import { useGamepads } from "../../stores/gamepad.ts";
 import { AddGameDialog } from "../../features/AddGameDialog.tsx";
+import { PickGameDialog } from "../../features/PickGameDialog.tsx";
 import { api } from "../../api/index.ts";
 import { useDownloads } from "../../stores/downloads.ts";
 import { useMoves } from "../../stores/moves.ts";
@@ -150,6 +151,7 @@ export function AppShell() {
       </div>
       <CommandPalette />
       <AddGameDialog />
+      <PickGameDialog />
       <Toaster />
     </div>
   );

@@ -44,6 +44,14 @@ pub struct AppState {
     /// Wishlist prices and price alerts.
     pub prices: Arc<crate::prices::PriceService>,
     pub free_games: Arc<crate::free_games::FreeGames>,
+    /// Mods per game.
+    pub mods: Arc<crate::mods::Mods>,
+    /// Where Heroic and Lutris keep their data.
+    pub launcher_dirs: crate::external::LauncherDirs,
+    /// Desktop and app menu shortcuts.
+    pub shortcuts: Arc<crate::shortcuts::Shortcuts>,
+    /// Announcements and patch notes per game.
+    pub news: Arc<crate::news::News>,
     pub discord: Arc<crate::discord::Discord>,
     /// Connected controllers (TV mode).
     pub gamepads: Arc<crate::gamepad::Gamepads>,

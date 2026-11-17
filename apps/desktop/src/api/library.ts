@@ -1,25 +1,32 @@
 import type {
   Achievement,
+  BackupInfo,
+  ExternalGame,
   Game,
+  GameBackups,
   GameId,
   GameMoveProgress,
-  GameUpdateInfo,
+  GameNews,
+  GameShortcut,
+  GameShortcuts,
   GameStateEvent,
+  GameUpdateInfo,
   LaunchResult,
   LibraryItem,
   LibraryMatchEvent,
   LibraryUpdate,
   ManualGameInput,
-  StorageOverview,
   MatchCandidate,
+  ModInfo,
+  NewsItem,
   PlaytimeStats,
   PrefixAction,
-  BackupInfo,
-  GameBackups,
   PrefixInfo,
   ProtonRating,
   RunningGame,
   ScanCandidate,
+  ShortcutPlace,
+  StorageOverview,
   StoreDlcList,
   UninstallMethod,
 } from "@cove/shared";
@@ -109,6 +116,66 @@ export async function manageDlcs(gameId: GameId): Promise<void> {
 /** ProtonDB's rating of the game (Linux); null when there is none. */
 export function protonRating(gameId: GameId): Promise<ProtonRating | null> {
   return call("game_proton_rating", { gameId });
+}
+
+/** The game's announcements and patch notes from Steam (newest first). */
+export function gameNews(gameId: GameId): Promise<NewsItem[]> {
+  return call("game_news", { gameId });
+}
+
+/** A game's mods in their order (later ones win for the same file). */
+export function mods(gameId: GameId): Promise<ModInfo[]> {
+  return call("mods_list", { gameId });
+}
+
+/** Lets the user pick a mod file (archive or single file) or folder; null when cancelled. */
+export function pickMod(folder: boolean): Promise<string | null> {
+  return call("mods_pick", { folder });
+}
+
+export function addMod(gameId: GameId, source: string, name: string, target: string): Promise<ModInfo[]> {
+  return call("mods_add", { gameId, source, name, target });
+}
+
+export function setModEnabled(gameId: GameId, modId: string, enabled: boolean): Promise<ModInfo[]> {
+  return call("mods_set_enabled", { gameId, modId, enabled });
+}
+
+export function moveMod(gameId: GameId, modId: string, position: number): Promise<ModInfo[]> {
+  return call("mods_move", { gameId, modId, position });
+}
+
+export function removeMod(gameId: GameId, modId: string): Promise<ModInfo[]> {
+  return call("mods_remove", { gameId, modId });
+}
+
+/** Games added to Heroic by hand and Lutris' Wine and Linux games. */
+export function launcherGames(): Promise<ExternalGame[]> {
+  return call("launchers_scan", {});
+}
+
+/** Adds them with their Wine prefix, Wine build and playtime; returns the new game ids. */
+export function importLauncherGames(ids: string[]): Promise<GameId[]> {
+  return call("launchers_import", { ids });
+}
+
+/** The game's desktop and menu shortcuts, and the places this system has. */
+export function shortcuts(gameId: GameId): Promise<GameShortcuts> {
+  return call("game_shortcuts", { gameId });
+}
+
+/** A shortcut that starts the game through Cove (the cover is its icon). */
+export function createShortcut(gameId: GameId, place: ShortcutPlace): Promise<GameShortcut> {
+  return call("game_create_shortcut", { gameId, place });
+}
+
+export async function removeShortcut(gameId: GameId, place: ShortcutPlace): Promise<void> {
+  await call("game_remove_shortcut", { gameId, place });
+}
+
+/** Recent posts of the games played last (Home). */
+export function recentNews(): Promise<GameNews[]> {
+  return call("news_recent", {});
 }
 
 /** Moves the game folder into another games folder; progress via `subscribeMoveProgress`. */

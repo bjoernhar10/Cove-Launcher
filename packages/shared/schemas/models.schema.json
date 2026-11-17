@@ -1128,6 +1128,76 @@
       ],
       "type": "string"
     },
+    "ExternalGame": {
+      "additionalProperties": false,
+      "description": "A game Heroic or Lutris knows (not their store games).",
+      "properties": {
+        "arguments": {
+          "type": "string"
+        },
+        "executablePath": {
+          "type": "string"
+        },
+        "id": {
+          "description": "`heroic:<app name>` or `lutris:<id>`.",
+          "type": "string"
+        },
+        "inLibrary": {
+          "type": "boolean"
+        },
+        "launcher": {
+          "$ref": "#/definitions/ExternalLauncher"
+        },
+        "playtimeMinutes": {
+          "description": "Playtime Lutris counted.",
+          "type": "number"
+        },
+        "proton": {
+          "description": "Heroic runs it with Proton (else Wine).",
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        },
+        "windows": {
+          "description": "A Windows game (starts with Wine or Proton).",
+          "type": "boolean"
+        },
+        "wineBinary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "winePrefix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "launcher",
+        "title",
+        "executablePath",
+        "windows",
+        "proton",
+        "winePrefix",
+        "wineBinary",
+        "arguments",
+        "playtimeMinutes",
+        "inLibrary"
+      ],
+      "type": "object"
+    },
+    "ExternalLauncher": {
+      "enum": [
+        "heroic",
+        "lutris"
+      ],
+      "type": "string"
+    },
     "FolderInfo": {
       "additionalProperties": false,
       "description": "A folder the user may install into (install dialog).",
@@ -1429,6 +1499,23 @@
       ],
       "type": "object"
     },
+    "GameNews": {
+      "additionalProperties": false,
+      "description": "A news post with its library game (Home).",
+      "properties": {
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "item": {
+          "$ref": "#/definitions/NewsItem"
+        }
+      },
+      "required": [
+        "gameId",
+        "item"
+      ],
+      "type": "object"
+    },
     "GamePrice": {
       "additionalProperties": false,
       "description": "A game's prices in the user's country.",
@@ -1479,6 +1566,46 @@
         "deals",
         "historyLow",
         "checkedAt"
+      ],
+      "type": "object"
+    },
+    "GameShortcut": {
+      "additionalProperties": false,
+      "description": "A shortcut Cove created for a game.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "place": {
+          "$ref": "#/definitions/ShortcutPlace"
+        }
+      },
+      "required": [
+        "place",
+        "path"
+      ],
+      "type": "object"
+    },
+    "GameShortcuts": {
+      "additionalProperties": false,
+      "description": "The places this system offers and the game's shortcuts.",
+      "properties": {
+        "places": {
+          "items": {
+            "$ref": "#/definitions/ShortcutPlace"
+          },
+          "type": "array"
+        },
+        "shortcuts": {
+          "items": {
+            "$ref": "#/definitions/GameShortcut"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "places",
+        "shortcuts"
       ],
       "type": "object"
     },
@@ -1747,6 +1874,83 @@
       ],
       "type": "object"
     },
+    "ImportPreview": {
+      "additionalProperties": false,
+      "description": "What a Cove export file holds (shown before the import).",
+      "properties": {
+        "collections": {
+          "type": "number"
+        },
+        "coveVersion": {
+          "type": "string"
+        },
+        "exportedAt": {
+          "type": "string"
+        },
+        "games": {
+          "type": "number"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sessions": {
+          "type": "number"
+        },
+        "wishlist": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "path",
+        "exportedAt",
+        "coveVersion",
+        "games",
+        "sessions",
+        "collections",
+        "wishlist"
+      ],
+      "type": "object"
+    },
+    "ImportResult": {
+      "additionalProperties": false,
+      "description": "What an import changed.",
+      "properties": {
+        "collectionsAdded": {
+          "type": "number"
+        },
+        "gamesAdded": {
+          "description": "Manual games that were added.",
+          "type": "number"
+        },
+        "gamesSkipped": {
+          "description": "Store games that aren't here yet (they come with the store's sync).",
+          "type": "number"
+        },
+        "gamesUpdated": {
+          "description": "Games already here that got favourites, playtime and options.",
+          "type": "number"
+        },
+        "sessionsAdded": {
+          "type": "number"
+        },
+        "settings": {
+          "type": "boolean"
+        },
+        "wishlistAdded": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "gamesAdded",
+        "gamesUpdated",
+        "gamesSkipped",
+        "sessionsAdded",
+        "collectionsAdded",
+        "wishlistAdded",
+        "settings"
+      ],
+      "type": "object"
+    },
     "ImportSummary": {
       "additionalProperties": false,
       "properties": {
@@ -1987,6 +2191,20 @@
         "tweaks": {
           "$ref": "#/definitions/GameTweaks",
           "description": "Linux: MangoHud, GameMode, gamescope, FSR, DXVK/VKD3D (games Cove starts itself)."
+        },
+        "wineBinary": {
+          "description": "Linux, Wine: the wine program (a Heroic or Lutris build); null = `wine`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "winePrefix": {
+          "description": "Linux: a Wine prefix the game brought along (Heroic, Lutris); null = Cove's own prefix.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -1994,7 +2212,9 @@
         "compatibilityTool",
         "env",
         "protonVersion",
-        "tweaks"
+        "tweaks",
+        "winePrefix",
+        "wineBinary"
       ],
       "type": "object"
     },
@@ -2343,6 +2563,54 @@
       ],
       "type": "string"
     },
+    "ModInfo": {
+      "additionalProperties": false,
+      "description": "A mod of a game.",
+      "properties": {
+        "addedAt": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "overridden": {
+          "description": "Its files that a mod later in the order replaces.",
+          "type": "number"
+        },
+        "sizeBytes": {
+          "type": "number"
+        },
+        "source": {
+          "description": "The archive, file or folder it came from.",
+          "type": "string"
+        },
+        "target": {
+          "description": "Folder inside the game folder (\"\" = the game folder).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "source",
+        "target",
+        "enabled",
+        "files",
+        "sizeBytes",
+        "addedAt",
+        "overridden"
+      ],
+      "type": "object"
+    },
     "Money": {
       "additionalProperties": false,
       "properties": {
@@ -2368,6 +2636,110 @@
         "failed"
       ],
       "type": "string"
+    },
+    "NewsBlock": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "heading",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "paragraph",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "item",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "NewsItem": {
+      "additionalProperties": false,
+      "description": "A developer announcement or patch notes of a game (Steam's news).",
+      "properties": {
+        "author": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "blocks": {
+          "description": "The text as plain blocks (never markup).",
+          "items": {
+            "$ref": "#/definitions/NewsBlock"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "patchNotes": {
+          "description": "Steam tagged the post as patch notes.",
+          "type": "boolean"
+        },
+        "publishedAt": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "description": "The post on Steam; null when it isn't an https link.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "url",
+        "publishedAt",
+        "author",
+        "patchNotes",
+        "blocks"
+      ],
+      "type": "object"
     },
     "PadAction": {
       "description": "What a controller button means for Cove. Face buttons by position: `confirm` is the bottom one, `back` the right one, `secondary` the left one, `tertiary` the top one (the label on them depends on the controller).",
@@ -3637,6 +4009,14 @@
         "idle",
         "unavailable",
         "notInstalled"
+      ],
+      "type": "string"
+    },
+    "ShortcutPlace": {
+      "description": "Where a shortcut to a game goes: the desktop, or the app menu (Linux), Start menu (Windows), `~/Applications` (macOS).",
+      "enum": [
+        "desktop",
+        "menu"
       ],
       "type": "string"
     },

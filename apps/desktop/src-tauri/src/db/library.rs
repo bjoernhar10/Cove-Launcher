@@ -98,6 +98,8 @@ struct EntryRow {
     proton_version: Option<String>,
     env: String,
     tweaks: Option<String>,
+    wine_prefix: Option<String>,
+    wine_binary: Option<String>,
     added_at: String,
     played_seconds: i64,
     last_played_at: Option<String>,
@@ -147,6 +149,8 @@ impl EntryRow {
                         .as_deref()
                         .and_then(|t| serde_json::from_str(t).ok())
                         .unwrap_or_default(),
+                    wine_prefix: self.wine_prefix,
+                    wine_binary: self.wine_binary,
                 },
                 catalog_id: self.catalog_id,
                 match_status: MatchStatus::parse(&self.match_status),
@@ -162,7 +166,7 @@ fn select_entries(filter: &str) -> String {
     format!(
         "SELECT {GAME_COLUMNS}, e.source_id, e.store_game_id, e.installed, e.install_path, e.executable_path, \
            e.install_size_bytes, e.favorite, e.playtime_offset_minutes, e.launch_arguments, e.compatibility_tool, \
-           e.proton_version, e.env, e.tweaks, e.added_at, e.catalog_id, e.match_status, \
+           e.proton_version, e.env, e.tweaks, e.wine_prefix, e.wine_binary, e.added_at, e.catalog_id, e.match_status, \
            (SELECT COALESCE(SUM(s.duration_seconds), 0) FROM play_sessions s WHERE s.game_id = g.id) AS played_seconds, \
            (SELECT COALESCE(MAX(MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at), \
               MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at) \
@@ -209,7 +213,7 @@ pub async fn executable_paths(pool: &SqlitePool) -> AppResult<HashSet<String>> {
     Ok(paths.into_iter().collect())
 }
 
-async fn unique_game_id(pool: &SqlitePool, base: &str) -> AppResult<GameId> {
+pub(crate) async fn unique_game_id(pool: &SqlitePool, base: &str) -> AppResult<GameId> {
     let base = if base.is_empty() {
         "game".to_owned()
     } else {
@@ -535,56 +539,97 @@ pub async fn update(
         .await?;
     }
     if let Some(options) = &patch.launch_options {
-        let env: Vec<&EnvVar> = options
-            .env
-            .iter()
-            .filter(|e| !e.key.trim().is_empty())
-            .collect();
-        if env
-            .iter()
-            .any(|e| e.key.contains('=') || e.key.chars().any(char::is_whitespace))
-        {
-            return Err(AppError::InvalidInput(tr!(
-                "Variablennamen dürfen weder „=“ noch Leerzeichen enthalten.",
-                "Variable names can't contain “=” or spaces."
-            )));
-        }
-        let proton_version = options
-            .proton_version
-            .as_deref()
-            .map(str::trim)
-            .filter(|v| !v.is_empty());
-        if proton_version
-            .is_some_and(|v| v.chars().count() > 100 || v.chars().any(char::is_control))
-        {
-            return Err(AppError::InvalidInput(tr!(
-                "Diese Proton-Version gibt es nicht.",
-                "This Proton version does not exist."
-            )));
-        }
-        let tweaks = &options.tweaks;
-        let size_ok = |v: Option<u32>| v.is_none_or(|v| (160..=15_360).contains(&v));
-        if !size_ok(tweaks.gamescope_width) || !size_ok(tweaks.gamescope_height) {
-            return Err(AppError::InvalidInput(tr!(
-                "Die Auflösung für gamescope muss zwischen 160 und 15360 Pixeln liegen.",
-                "The gamescope resolution must be between 160 and 15360 pixels."
-            )));
-        }
-        sqlx::query(
-            "UPDATE library_entries SET launch_arguments = ?, compatibility_tool = ?, env = ?, proton_version = ?, \
-             tweaks = ? WHERE game_id = ?",
-        )
-        .bind(options.arguments.trim())
-        .bind(options.compatibility_tool.as_str())
-        .bind(serde_json::to_string(&env)?)
-        .bind(proton_version)
-        .bind(serde_json::to_string(tweaks)?)
-        .bind(game_id)
-        .execute(&mut *tx)
-        .await?;
+        write_options(&mut tx, game_id, options).await?;
     }
     tx.commit().await?;
     require(pool, game_id).await
+}
+
+/// Checks and stores a game's launch options.
+async fn write_options(
+    conn: &mut sqlx::SqliteConnection,
+    game_id: &str,
+    options: &LaunchOptions,
+) -> AppResult<()> {
+    let env: Vec<&EnvVar> = options
+        .env
+        .iter()
+        .filter(|e| !e.key.trim().is_empty())
+        .collect();
+    if env
+        .iter()
+        .any(|e| e.key.contains('=') || e.key.chars().any(char::is_whitespace))
+    {
+        return Err(AppError::InvalidInput(tr!(
+            "Variablennamen dürfen weder „=“ noch Leerzeichen enthalten.",
+            "Variable names can't contain “=” or spaces."
+        )));
+    }
+    let proton_version = options
+        .proton_version
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    if proton_version.is_some_and(|v| v.chars().count() > 100 || v.chars().any(char::is_control)) {
+        return Err(AppError::InvalidInput(tr!(
+            "Diese Proton-Version gibt es nicht.",
+            "This Proton version does not exist."
+        )));
+    }
+    let tweaks = &options.tweaks;
+    let size_ok = |v: Option<u32>| v.is_none_or(|v| (160..=15_360).contains(&v));
+    if !size_ok(tweaks.gamescope_width) || !size_ok(tweaks.gamescope_height) {
+        return Err(AppError::InvalidInput(tr!(
+            "Die Auflösung für gamescope muss zwischen 160 und 15360 Pixeln liegen.",
+            "The gamescope resolution must be between 160 and 15360 pixels."
+        )));
+    }
+    let wine_prefix = checked_path(options.wine_prefix.as_deref(), true)?;
+    let wine_binary = checked_path(options.wine_binary.as_deref(), false)?;
+    sqlx::query(
+        "UPDATE library_entries SET launch_arguments = ?, compatibility_tool = ?, env = ?, proton_version = ?, \
+         tweaks = ?, wine_prefix = ?, wine_binary = ? WHERE game_id = ?",
+    )
+    .bind(options.arguments.trim())
+    .bind(options.compatibility_tool.as_str())
+    .bind(serde_json::to_string(&env)?)
+    .bind(proton_version)
+    .bind(serde_json::to_string(tweaks)?)
+    .bind(wine_prefix)
+    .bind(wine_binary)
+    .bind(game_id)
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+/// A Wine prefix (a folder) or Wine program (a file) the user or an import gave:
+/// empty = none, else an absolute path that exists.
+fn checked_path(value: Option<&str>, folder: bool) -> AppResult<Option<String>> {
+    let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let path = Path::new(value);
+    let ok = path.is_absolute()
+        && if folder {
+            path.is_dir()
+        } else {
+            path.is_file()
+        };
+    if !ok {
+        return Err(AppError::InvalidInput(if folder {
+            tr!(
+                "Den Wine-Prefix „{value}“ gibt es nicht.",
+                "The Wine prefix \"{value}\" doesn't exist."
+            )
+        } else {
+            tr!(
+                "Das Wine-Programm „{value}“ gibt es nicht.",
+                "The Wine program \"{value}\" doesn't exist."
+            )
+        }));
+    }
+    Ok(Some(value.to_owned()))
 }
 
 /// The Proton build of every game that runs with Proton (`None` = the default).
@@ -795,6 +840,8 @@ pub(crate) mod tests {
                     vkd3d: false,
                     ..crate::models::GameTweaks::default()
                 },
+                wine_prefix: None,
+                wine_binary: None,
             }),
         };
         let updated = update(&pool, &item.game.id, &patch).await.unwrap();

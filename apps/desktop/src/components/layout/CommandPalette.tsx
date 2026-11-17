@@ -1,6 +1,6 @@
 import { useMessages } from "../../i18n/index.ts";
 import type { Game } from "@cove/shared";
-import { Bookmark, ChartColumn, CornerDownLeft, HardDrive, Tv, Plus, Search, type LucideIcon } from "lucide-react";
+import { Bookmark, ChartColumn, CornerDownLeft, Dices, HardDrive, Tv, Plus, Search, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../../api/index.ts";
@@ -27,6 +27,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
   const t = useMessages();
   const navigate = useNavigate();
   const openAddGame = useUi((s) => s.openAddGame);
+  const setPickerOpen = useUi((s) => s.setPickerOpen);
   const [query, setQuery] = useState("");
   const [games, setGames] = useState<Game[]>([]);
   /** Game or catalogue id → library game id. */
@@ -100,10 +101,20 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
           openAddGame();
         },
       },
+      {
+        id: "pick-game",
+        group: t.palette.actions,
+        label: t.picker.title,
+        icon: Dices,
+        run: () => {
+          onClose();
+          setPickerOpen(true);
+        },
+      },
     ];
     const matches = (c: Command) => !q || c.label.toLowerCase().includes(q);
     return [...gameCommands, ...nav.filter(matches), ...actions.filter(matches)];
-  }, [games, owned, query, navigate, onClose, openAddGame, t]);
+  }, [games, owned, query, navigate, onClose, openAddGame, setPickerOpen, t]);
 
   const safeIndex = Math.min(activeIndex, Math.max(0, commands.length - 1));
   const active = commands[safeIndex];

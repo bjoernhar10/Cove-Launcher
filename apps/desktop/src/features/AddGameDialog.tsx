@@ -8,6 +8,7 @@ import { Button } from "../components/ui/Button.tsx";
 import { Dialog } from "../components/ui/Dialog.tsx";
 import { Badge, EmptyState, Skeleton } from "../components/ui/Feedback.tsx";
 import { Field, Input } from "../components/ui/Field.tsx";
+import { LauncherImport } from "./LauncherImport.tsx";
 import { Segmented } from "../components/ui/Segmented.tsx";
 import { detectPlatform } from "../lib/env.ts";
 import { formatBytes } from "../lib/format.ts";
@@ -234,7 +235,7 @@ export function AddGameDialog() {
   const t = useMessages();
   const options = useUi((s) => s.addGame);
   const close = useUi((s) => s.closeAddGame);
-  const [mode, setMode] = useState<"manual" | "scan">("manual");
+  const [mode, setMode] = useState<"manual" | "scan" | "launchers">("manual");
   const [prevOptions, setPrevOptions] = useState(options);
 
   // Follow the requested mode whenever the dialog is (re)opened.
@@ -259,9 +260,12 @@ export function AddGameDialog() {
         options={[
           { value: "manual", label: t.labels.source.manual },
           { value: "scan", label: t.addGame.scanFolder },
+          { value: "launchers", label: t.launchers.mode },
         ]}
       />
-      {mode === "manual" ? <ManualForm onDone={close} /> : <ScanForm onDone={close} initialFolder={options?.folder} />}
+      {mode === "manual" && <ManualForm onDone={close} />}
+      {mode === "scan" && <ScanForm onDone={close} initialFolder={options?.folder} />}
+      {mode === "launchers" && <LauncherImport onDone={close} />}
     </Dialog>
   );
 }

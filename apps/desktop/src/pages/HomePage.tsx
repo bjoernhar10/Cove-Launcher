@@ -1,11 +1,12 @@
 import { useMessages } from "../i18n/index.ts";
 import type { LibraryItem } from "@cove/shared";
-import { Compass, ExternalLink, Library, Medal, Plus, Trophy } from "lucide-react";
+import { Compass, Dices, ExternalLink, Library, Medal, Plus, Trophy } from "lucide-react";
 import { Link } from "react-router";
 import { api } from "../api/index.ts";
 import { GameCard, GameCardSkeleton } from "../components/game/GameCard.tsx";
 import { GameCover } from "../components/game/GameCover.tsx";
 import { PlayButton } from "../components/game/PlayButton.tsx";
+import { PatchBadge } from "../features/GameNews.tsx";
 import { ScrollItem, ScrollRow } from "../components/game/ScrollRow.tsx";
 import { Button, ButtonLink } from "../components/ui/Button.tsx";
 import { EmptyState, ErrorState, LoadingRegion, ProgressBar, Skeleton } from "../components/ui/Feedback.tsx";
@@ -40,9 +41,26 @@ function ContinuePlaying() {
   const t = useMessages();
   const query = useQuery("home/continue", api.home.getContinuePlaying);
   const openAddGame = useUi((s) => s.openAddGame);
+  const setPickerOpen = useUi((s) => s.setPickerOpen);
 
   return (
-    <Section title={t.home.continueTitle}>
+    <Section
+      title={t.home.continueTitle}
+      actions={
+        query.status === "success" && query.data.length > 0 ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Dices}
+            onClick={() => {
+              setPickerOpen(true);
+            }}
+          >
+            {t.picker.button}
+          </Button>
+        ) : undefined
+      }
+    >
       {query.status === "loading" && (
         <LoadingRegion label={t.home.continueLoading} className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2].map((i) => (
@@ -90,6 +108,45 @@ function ContinuePlaying() {
           ))}
         </div>
       )}
+    </Section>
+  );
+}
+
+/** Recent announcements and patch notes of the games played last; nothing when there are none. */
+function RecentNews() {
+  const t = useMessages();
+  const news = useQuery("news/recent", api.library.recentNews);
+  const library = useQuery("library", api.library.listLibrary);
+  if (news.status !== "success" || library.status !== "success" || news.data.length === 0) return null;
+  const games = new Map(library.data.map((item) => [item.game.id, item.game]));
+  return (
+    <Section title={t.news.homeTitle} description={t.news.homeText}>
+      <ul className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
+        {news.data.flatMap(({ gameId, item }) => {
+          const game = games.get(gameId);
+          if (!game) return [];
+          return [
+            <li key={`${gameId}/${item.id}`}>
+              <Link
+                to={`/library/${gameId}?tab=news&post=${encodeURIComponent(item.id)}`}
+                className="flex items-center gap-3 border-b border-border py-3 transition-colors duration-150 ease-out hover:bg-hover focus-visible:outline-offset-0 md:-mx-2 md:px-2"
+              >
+                <GameCover game={game} aspect="square" showTitle={false} className="w-10 shrink-0 rounded-md" />
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-fg">{item.title}</span>
+                    {item.patchNotes && <PatchBadge />}
+                  </p>
+                  <p className="truncate text-xs text-fg-muted">{game.title}</p>
+                </div>
+                <time dateTime={item.publishedAt} className="shrink-0 text-xs text-fg-subtle">
+                  {formatRelative(item.publishedAt)}
+                </time>
+              </Link>
+            </li>,
+          ];
+        })}
+      </ul>
     </Section>
   );
 }
@@ -338,6 +395,7 @@ export function HomePage() {
     <Page>
       <h1 className="sr-only">Home</h1>
       <ContinuePlaying />
+      <RecentNews />
       <WishlistDeals />
       <FreeGames />
       <Recommended />

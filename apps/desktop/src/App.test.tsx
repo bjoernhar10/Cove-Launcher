@@ -815,7 +815,7 @@ describe("Proton (Linux)", () => {
     core.library = [
       fakeItem("tidewater", "Tidewater", {
         executablePath: "/games/tidewater/Tidewater.exe",
-        launchOptions: { arguments: "", compatibilityTool: "proton", env: [], protonVersion, tweaks: { ...FAKE_TWEAKS } },
+        launchOptions: { arguments: "", compatibilityTool: "proton", env: [], protonVersion, tweaks: { ...FAKE_TWEAKS }, winePrefix: null, wineBinary: null },
       }),
     ];
   }
@@ -1295,5 +1295,147 @@ describe("Download schedule, storage, free games and Discord", () => {
     expect(screen.getByRole("button", { name: "Hollow Peak bei Steam öffnen" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Giveaways von GamerPower" })).toBeDefined();
     expect(screen.queryByRole("button", { name: "Tidewater bei GOG öffnen" })).toBeNull();
+  });
+});
+
+describe("What should I play?", () => {
+  it("picks an installed game and picks again from the library page", async () => {
+    core.library = [
+      fakeItem("tidewater", "Tidewater"),
+      fakeItem("lantern", "Lantern", { playtimeMinutes: 0, lastPlayedAt: null }),
+      fakeItem("orbit", "Orbit", { installed: false, executablePath: null, installPath: null }),
+    ];
+    renderAt("/library");
+    fireEvent.click(await screen.findByRole("button", { name: "Was soll ich spielen?" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Was soll ich spielen?" }));
+    const first = (await dialog.findByRole("heading", { level: 3 })).textContent;
+    expect(["Tidewater", "Lantern"]).toContain(first);
+    fireEvent.click(dialog.getByRole("button", { name: "Nochmal" }));
+    await waitFor(() => {
+      expect(dialog.getByRole("heading", { level: 3 }).textContent).not.toBe(first);
+    });
+    // "Neu für mich" leaves only the game not played yet.
+    fireEvent.click(dialog.getByRole("radio", { name: "Neu für mich" }));
+    expect((await dialog.findByRole("heading", { level: 3 })).textContent).toBe("Lantern");
+    expect(dialog.getByText("Noch nicht gespielt")).toBeDefined();
+    expect(dialog.getByRole("button", { name: "Nochmal" }).hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("News", () => {
+  const post = (id: string, title: string, publishedAt: string, patchNotes = false) => ({
+    id,
+    title,
+    url: `https://store.steampowered.com/news/${id}`,
+    publishedAt,
+    author: "dev",
+    patchNotes,
+    blocks: [
+      { kind: "heading" as const, text: "Fixes" },
+      { kind: "item" as const, text: `Fixed saves in ${title}` },
+      { kind: "paragraph" as const, text: "Thanks for playing!" },
+    ],
+  });
+
+  it("lists a game's announcements and patch notes on its page", async () => {
+    const recent = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString();
+    core.news = { tidewater: [post("2", "Update 1.2", recent, true), post("1", "Hello", "2026-01-02T10:00:00Z")] };
+    renderAt("/library/tidewater?tab=news");
+    const first = await screen.findByRole("button", { name: /Update 1\.2/ });
+    expect(first.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Fixed saves in Update 1.2")).toBeDefined();
+    expect(screen.getByText("Patch-Notes")).toBeDefined();
+    const second = screen.getByRole("button", { name: /Hello/ });
+    expect(second.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(second);
+    expect(second.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByRole("button", { name: "Auf Steam lesen" })).toHaveLength(2);
+  });
+
+  it("shows news of played games on Home and a friendly empty tab", async () => {
+    core.news = { tidewater: [post("2", "Update 1.2", new Date().toISOString(), true)] };
+    renderAt("/");
+    expect(await screen.findByRole("heading", { name: "Neues zu deinen Spielen" })).toBeDefined();
+    expect(screen.getByRole("link", { name: /Update 1\.2/ }).getAttribute("href")).toContain("tab=news&post=2");
+    core.news = {};
+    window.location.hash = "#/library/orbit?tab=news";
+    expect(await screen.findByText("Keine Neuigkeiten")).toBeDefined();
+  });
+});
+
+describe("Shortcuts", () => {
+  it("creates and removes a desktop shortcut from the game's settings", async () => {
+    renderAt("/library/tidewater?tab=settings");
+    fireEvent.click(await screen.findByRole("button", { name: "Verknüpfung erstellen: Auf dem Desktop" }));
+    expect(await screen.findByText("/home/user/Desktop/Tidewater.desktop")).toBeDefined();
+    expect(core.shortcuts.tidewater).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Verknüpfung entfernen: Auf dem Desktop" }));
+    await waitFor(() => {
+      expect(core.shortcuts.tidewater).toEqual([]);
+    });
+    expect(await screen.findByRole("button", { name: "Verknüpfung erstellen: Auf dem Desktop" })).toBeDefined();
+  });
+});
+
+describe("Export and import", () => {
+  it("exports and imports with the settings when asked", async () => {
+    core.importFile = { path: "/home/user/cove-export.json", exportedAt: "2026-11-01T10:00:00Z", coveVersion: "0.8.0", games: 12, sessions: 40, collections: 2, wishlist: 3 };
+    renderAt("/settings/general");
+    fireEvent.click(await screen.findByRole("button", { name: "Exportieren …" }));
+    expect(await screen.findByText("Gespeichert: /home/user/Documents/cove-export.json")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Importieren …" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Export importieren" }));
+    expect(dialog.getByText("40")).toBeDefined();
+    fireEvent.click(dialog.getByRole("switch", { name: "Einstellungen übernehmen" }));
+    fireEvent.click(dialog.getByRole("button", { name: "Importieren" }));
+    expect(await screen.findByText(/3 Spiele und 4 Sitzungen übernommen\. 3 Store-Spiele folgen/)).toBeDefined();
+    expect(core.imports).toEqual([{ path: "/home/user/cove-export.json", settings: true }]);
+  });
+});
+
+describe("Heroic and Lutris", () => {
+  it("adds games from Heroic and Lutris with their prefix", async () => {
+    core.externalGames = [
+      { id: "lutris:1", launcher: "lutris", title: "Lantern", executablePath: "/g/lantern.exe", windows: true, proton: false, winePrefix: "/g/prefix", wineBinary: "/l/wine", arguments: "--safe", playtimeMinutes: 150, inLibrary: false },
+      { id: "heroic:a", launcher: "heroic", title: "Tidewater", executablePath: "/games/tidewater/tidewater", windows: false, proton: false, winePrefix: null, wineBinary: null, arguments: "", playtimeMinutes: 0, inLibrary: false },
+    ];
+    for (const item of core.library) if (item.game.id === "tidewater") item.entry.executablePath = "/games/tidewater/tidewater";
+    renderAt("/library");
+    fireEvent.click(await screen.findByRole("button", { name: "Spiel hinzufügen" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "Heroic / Lutris" }));
+    expect(await screen.findByText(/Wine mit eigenem Prefix/)).toBeDefined();
+    expect(screen.getByText("Bereits in der Bibliothek")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "1 Spiel hinzufügen" }));
+    await waitFor(() => {
+      expect(core.library.some((i) => i.game.title === "Lantern" && i.entry.launchOptions.winePrefix === "/g/prefix")).toBe(true);
+    });
+  });
+});
+
+describe("Mods", () => {
+  it("adds a mod, switches it off, reorders and removes it", async () => {
+    core.modPick = "/home/user/Downloads/HD Pack-1.2.zip";
+    core.mods = { tidewater: [{ id: "first", name: "Fix", source: "fix.pak", target: "Data", enabled: true, files: 1, sizeBytes: 10, addedAt: "2026-11-01T10:00:00Z", overridden: 1 }] };
+    renderAt("/library/tidewater?tab=mods");
+    expect(await screen.findByText(/1 von einer späteren Mod ersetzt/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Mod-Datei …" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Mod hinzufügen" }));
+    expect(dialog.getByLabelText<HTMLInputElement>("Name").value).toBe("HD Pack-1.2");
+    fireEvent.change(dialog.getByLabelText("Zielordner"), { target: { value: "Data" } });
+    fireEvent.click(dialog.getByRole("button", { name: "Hinzufügen" }));
+    expect(await screen.findByRole("switch", { name: "HD Pack-1.2 eingeschaltet" })).toBeDefined();
+    fireEvent.click(screen.getByRole("switch", { name: "HD Pack-1.2 eingeschaltet" }));
+    await waitFor(() => {
+      expect(core.mods.tidewater?.[1]?.enabled).toBe(false);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "HD Pack-1.2 nach oben" }));
+    await waitFor(() => {
+      expect(core.mods.tidewater?.[0]?.name).toBe("HD Pack-1.2");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Fix entfernen" }));
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "„Fix“ entfernen?" })).getByRole("button", { name: "Entfernen" }));
+    await waitFor(() => {
+      expect(core.mods.tidewater).toHaveLength(1);
+    });
   });
 });

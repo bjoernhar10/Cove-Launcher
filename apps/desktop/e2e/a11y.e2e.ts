@@ -9,6 +9,8 @@ const PAGES = [
   "/library/game-0",
   "/library/game-0?tab=settings",
   "/library/game-3?tab=settings",
+  "/library/game-0?tab=news",
+  "/library/game-0?tab=mods",
   "/catalogue",
   "/catalogue/igdb-1",
   "/downloads",
@@ -104,4 +106,22 @@ test("Fokus ist bei Tastaturbedienung immer sichtbar", async ({ page }) => {
     expect(focus.outline, `Fokusring fehlt bei „${focus.name}“`).not.toBe("none");
     expect(focus.width).not.toBe("0px");
   }
+});
+
+test("„Was soll ich spielen?“ ist zugänglich", async ({ page }) => {
+  await openCove(page, "/library");
+  await page.getByRole("button", { name: "Was soll ich spielen?" }).click();
+  const dialog = page.getByRole("dialog", { name: "Was soll ich spielen?" });
+  await expect(dialog.getByRole("heading", { level: 3 })).toBeVisible();
+  await expectNoViolations(page);
+  await dialog.getByRole("button", { name: "Nochmal" }).click();
+  await expect(dialog.getByRole("heading", { level: 3 })).toBeVisible();
+});
+
+test("Heroic / Lutris und Export sind zugänglich", async ({ page }) => {
+  await openCove(page, "/library");
+  await page.getByRole("button", { name: "Spiel hinzufügen" }).click();
+  await page.getByRole("radio", { name: "Heroic / Lutris" }).click();
+  await expect(page.getByText("Nichts gefunden")).toBeVisible();
+  await expectNoViolations(page);
 });

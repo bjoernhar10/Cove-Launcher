@@ -94,7 +94,263 @@ pub async fn library_remove(state: State<'_, AppState>, game_id: String) -> AppR
     {
         return Err(AppError::AlreadyRunning(game_id));
     }
-    db::library::remove(&state.pool, &game_id).await
+    db::library::remove(&state.pool, &game_id).await?;
+    // A shortcut to a game that isn't in the library would only fail.
+    state.shortcuts.remove_all(&game_id).await;
+    Ok(())
+}
+
+/// A desktop shortcut asked for a game (`--launch <id>`): start it like the
+/// play button does. When that fails, Cove comes to the front and says why.
+pub fn launch_from_shortcut<R: Runtime>(app: AppHandle<R>, game_id: String) {
+    use tauri::Manager;
+    use tauri_plugin_notification::NotificationExt;
+    tauri::async_runtime::spawn(async move {
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        if let Err(error) = launch_game(&state, &game_id).await {
+            eprintln!("[shortcuts] {game_id}: {error}");
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            let title = db::library::get(&state.pool, &game_id)
+                .await
+                .ok()
+                .flatten()
+                .map_or_else(|| tr!("Spiel", "Game"), |item| item.game.title);
+            let _ = app
+                .notification()
+                .builder()
+                .title(tr!("{title} startet nicht", "{title} doesn't start"))
+                .body(error.user_message())
+                .show();
+        }
+    });
+}
+
+/// "Exportieren": the user picks where the file goes.
+#[tauri::command]
+pub async fn data_export<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> AppResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let name = format!("cove-export-{}.json", &crate::models::now_iso()[..10]);
+    let mut dialog = app
+        .dialog()
+        .file()
+        .set_file_name(name)
+        .add_filter("Cove", &["json"]);
+    if let Ok(dir) = app.path().document_dir() {
+        dialog = dialog.set_directory(dir);
+    }
+    dialog.save_file(move |picked| {
+        let _ = tx.send(picked);
+    });
+    let Some(path) = rx.await.ok().flatten().and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    let settings = db::settings::load(&state.pool, &state.defaults).await?;
+    let file = crate::transfer::export(&state.pool, &settings).await?;
+    crate::transfer::write(&path, &file).await?;
+    Ok(Some(path.to_string_lossy().into_owned()))
+}
+
+/// "Importieren": the user picks an export; Cove says what's in it.
+#[tauri::command]
+pub async fn data_import_pick<R: Runtime>(
+    app: AppHandle<R>,
+) -> AppResult<Option<crate::models::ImportPreview>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .add_filter("Cove", &["json"])
+        .pick_file(move |picked| {
+            let _ = tx.send(picked);
+        });
+    let Some(path) = rx.await.ok().flatten().and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    let file = crate::transfer::read(&path).await?;
+    Ok(Some(crate::transfer::preview(&path, &file)))
+}
+
+#[tauri::command]
+pub async fn data_import(
+    state: State<'_, AppState>,
+    path: String,
+    settings: bool,
+) -> AppResult<crate::models::ImportResult> {
+    let file = crate::transfer::read(Path::new(&path)).await?;
+    let local = db::settings::load(&state.pool, &state.defaults).await?;
+    let result = crate::transfer::import(&state.pool, &file, &local, settings).await?;
+    if result.settings {
+        let loaded = db::settings::load(&state.pool, &state.defaults).await?;
+        settings_changed(&state, &local, &loaded).await;
+    }
+    Ok(result)
+}
+
+/// Mod changes write into the game folder: never while the game runs.
+async fn mod_game(state: &AppState, game_id: &str) -> AppResult<LibraryItem> {
+    if state
+        .launcher
+        .running()
+        .iter()
+        .any(|r| r.game_id == game_id)
+    {
+        return Err(AppError::InvalidInput(tr!(
+            "Beende das Spiel, bevor du Mods änderst.",
+            "Quit the game before you change mods."
+        )));
+    }
+    db::library::require(&state.pool, game_id).await
+}
+
+#[tauri::command]
+pub async fn mods_list(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<Vec<crate::models::ModInfo>> {
+    state.mods.list(&game_id).await
+}
+
+/// A file (archive or single mod file) or a folder, picked by the user.
+#[tauri::command]
+pub async fn mods_pick<R: Runtime>(app: AppHandle<R>, folder: bool) -> AppResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let mut dialog = app.dialog().file();
+    if let Ok(dir) = app.path().download_dir() {
+        dialog = dialog.set_directory(dir);
+    }
+    let send = move |picked| {
+        let _ = tx.send(picked);
+    };
+    if folder {
+        dialog.pick_folder(send);
+    } else {
+        dialog.pick_file(send);
+    }
+    Ok(rx
+        .await
+        .ok()
+        .flatten()
+        .and_then(|p| p.into_path().ok())
+        .map(|p| p.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+pub async fn mods_add(
+    state: State<'_, AppState>,
+    game_id: String,
+    source: String,
+    name: String,
+    target: String,
+) -> AppResult<Vec<crate::models::ModInfo>> {
+    let item = mod_game(&state, &game_id).await?;
+    state
+        .mods
+        .add(&item, Path::new(&source), &name, &target)
+        .await
+}
+
+#[tauri::command]
+pub async fn mods_set_enabled(
+    state: State<'_, AppState>,
+    game_id: String,
+    mod_id: String,
+    enabled: bool,
+) -> AppResult<Vec<crate::models::ModInfo>> {
+    let item = mod_game(&state, &game_id).await?;
+    state.mods.set_enabled(&item, &mod_id, enabled).await
+}
+
+#[tauri::command]
+pub async fn mods_move(
+    state: State<'_, AppState>,
+    game_id: String,
+    mod_id: String,
+    position: usize,
+) -> AppResult<Vec<crate::models::ModInfo>> {
+    let item = mod_game(&state, &game_id).await?;
+    state.mods.move_to(&item, &mod_id, position).await
+}
+
+#[tauri::command]
+pub async fn mods_remove(
+    state: State<'_, AppState>,
+    game_id: String,
+    mod_id: String,
+) -> AppResult<Vec<crate::models::ModInfo>> {
+    let item = mod_game(&state, &game_id).await?;
+    state.mods.remove(&item, &mod_id).await
+}
+
+/// Games from Heroic (added by hand) and Lutris.
+#[tauri::command]
+pub async fn launchers_scan(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::models::ExternalGame>> {
+    crate::external::scan(&state.pool, &state.launcher_dirs).await
+}
+
+#[tauri::command]
+pub async fn launchers_import(
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+) -> AppResult<Vec<String>> {
+    let added = crate::external::add(&state.pool, &state.launcher_dirs, &ids).await?;
+    state.cove_achievements.check_in_background();
+    Ok(added)
+}
+
+/// The game's shortcuts and the places this system has for them.
+#[tauri::command]
+pub async fn game_shortcuts(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<crate::models::GameShortcuts> {
+    db::library::require(&state.pool, &game_id).await?;
+    Ok(crate::models::GameShortcuts {
+        places: state.shortcuts.places(),
+        shortcuts: state.shortcuts.list(&game_id).await?,
+    })
+}
+
+/// A shortcut that starts the game through Cove, with the cover as its icon.
+#[tauri::command]
+pub async fn game_create_shortcut(
+    state: State<'_, AppState>,
+    game_id: String,
+    place: crate::models::ShortcutPlace,
+) -> AppResult<crate::models::GameShortcut> {
+    let item = db::library::require(&state.pool, &game_id).await?;
+    let cover = match item.game.artwork.cover.url.as_deref() {
+        Some(url) => state
+            .catalog
+            .images
+            .get(url)
+            .await
+            .ok()
+            .map(|(bytes, _)| bytes),
+        None => None,
+    };
+    state.shortcuts.create(&item, place, cover).await
+}
+
+#[tauri::command]
+pub async fn game_remove_shortcut(
+    state: State<'_, AppState>,
+    game_id: String,
+    place: crate::models::ShortcutPlace,
+) -> AppResult<()> {
+    state.shortcuts.remove(&game_id, place).await
 }
 
 #[tauri::command]
@@ -339,6 +595,31 @@ pub async fn storage_overview(
     crate::storage::overview(&state.pool, &settings.library.game_folders).await
 }
 
+/// A game's announcements and patch notes (Steam's news).
+#[tauri::command]
+pub async fn game_news(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<Vec<crate::models::NewsItem>> {
+    let item = db::library::require(&state.pool, &game_id).await?;
+    state
+        .news
+        .for_game(
+            &state.protondb,
+            item.entry.source,
+            item.entry.store_game_id.as_deref(),
+            &item.game.title,
+        )
+        .await
+}
+
+/// Home: recent posts of the games played last.
+#[tauri::command]
+pub async fn news_recent(state: State<'_, AppState>) -> AppResult<Vec<crate::models::GameNews>> {
+    let library = db::library::list(&state.pool).await?;
+    Ok(state.news.feed(&state.protondb, &library).await)
+}
+
 /// Games free to keep now and soon (Epic, GOG, other shops), without those in the library.
 #[tauri::command]
 pub async fn free_games_list(
@@ -485,11 +766,16 @@ pub async fn achievements_recent(
 
 #[tauri::command]
 pub async fn game_launch(state: State<'_, AppState>, game_id: String) -> AppResult<LaunchResult> {
-    let item = db::library::require(&state.pool, &game_id).await?;
+    launch_game(&state, &game_id).await
+}
+
+/// Starts a library game (the play button and desktop shortcuts).
+pub async fn launch_game(state: &AppState, game_id: &str) -> AppResult<LaunchResult> {
+    let item = db::library::require(&state.pool, game_id).await?;
     if item.entry.launch_via == Some(LaunchVia::Steam) {
-        steam_in_background(&state).await?;
+        steam_in_background(state).await?;
     }
-    let host = launch_host(&state, &item).await?;
+    let host = launch_host(state, &item).await?;
     if item.entry.source == StoreSource::Gog && item.entry.installed_by_cove {
         state.downloads.gog_saves_before_launch(&item, &host).await;
     }
@@ -732,6 +1018,17 @@ fn proton_choice(item: &LibraryItem, host: &crate::launcher::HostEnv) -> String 
         .unwrap_or_else(|| host.default_proton.clone())
 }
 
+/// Prefix tools work on Cove's own prefixes only.
+fn foreign_prefix(item: &LibraryItem) -> AppResult<()> {
+    if item.entry.launch_options.wine_prefix.is_some() {
+        return Err(AppError::InvalidInput(tr!(
+            "Dieses Spiel nutzt einen eigenen Wine-Prefix (aus Heroic oder Lutris). Verwalte ihn dort.",
+            "This game uses its own Wine prefix (from Heroic or Lutris). Manage it there."
+        )));
+    }
+    Ok(())
+}
+
 /// A game's Proton prefix: does it exist, how big is it, is winetricks there.
 #[tauri::command]
 pub async fn game_prefix_info(
@@ -739,6 +1036,7 @@ pub async fn game_prefix_info(
     game_id: String,
 ) -> AppResult<crate::models::PrefixInfo> {
     let item = db::library::require(&state.pool, &game_id).await?;
+    foreign_prefix(&item)?;
     let root = state.host.compat_data_root.clone();
     let host = state.proton.host(&state.host).await?;
     let proton = crate::proton::resolve(&host.protons, &proton_choice(&item, &host))
@@ -758,6 +1056,8 @@ pub async fn game_prefix_action<R: Runtime>(
 ) -> AppResult<()> {
     use crate::models::PrefixAction;
     let item = db::library::require(&state.pool, &game_id).await?;
+    // Never reset or change a prefix that belongs to Heroic or Lutris.
+    foreign_prefix(&item)?;
     let root = state.host.compat_data_root.clone();
     match action {
         PrefixAction::Open => {
@@ -1011,6 +1311,12 @@ pub async fn settings_update(
 ) -> AppResult<AppSettings> {
     let before = db::settings::load(&state.pool, &state.defaults).await?;
     db::settings::save(&state.pool, &settings).await?;
+    settings_changed(&state, &before, &settings).await;
+    db::settings::load(&state.pool, &state.defaults).await
+}
+
+/// What has to follow new settings at once.
+async fn settings_changed(state: &AppState, before: &AppSettings, settings: &AppSettings) {
     crate::i18n::set_language(&settings.general.language);
     // A new default Proton build is installed right away (Linux).
     if state.host.platform == Platform::Linux
@@ -1021,9 +1327,8 @@ pub async fn settings_update(
     // Bandwidth limit and parallel downloads apply at once.
     state.downloads.wake();
     if before.general.discord_status != settings.general.discord_status {
-        refresh_discord(&state).await;
+        refresh_discord(state).await;
     }
-    db::settings::load(&state.pool, &state.defaults).await
 }
 
 #[tauri::command]

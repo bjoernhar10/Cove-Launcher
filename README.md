@@ -37,6 +37,9 @@ No ads, no social feed, no account of its own.
   PlayStation 2, Dreamcast, PSP …). Every ROM becomes a game in your library and starts with
   RetroArch, a standalone emulator (Dolphin, PCSX2, DuckStation, PPSSPP, mGBA, melonDS, Flycast)
   or your own program. Cove brings no emulators, BIOS files or ROMs.
+- **From Heroic and Lutris:** games you added to Heroic yourself and your Lutris games come over
+  with their Wine prefix (saves included), their Wine version and Lutris' playtime. Heroic's store
+  games are found through the stores anyway.
 - **TV mode for controllers:** a full-screen interface for the TV, the Steam Deck or the sofa,
   made for Xbox, PlayStation, Switch and Steam Deck controllers. The buttons on screen match your
   controller (A or ✕, B or ○ …). On the Steam Deck's gaming mode Cove starts in it by itself; the
@@ -48,6 +51,10 @@ No ads, no social feed, no account of its own.
   last 14 days. Achievements come from the stores, plus Cove's own and those of plugins.
 - **Statistics:** click your profile at the bottom left for your playtime per month and weekday,
   most played games, genres, stores, streaks and longest sessions, for all time or one year.
+- **What should I play?** One game from your library at random, new to you or one to pick back
+  up, by length or from a collection.
+- **News and patch notes:** every game page has the developers' announcements and patch notes
+  from Steam, and the home page shows what's new for the games you played last.
 
 ### Installing and playing
 
@@ -65,6 +72,11 @@ No ads, no social feed, no account of its own.
   A download still running at the end continues in the next window; "Start now" skips the wait.
 - **Storage:** see how much room each installed game takes and what is left on every drive,
   sorted by size or by the games you haven't played for longest, with uninstall at hand.
+- **Mods:** add mods as archives (zip, 7z, tar), single files or folders, switch them on and off
+  and put them in order. Cove copies them into the game folder and puts the original files back
+  when you switch them off.
+- **Shortcuts:** put a game on the desktop or in the app menu (Start menu, Applications folder).
+  It starts through Cove, so playtime and saves keep being tracked.
 
 ### Linux gaming
 
@@ -113,6 +125,8 @@ No ads, no social feed, no account of its own.
 
 - **Discord status:** if you switch it on, Discord shows the game you're playing in Cove. It talks
   only to the Discord app on your computer.
+- **Move to a new computer:** export your library, playtime, collections, wishlist and settings
+  to one file and import it there. Cove only adds and never deletes.
 - **Private by design:** Cove never sees your store passwords; tokens live only in your system's
   keyring. Recommendations are computed locally.
 - **Calm design:** a dark, quiet interface with five muted accent colours, fully usable with the

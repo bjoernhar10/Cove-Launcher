@@ -106,6 +106,10 @@ export interface LaunchOptions {
   protonVersion: ProtonVersionId | null;
   /** Linux: MangoHud, GameMode, gamescope, FSR, DXVK/VKD3D (games Cove starts itself). */
   tweaks: GameTweaks;
+  /** Linux: a Wine prefix the game brought along (Heroic, Lutris); null = Cove's own prefix. */
+  winePrefix: string | null;
+  /** Linux, Wine: the wine program (a Heroic or Lutris build); null = `wine`. */
+  wineBinary: string | null;
 }
 
 /** Per-game options on Linux for games Cove starts itself. */
@@ -345,6 +349,105 @@ export interface FreeGame {
   endsAt: string | null;
   /** Free from `startsAt` on (Epic shows next week's games). */
   upcoming: boolean;
+}
+
+/** A developer announcement or patch notes of a game (Steam's news). */
+export interface NewsItem {
+  id: string;
+  title: string;
+  /** The post on Steam; null when it isn't an https link. */
+  url: string | null;
+  publishedAt: string;
+  author: string | null;
+  /** Steam tagged the post as patch notes. */
+  patchNotes: boolean;
+  /** The text as plain blocks (never markup). */
+  blocks: NewsBlock[];
+}
+
+export type NewsBlock = { kind: "heading"; text: string } | { kind: "paragraph"; text: string } | { kind: "item"; text: string };
+
+/** A mod of a game. */
+export interface ModInfo {
+  id: string;
+  name: string;
+  /** The archive, file or folder it came from. */
+  source: string;
+  /** Folder inside the game folder ("" = the game folder). */
+  target: string;
+  enabled: boolean;
+  files: number;
+  sizeBytes: number;
+  addedAt: string;
+  /** Its files that a mod later in the order replaces. */
+  overridden: number;
+}
+
+export type ExternalLauncher = "heroic" | "lutris";
+
+/** A game Heroic or Lutris knows (not their store games). */
+export interface ExternalGame {
+  /** `heroic:<app name>` or `lutris:<id>`. */
+  id: string;
+  launcher: ExternalLauncher;
+  title: string;
+  executablePath: string;
+  /** A Windows game (starts with Wine or Proton). */
+  windows: boolean;
+  /** Heroic runs it with Proton (else Wine). */
+  proton: boolean;
+  winePrefix: string | null;
+  wineBinary: string | null;
+  arguments: string;
+  /** Playtime Lutris counted. */
+  playtimeMinutes: number;
+  inLibrary: boolean;
+}
+
+/** What a Cove export file holds (shown before the import). */
+export interface ImportPreview {
+  path: string;
+  exportedAt: string;
+  coveVersion: string;
+  games: number;
+  sessions: number;
+  collections: number;
+  wishlist: number;
+}
+
+/** What an import changed. */
+export interface ImportResult {
+  /** Manual games that were added. */
+  gamesAdded: number;
+  /** Games already here that got favourites, playtime and options. */
+  gamesUpdated: number;
+  /** Store games that aren't here yet (they come with the store's sync). */
+  gamesSkipped: number;
+  sessionsAdded: number;
+  collectionsAdded: number;
+  wishlistAdded: number;
+  settings: boolean;
+}
+
+/** Where a shortcut to a game goes: the desktop, or the app menu (Linux), Start menu (Windows), `~/Applications` (macOS). */
+export type ShortcutPlace = "desktop" | "menu";
+
+/** A shortcut Cove created for a game. */
+export interface GameShortcut {
+  place: ShortcutPlace;
+  path: string;
+}
+
+/** The places this system offers and the game's shortcuts. */
+export interface GameShortcuts {
+  places: ShortcutPlace[];
+  shortcuts: GameShortcut[];
+}
+
+/** A news post with its library game (Home). */
+export interface GameNews {
+  gameId: GameId;
+  item: NewsItem;
 }
 
 /** "Speicherplatz": installed games and the drives they are on. */

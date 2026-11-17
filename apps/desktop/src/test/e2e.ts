@@ -233,6 +233,44 @@ if (demo) {
   core.library.forEach((item, i) => {
     if (item.entry.installed) core.gameSizes[item.game.id] = ((i * 7919) % 90 + 2) * 1_000_000_000;
   });
+  // News of the games played last, and two mods for the first game.
+  const day = 24 * 3600 * 1000;
+  core.library.slice(0, 3).forEach((item, i) => {
+    core.news[item.game.id] = [
+      {
+        id: `${item.game.id}-update`,
+        title: `${item.game.title} 1.${String(4 - i)}`,
+        url: "https://store.steampowered.com/news/app/1/view/1",
+        publishedAt: new Date(Date.now() - (i + 1) * 2 * day).toISOString(),
+        author: "The team",
+        patchNotes: true,
+        blocks: [
+          { kind: "heading", text: "Fixes" },
+          { kind: "item", text: "Saves load faster on slow drives." },
+          { kind: "item", text: "The map no longer flickers after a long session." },
+          { kind: "paragraph", text: "Thanks for all the reports!" },
+        ],
+      },
+      {
+        id: `${item.game.id}-hello`,
+        title: "A look ahead",
+        url: "https://store.steampowered.com/news/app/1/view/2",
+        publishedAt: new Date(Date.now() - (i + 12) * day).toISOString(),
+        author: null,
+        patchNotes: false,
+        blocks: [{ kind: "paragraph", text: "Here is what we are working on next." }],
+      },
+    ];
+  });
+  const first = core.library[0];
+  if (first) {
+    const added = new Date(Date.now() - 5 * day).toISOString();
+    core.mods[first.game.id] = [
+      { id: "hd", name: "HD Textures", source: "hd-textures-2.1.zip", target: "Data", enabled: true, files: 142, sizeBytes: 1_840_000_000, addedAt: added, overridden: 3 },
+      { id: "ui", name: "Cleaner Interface", source: "cleaner-ui.7z", target: "", enabled: false, files: 12, sizeBytes: 4_200_000, addedAt: added, overridden: 0 },
+      { id: "fix", name: "Unofficial Patch", source: "patch.pak", target: "Data", enabled: true, files: 3, sizeBytes: 86_000_000, addedAt: added, overridden: 0 },
+    ];
+  }
 }
 
 

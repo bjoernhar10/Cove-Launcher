@@ -1,4 +1,4 @@
-import type { AboutInfo, FolderInfo, GameTools, UpdateCheck, UpdateProgress, UserProfile } from "@cove/shared";
+import type { AboutInfo, FolderInfo, GameTools, ImportPreview, ImportResult, UpdateCheck, UpdateProgress, UserProfile } from "@cove/shared";
 import { call, subscribe } from "./transport.ts";
 
 export function getProfile(): Promise<UserProfile> {
@@ -47,4 +47,19 @@ export async function openExternal(url: string): Promise<void> {
   } else {
     window.open(url, "_blank", "noopener");
   }
+}
+
+/** Saves library, playtime, collections, wishlist and settings to a file the user picks; null when cancelled. */
+export function exportData(): Promise<string | null> {
+  return call("data_export", {});
+}
+
+/** Lets the user pick an export file; null when cancelled. */
+export function pickImport(): Promise<ImportPreview | null> {
+  return call("data_import_pick", {});
+}
+
+/** Merges an export into this Cove (never deletes anything). */
+export function importData(path: string, settings: boolean): Promise<ImportResult> {
+  return call("data_import", { path, settings });
 }

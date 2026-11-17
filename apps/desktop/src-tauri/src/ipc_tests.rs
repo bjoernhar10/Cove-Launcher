@@ -136,6 +136,28 @@ async fn app_with(
         )),
         gamepads: Arc::new(crate::gamepad::Gamepads::default()),
         discord: Arc::new(crate::discord::Discord::default()),
+        mods: Arc::new(crate::mods::Mods::new(
+            pool.clone(),
+            tmp.path().join("mods"),
+        )),
+        launcher_dirs: crate::external::LauncherDirs::for_home(Some(tmp.path()), None),
+        shortcuts: Arc::new(crate::shortcuts::Shortcuts::new(
+            pool.clone(),
+            crate::shortcuts::ShortcutDirs {
+                desktop: Some(tmp.path().join("Desktop")),
+                menu: Some(tmp.path().join("applications")),
+                icons: tmp.path().join("shortcut-icons"),
+            },
+            Some(crate::shortcuts::CoveCommand {
+                program: "/usr/bin/cove".into(),
+                args: Vec::new(),
+            }),
+            crate::shortcuts::Kind::Desktop,
+        )),
+        news: Arc::new(crate::news::News::with_base(
+            pool.clone(),
+            "http://127.0.0.1:1".into(),
+        )),
         // Nothing listens there: tests never talk to Epic or GOG.
         free_games: Arc::new(crate::free_games::FreeGames::with_urls(
             pool.clone(),
@@ -709,6 +731,55 @@ async fn proton_rating_accepts_frontend_payloads() {
     assert_eq!(offline["kind"], "storeUnavailable");
     let missing = invoke_raw(&app, "game_proton_rating", json!({ "gameId": "nope" })).unwrap_err();
     assert_eq!(missing["kind"], "notInLibrary");
+
+    // News use the same Steam app; cached posts come back as they are.
+    let post = json!([{ "id": "1", "title": "Update", "url": "https://store.steampowered.com/news/1",
+        "publishedAt": "2026-11-10T10:00:00Z", "author": null, "patchNotes": true,
+"blocks": [{ "kind": "item", "text": "Fixed saves" }] }]);
+    crate::db::catalog_cache::put(&pool, "news", "news:13", &post.to_string())
+        .await
+        .unwrap();
+    let news: Value = invoke(&app, "game_news", json!({ "gameId": rated["game"]["id"] }));
+    assert_eq!(news, post);
+    let offline = invoke_raw(
+        &app,
+        "game_news",
+        json!({ "gameId": unknown["game"]["id"] }),
+    );
+    assert!(
+        offline.is_ok_and(|v| v == json!([])),
+        "no Steam app = no news"
+    );
+    let feed: Value = invoke(&app, "news_recent", json!({}));
+    assert_eq!(feed, json!([]));
+
+    // Shortcuts: created, listed, removed with the game.
+    let id = rated["game"]["id"].clone();
+    let created: Value = invoke(
+        &app,
+        "game_create_shortcut",
+        json!({ "gameId": id, "place": "menu" }),
+    );
+    assert_eq!(created["place"], "menu");
+    let listed: Value = invoke(&app, "game_shortcuts", json!({ "gameId": id }));
+    assert_eq!(listed["places"], json!(["desktop", "menu"]));
+    assert_eq!(listed["shortcuts"], json!([created]));
+    invoke_raw(
+        &app,
+        "game_remove_shortcut",
+        json!({ "gameId": id, "place": "menu" }),
+    )
+    .unwrap();
+    let listed: Value = invoke(&app, "game_shortcuts", json!({ "gameId": id }));
+    assert_eq!(listed["shortcuts"], json!([]));
+    invoke_raw(
+        &app,
+        "game_create_shortcut",
+        json!({ "gameId": id, "place": "desktop" }),
+    )
+    .unwrap();
+    invoke_raw(&app, "library_remove", json!({ "gameId": id })).unwrap();
+    assert!(!app.tmp.path().join("Desktop/Hand Made.desktop").exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1086,4 +1157,78 @@ async fn real_keyring_store_and_itch_logins() {
     invoke_raw(&app, "itch_clear_api_key", json!({})).unwrap();
     let status: Value = invoke(&app, "itch_status", json!({}));
     assert_eq!(status["connected"], false);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn data_import_accepts_frontend_payloads() {
+    use tauri::Manager;
+
+    let app = app().await;
+    let state = app.webview.state::<AppState>();
+    let settings = crate::db::settings::load(&state.pool, &state.defaults)
+        .await
+        .unwrap();
+    let file = crate::transfer::export(&state.pool, &settings)
+        .await
+        .unwrap();
+    let path = app.tmp.path().join("cove-export.json");
+    crate::transfer::write(&path, &file).await.unwrap();
+    let result: Value = invoke(
+        &app,
+        "data_import",
+        json!({ "path": path.to_string_lossy(), "settings": false }),
+    );
+    assert_eq!(result["settings"], false);
+    assert_eq!(result["gamesAdded"], 0);
+    let wrong = invoke_raw(
+        &app,
+        "data_import",
+        json!({ "path": app.tmp.path().join("missing.json").to_string_lossy(), "settings": true }),
+    )
+    .unwrap_err();
+    assert_eq!(wrong["kind"], "io");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn mods_accept_frontend_payloads() {
+    let app = app().await;
+    let folder = app.tmp.path().join("Games/Ember");
+    std::fs::create_dir_all(&folder).unwrap();
+    let exe = folder.join("ember.sh");
+    std::fs::write(&exe, b"#!/bin/sh\n").unwrap();
+    let game: Value = invoke(
+        &app,
+        "library_add_manual",
+        json!({ "input": { "title": "Ember", "executablePath": exe.to_string_lossy(), "sizeBytes": null } }),
+    );
+    let id = game["game"]["id"].clone();
+    let file = app.tmp.path().join("fix.pak");
+    std::fs::write(&file, b"fix").unwrap();
+    let mods: Value = invoke(
+        &app,
+        "mods_add",
+        json!({ "gameId": id, "source": file.to_string_lossy(), "name": "Fix", "target": "Data" }),
+    );
+    let mod_id = mods[0]["id"].clone();
+    assert_eq!(mods[0]["target"], "Data");
+    assert!(folder.join("Data/fix.pak").is_file());
+    let mods: Value = invoke(
+        &app,
+        "mods_set_enabled",
+        json!({ "gameId": id, "modId": mod_id, "enabled": false }),
+    );
+    assert_eq!(mods[0]["enabled"], false);
+    let _: Value = invoke(
+        &app,
+        "mods_move",
+        json!({ "gameId": id, "modId": mod_id, "position": 0 }),
+    );
+    let listed: Value = invoke(&app, "mods_list", json!({ "gameId": id }));
+    assert_eq!(listed.as_array().map(Vec::len), Some(1));
+    let mods: Value = invoke(
+        &app,
+        "mods_remove",
+        json!({ "gameId": id, "modId": mod_id }),
+    );
+    assert_eq!(mods, json!([]));
 }

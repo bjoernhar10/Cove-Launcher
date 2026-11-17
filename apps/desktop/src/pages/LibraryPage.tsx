@@ -1,6 +1,6 @@
 import { localized, useMessages } from "../i18n/index.ts";
 import type { Collection, LibraryItem, TimeToBeat } from "@cove/shared";
-import { Folder, Hourglass, LayoutGrid, Library, List, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { Dices, Folder, Hourglass, LayoutGrid, Library, List, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { memo, useCallback, useMemo, useRef, useState, type MouseEvent } from "react";
 import { Link } from "react-router";
 import { api } from "../api/index.ts";
@@ -16,7 +16,7 @@ import { Popover, RadioOption } from "../components/ui/Popover.tsx";
 import { Segmented } from "../components/ui/Segmented.tsx";
 import { CollectionNameDialog, DeleteCollectionDialog } from "../features/CollectionDialogs.tsx";
 import { CollectionMenu, type MenuAnchor } from "../features/CollectionMenu.tsx";
-import { typicalLength } from "../features/TimeToBeat.tsx";
+import { inBand, LENGTHS } from "../lib/lengths.ts";
 import { useMainVirtualizer, VIRTUALIZE_FROM } from "../hooks/useMainVirtualizer.ts";
 import { useQuery } from "../hooks/useQuery.ts";
 import { cx } from "../lib/cx.ts";
@@ -54,24 +54,7 @@ function matchesGroup(item: LibraryItem, group: BuiltinGroup): boolean {
   return item.entry.source === group;
 }
 
-/** Upper bounds in hours (the last band is open). */
-const LENGTHS: { value: Exclude<LengthFilter, "any">; min: number; max: number }[] = [
-  { value: "short", min: 0, max: 5 },
-  { value: "medium", min: 5, max: 15 },
-  { value: "long", min: 15, max: 40 },
-  { value: "veryLong", min: 40, max: Number.POSITIVE_INFINITY },
-];
-
 const LENGTH_LABELS: Record<LengthFilter, string> = localized((m) => m.timeToBeat.lengths);
-
-function inBand(times: TimeToBeat | undefined, filter: LengthFilter): boolean {
-  if (filter === "any") return true;
-  const band = LENGTHS.find((l) => l.value === filter);
-  const seconds = times ? typicalLength(times) : null;
-  if (!band || seconds === null) return false;
-  const hours = seconds / 3600;
-  return hours >= band.min && hours < band.max;
-}
 
 function LengthPopover({ value, onChange }: { value: LengthFilter; onChange: (value: LengthFilter) => void }) {
   const t = useMessages();
@@ -322,6 +305,7 @@ export function LibraryPage() {
     () => items.map((item) => ({ key: item.game.id, node: <GridCard item={item} onFavorite={setFavorite} onMenu={openMenu} /> })),
     [items, setFavorite, openMenu],
   );
+  const setPickerOpen = useUi((s) => s.setPickerOpen);
   const addButton = (
     <Button
       variant="primary"
@@ -339,7 +323,21 @@ export function LibraryPage() {
       <PageHeader
         title="My Library"
         description={query.status === "success" ? <><span className="num">{formatNumber(all.length)}</span> {t.library.games}</> : t.library.subtitle}
-        actions={addButton}
+        actions={
+          <>
+            {all.length > 1 && (
+              <Button
+                icon={Dices}
+                onClick={() => {
+                  setPickerOpen(true);
+                }}
+              >
+                {t.picker.button}
+              </Button>
+            )}
+            {addButton}
+          </>
+        }
       />
 
       {query.status === "success" && all.length === 0 ? (

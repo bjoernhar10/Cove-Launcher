@@ -3,45 +3,50 @@
  * Tauri's `mockIPC`. Keeps the UI tests independent of a running app.
  */
 import type {
-  FreeGame,
   AppErrorKind,
   AppSettings,
   CatalogPage,
   Collection,
   ConnectableStore,
   CoveAchievement,
-  LocalStoreGame,
-  DownloadItem,
-  ItchGame,
-  PluginInfo,
-  StoreAccount,
-  CoveEvents,
-  MatchCandidate,
   CoveCommand,
   CoveCommands,
-  Game,
+  CoveEvents,
   DlcOption,
-  GameUpdateInfo,
-  InstallTarget,
-  PrefixAction,
+  DownloadItem,
+  ExternalGame,
+  FreeGame,
+  Game,
   GameBackups,
-  SystemInfo,
+  GamepadInfo,
+  GamePrice,
+  GameShortcut,
   GameTools,
   GameTweaks,
+  GameUpdateInfo,
+  ImportPreview,
+  InstallTarget,
+  ItchGame,
+  LaunchVia,
+  LibraryItem,
+  LocalStoreGame,
+  MatchCandidate,
+  ModInfo,
+  NewsItem,
+  PlayStats,
+  PluginInfo,
+  PrefixAction,
   PrefixInfo,
   ProtonOverview,
   ProtonRating,
-  TimeToBeat,
-  StoreDlcList,
-  LaunchVia,
-  LibraryItem,
   ScanCandidate,
-  UpdateInfo,
-  PlayStats,
-  GamepadInfo,
-  WishlistItem,
-  GamePrice,
+  StoreAccount,
+  StoreDlcList,
   StoreSource,
+  SystemInfo,
+  TimeToBeat,
+  UpdateInfo,
+  WishlistItem,
 } from "@cove/shared";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 
@@ -110,7 +115,7 @@ export function fakeItem(id: string, title: string, overrides: Partial<LibraryIt
       lastPlayedAt: "2026-11-01T10:00:00Z",
       addedAt: "2026-10-01T10:00:00Z",
       achievements: { unlocked: 0, total: 0 },
-      launchOptions: { arguments: "", compatibilityTool: "native", env: [], protonVersion: null, tweaks: { ...FAKE_TWEAKS } },
+      launchOptions: { arguments: "", compatibilityTool: "native", env: [], protonVersion: null, tweaks: { ...FAKE_TWEAKS }, winePrefix: null, wineBinary: null },
       catalogId: null,
       matchStatus: "none",
       launchVia: null,
@@ -281,6 +286,20 @@ export interface FakeCore {
   prices: Record<string, GamePrice>;
   /** Free games of Epic and GOG (`free_games_list`). */
   freeGames: FreeGame[];
+  /** Steam news per game id (`game_news`); `news_recent` takes those of played games. */
+  news: Record<string, NewsItem[]>;
+  /** Shortcuts per game id (`game_create_shortcut`). */
+  shortcuts: Record<string, GameShortcut[]>;
+  /** Mods per game id, in their order. */
+  mods: Record<string, ModInfo[]>;
+  /** What `mods_pick` "picks"; null = cancelled. */
+  modPick: string | null;
+  /** Games Heroic and Lutris know (`launchers_scan`). */
+  externalGames: ExternalGame[];
+  /** What `data_import_pick` "picks"; null = cancelled. */
+  importFile: ImportPreview | null;
+  /** Imports run (`data_import`). */
+  imports: { path: string; settings: boolean }[];
   /** Measured sizes per game id (`storage_overview`); installed games without one are "unknown". */
   gameSizes: Record<string, number>;
   /** Linux game tools that are installed. */
@@ -431,6 +450,13 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     wishlist: [],
     prices: {},
     freeGames: [],
+    news: {},
+    shortcuts: {},
+    importFile: null,
+    externalGames: [],
+    mods: {},
+    modPick: null,
+    imports: [],
     gameSizes: {},
     openedUrls: [],
     itchExtras: [],
@@ -747,6 +773,74 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       if (core.protonDown) reject("storeUnavailable", "ProtonDB ist gerade nicht erreichbar. Versuch es später noch einmal.");
       return core.protonRatings[gameId] ?? null;
     },
+    mods_list: ({ gameId }) => core.mods[gameId] ?? [],
+    mods_pick: () => core.modPick,
+    mods_add: ({ gameId, source, name, target }) => {
+      const item = require(gameId);
+      if (!item.entry.installed) reject("invalidInput", "Mods gehen nur bei installierten Spielen mit eigenem Spielordner.");
+      const mod: ModInfo = { id: `mod${String((core.mods[gameId] ?? []).length + 1)}`, name, source: source.split("/").pop() ?? source, target, enabled: true, files: 3, sizeBytes: 1_000_000, addedAt: new Date().toISOString(), overridden: 0 };
+      core.mods[gameId] = [...(core.mods[gameId] ?? []), mod];
+      return core.mods[gameId];
+    },
+    mods_set_enabled: ({ gameId, modId, enabled }) => {
+      core.mods[gameId] = (core.mods[gameId] ?? []).map((m) => (m.id === modId ? { ...m, enabled } : m));
+      return core.mods[gameId];
+    },
+    mods_move: ({ gameId, modId, position }) => {
+      const list = (core.mods[gameId] ?? []).filter((m) => m.id !== modId);
+      const mod = (core.mods[gameId] ?? []).find((m) => m.id === modId);
+      if (mod) list.splice(position, 0, mod);
+      core.mods[gameId] = list;
+      return list;
+    },
+    mods_remove: ({ gameId, modId }) => {
+      core.mods[gameId] = (core.mods[gameId] ?? []).filter((m) => m.id !== modId);
+      return core.mods[gameId];
+    },
+    launchers_scan: () => {
+      const known = new Set(core.library.map((i) => i.entry.executablePath));
+      return core.externalGames.map((g) => ({ ...g, inLibrary: known.has(g.executablePath) }));
+    },
+    launchers_import: ({ ids }) =>
+      core.externalGames
+        .filter((g) => ids.includes(g.id))
+        .map((g) => {
+          const item = fakeItem(`manual-${g.title.toLowerCase()}`, g.title, { source: "manual", executablePath: g.executablePath, playtimeMinutes: g.playtimeMinutes });
+          item.entry.launchOptions = { ...item.entry.launchOptions, compatibilityTool: g.windows ? (g.proton ? "proton" : "wine") : "native", winePrefix: g.winePrefix, wineBinary: g.wineBinary, arguments: g.arguments };
+          core.library.push(item);
+          return item.game.id;
+        }),
+    data_export: () => "/home/user/Documents/cove-export.json",
+    data_import_pick: () => core.importFile,
+    data_import: ({ path, settings }) => {
+      core.imports.push({ path, settings });
+      return { gamesAdded: 1, gamesUpdated: 2, gamesSkipped: 3, sessionsAdded: 4, collectionsAdded: 0, wishlistAdded: 0, settings };
+    },
+    game_shortcuts: ({ gameId }) => {
+      require(gameId);
+      return { places: ["desktop", "menu"], shortcuts: core.shortcuts[gameId] ?? [] };
+    },
+    game_create_shortcut: ({ gameId, place }) => {
+      const item = require(gameId);
+      const shortcut = { place, path: place === "desktop" ? `/home/user/Desktop/${item.game.title}.desktop` : `/home/user/.local/share/applications/cove-${gameId}.desktop` };
+      core.shortcuts[gameId] = [...(core.shortcuts[gameId] ?? []).filter((s) => s.place !== place), shortcut];
+      return shortcut;
+    },
+    game_remove_shortcut: ({ gameId, place }) => {
+      core.shortcuts[gameId] = (core.shortcuts[gameId] ?? []).filter((s) => s.place !== place);
+      return null;
+    },
+    game_news: ({ gameId }) => {
+      require(gameId);
+      if (core.protonDown) reject("storeUnavailable", "Steam ist gerade nicht erreichbar. Versuch es später noch einmal.");
+      return core.news[gameId] ?? [];
+    },
+    news_recent: () =>
+      core.library
+        .filter((i) => i.entry.lastPlayedAt !== null)
+        .flatMap((i) => (core.news[i.game.id] ?? []).slice(0, 2).map((item) => ({ gameId: i.game.id, item })))
+        .sort((a, b) => b.item.publishedAt.localeCompare(a.item.publishedAt))
+        .slice(0, 8),
     game_manage_dlcs: ({ gameId }) => {
       const item = require(gameId);
       if (item.entry.source !== "steam") reject("invalidInput", "Die DLC-Liste gibt es nur für Steam-Spiele.");

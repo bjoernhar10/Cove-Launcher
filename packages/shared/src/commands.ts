@@ -26,7 +26,13 @@ import type {
   GamepadInput,
   WishlistItem,
   GamePrice,
+  ExternalGame,
   FreeGame,
+  GameNews,
+  GameShortcut,
+  GameShortcuts,
+  ImportPreview,
+  ImportResult,
   StorageOverview,
   PriceAlert,
   PluginInfo,
@@ -79,6 +85,9 @@ import type {
   InstallTarget,
   StoreDlcList,
   UninstallMethod,
+  ModInfo,
+  NewsItem,
+  ShortcutPlace,
 } from "./models.ts";
 
 type NoArgs = Record<string, never>;
@@ -127,6 +136,35 @@ export interface CoveCommands {
   game_manage_dlcs: { args: { gameId: GameId }; result: null };
   /** ProtonDB's rating of the game (how well it runs on Linux); null when there is none. */
   game_proton_rating: { args: { gameId: GameId }; result: ProtonRating | null };
+  /** The game's announcements and patch notes from Steam (newest first; empty when it isn't on Steam). */
+  game_news: { args: { gameId: GameId }; result: NewsItem[] };
+  /** The game's desktop and menu shortcuts, and the places this system has. */
+  game_shortcuts: { args: { gameId: GameId }; result: GameShortcuts };
+  /** Creates (or replaces) a shortcut that starts the game through Cove. */
+  game_create_shortcut: { args: { gameId: GameId; place: ShortcutPlace }; result: GameShortcut };
+  game_remove_shortcut: { args: { gameId: GameId; place: ShortcutPlace }; result: null };
+  /** Saves library, playtime, collections, wishlist and settings to a file the user picks; null when cancelled. */
+  data_export: { args: NoArgs; result: string | null };
+  /** Lets the user pick an export file and tells what it holds; null when cancelled. */
+  data_import_pick: { args: NoArgs; result: ImportPreview | null };
+  /** Merges an export into this Cove (never deletes); settings only with `settings`. */
+  data_import: { args: { path: string; settings: boolean }; result: ImportResult };
+  /** Games added to Heroic by hand and Lutris' Wine and Linux games. */
+  launchers_scan: { args: NoArgs; result: ExternalGame[] };
+  /** Adds the chosen ones with their Wine prefix, Wine build and playtime; returns the new game ids. */
+  launchers_import: { args: { ids: string[] }; result: GameId[] };
+  /** A game's mods in their order (later ones win for the same file). */
+  mods_list: { args: { gameId: GameId }; result: ModInfo[] };
+  /** Lets the user pick a mod: an archive or single file, or a folder; null when cancelled. */
+  mods_pick: { args: { folder: boolean }; result: string | null };
+  /** Unpacks a mod and switches it on (last in the order). */
+  mods_add: { args: { gameId: GameId; source: string; name: string; target: string }; result: ModInfo[] };
+  mods_set_enabled: { args: { gameId: GameId; modId: string; enabled: boolean }; result: ModInfo[] };
+  /** Moves a mod to `position` (0 = first). */
+  mods_move: { args: { gameId: GameId; modId: string; position: number }; result: ModInfo[] };
+  mods_remove: { args: { gameId: GameId; modId: string }; result: ModInfo[] };
+  /** Recent posts of the games played last (Home). */
+  news_recent: { args: NoArgs; result: GameNews[] };
   /** Linux: GE-Proton releases, installed builds and Steam's builds. */
   proton_list: { args: NoArgs; result: ProtonOverview };
   /** Loads the release list again; a new "latest" is installed in the background. */

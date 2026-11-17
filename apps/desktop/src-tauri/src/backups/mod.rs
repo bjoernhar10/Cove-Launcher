@@ -328,24 +328,9 @@ impl BackupService {
                     .executable_path
                     .as_deref()
                     .is_some_and(|e| e.to_lowercase().ends_with(".exe"));
-                // Cove's Proton prefix (or ~/.wine for Wine).
+                // Cove's Proton prefix, one from Heroic or Lutris, or ~/.wine for Wine.
                 if windows_exe {
-                    let drive_c = match entry.launch_options.compatibility_tool {
-                        CompatibilityTool::Wine => Some(home.join(".wine/drive_c")),
-                        CompatibilityTool::Proton => Some(
-                            host.compat_data_root
-                                .join(&item.game.id)
-                                .join("pfx/drive_c"),
-                        ),
-                        CompatibilityTool::Native => None,
-                    };
-                    if let Some(drive_c) = drive_c {
-                        let user =
-                            if entry.launch_options.compatibility_tool == CompatibilityTool::Wine {
-                                user.clone()
-                            } else {
-                                "steamuser".into()
-                            };
+                    if let Some((drive_c, user)) = prefix_drive(item, host, &home, &user) {
                         let (profile, dirs) = WindowsDirs::in_prefix(&drive_c, &user);
                         out.push(context(Os::Windows, profile, user, Some(dirs)));
                     }
@@ -520,6 +505,32 @@ impl BackupService {
             .await
             .map_err(|e| AppError::Download(e.to_string()))?
     }
+}
+
+/// The `drive_c` of a Windows game's prefix and its Windows user: Cove's
+/// Proton prefix, one from Heroic or Lutris, or `~/.wine` for Wine.
+fn prefix_drive(
+    item: &LibraryItem,
+    host: &HostEnv,
+    home: &Path,
+    user: &str,
+) -> Option<(PathBuf, String)> {
+    let options = &item.entry.launch_options;
+    let prefix = crate::launcher::game_prefix(options, &host.compat_data_root, &item.game.id);
+    let drive_c = match options.compatibility_tool {
+        CompatibilityTool::Wine if prefix.own => home.join(".wine/drive_c"),
+        CompatibilityTool::Wine | CompatibilityTool::Proton => prefix.pfx.join("drive_c"),
+        CompatibilityTool::Native => return None,
+    };
+    // Proton names the Windows user "steamuser", Wine after the Linux user.
+    let proton_user = (options.compatibility_tool == CompatibilityTool::Proton && prefix.own)
+        || drive_c.join("users/steamuser").is_dir();
+    let user = if proton_user {
+        "steamuser".to_owned()
+    } else {
+        user.to_owned()
+    };
+    Some((drive_c, user))
 }
 
 #[cfg(test)]

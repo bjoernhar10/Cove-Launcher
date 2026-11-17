@@ -380,6 +380,42 @@ fn apply_tweaks(
     Ok((first, command))
 }
 
+/// A game's Windows prefix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GamePrefix {
+    /// What Proton calls the compat data folder (`pfx` inside), or the plain
+    /// Wine prefix itself.
+    pub root: PathBuf,
+    /// The Wine prefix (with `drive_c`).
+    pub pfx: PathBuf,
+    /// Cove's own (`compat/<game>`); others belong to Heroic or Lutris.
+    pub own: bool,
+}
+
+/// Cove's own prefix in Proton's layout, or the one the game brought along
+/// (Proton's layout when it has a `pfx` folder, else a plain Wine prefix).
+pub fn game_prefix(options: &LaunchOptions, compat_root: &Path, game_id: &str) -> GamePrefix {
+    if let Some(custom) = options.wine_prefix.as_deref().filter(|p| !p.is_empty()) {
+        let root = PathBuf::from(custom);
+        let pfx = if root.join("pfx").is_dir() {
+            root.join("pfx")
+        } else {
+            root.clone()
+        };
+        return GamePrefix {
+            root,
+            pfx,
+            own: false,
+        };
+    }
+    let root = compat_root.join(game_id);
+    GamePrefix {
+        pfx: root.join("pfx"),
+        root,
+        own: true,
+    }
+}
+
 /// How a Windows game starts with Proton: through umu when it is there, else
 /// Proton directly. Adds the environment both need.
 fn proton_command(
@@ -394,18 +430,26 @@ fn proton_command(
     let proton = crate::proton::resolve(&host.protons, &wanted).ok_or_else(|| {
         AppError::CompatToolNotFound(crate::proton::display_name(&wanted).to_owned())
     })?;
-    let prefix = host.compat_data_root.join(&target.game_id);
+    let game_prefix = game_prefix(&target.options, &host.compat_data_root, &target.game_id);
+    let prefix = game_prefix.root.clone();
     let text = |path: &Path| path.to_string_lossy().into_owned();
     if let Some(umu) = &host.umu {
         // umu runs Proton in the Steam Linux Runtime. Its prefix is the same
         // `pfx` folder Proton uses when it runs directly.
-        env.push(("WINEPREFIX".into(), text(&prefix.join("pfx"))));
+        env.push(("WINEPREFIX".into(), text(&game_prefix.pfx)));
         env.push(("PROTONPATH".into(), text(&proton.path)));
         env.push(("GAMEID".into(), umu.game_id.clone()));
         if let Some(store) = umu.store {
             env.push(("STORE".into(), store.to_owned()));
         }
         return Ok((umu.program.clone(), vec![executable.to_owned()]));
+    }
+    if game_prefix.pfx == game_prefix.root {
+        // Proton itself only knows its own layout; umu takes any prefix.
+        return Err(AppError::Launch(tr!(
+            "Dieser Wine-Prefix lässt sich nur mit umu-launcher in Proton nutzen. Schalte umu unter Einstellungen → Proton ein oder wähle Wine.",
+            "This Wine prefix can only be used with Proton through umu-launcher. Turn on umu under Settings → Proton or choose Wine."
+        )));
     }
     env.push(("STEAM_COMPAT_DATA_PATH".into(), text(&prefix)));
     // Proton runs without Steam too; Steam's folder only adds its client libraries.
@@ -487,7 +531,19 @@ pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
                     tr!("Das ist ein Windows-Spiel. Wähle in den Einstellungen des Spiels unter „Kompatibilität“ Proton oder Wine.", "This is a Windows game. Choose Proton or Wine under “Compatibility” in the game's settings."),
                 ))
             }
-            CompatibilityTool::Wine => (PathBuf::from("wine"), vec![executable.to_owned()]),
+            CompatibilityTool::Wine => {
+                let options = &target.options;
+                if options.wine_prefix.is_some() {
+                    let prefix = game_prefix(options, &host.compat_data_root, &target.game_id);
+                    env.push(("WINEPREFIX".into(), prefix.pfx.to_string_lossy().into_owned()));
+                }
+                let wine = options
+                    .wine_binary
+                    .as_deref()
+                    .filter(|w| !w.is_empty())
+                    .unwrap_or("wine");
+                (PathBuf::from(wine), vec![executable.to_owned()])
+            }
             CompatibilityTool::Proton => proton_command(target, host, executable, cwd.as_deref(), &mut env)?,
         }
     } else {
@@ -1494,6 +1550,60 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert_eq!(args, [dolphin.as_str(), "-b", "-e", &rom.to_string_lossy()]);
+    }
+
+    #[test]
+    fn a_prefix_from_heroic_or_lutris_is_used_as_it_is() {
+        let tmp = tempfile::tempdir().unwrap();
+        let plain = tmp.path().join("lutris-prefix");
+        let proton_layout = tmp.path().join("heroic-prefix");
+        std::fs::create_dir_all(&plain).unwrap();
+        std::fs::create_dir_all(proton_layout.join("pfx")).unwrap();
+        let text = |p: &Path| p.to_string_lossy().into_owned();
+        let var = |env: &[(String, String)], key: &str| {
+            env.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone())
+        };
+
+        // Wine with Lutris' wine build and prefix.
+        let mut t = target(StoreSource::Manual, Some("/g/Game.exe"), None);
+        t.options.compatibility_tool = CompatibilityTool::Wine;
+        t.options.wine_prefix = Some(text(&plain));
+        t.options.wine_binary = Some("/lutris/wine-ge/bin/wine".into());
+        let LaunchPlan::Process { program, env, .. } =
+            plan(&t, &host(Platform::Linux, &[])).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(program, PathBuf::from("/lutris/wine-ge/bin/wine"));
+        assert_eq!(var(&env, "WINEPREFIX"), Some(text(&plain)));
+
+        // Proton directly: only a prefix in Proton's layout.
+        t.options.compatibility_tool = CompatibilityTool::Proton;
+        let linux = host(Platform::Linux, &["GE-Proton10-25"]);
+        assert!(matches!(plan(&t, &linux), Err(AppError::Launch(_))));
+        t.options.wine_prefix = Some(text(&proton_layout));
+        let LaunchPlan::Process { env, .. } = plan(&t, &linux).unwrap() else {
+            panic!()
+        };
+        assert_eq!(
+            var(&env, "STEAM_COMPAT_DATA_PATH"),
+            Some(text(&proton_layout))
+        );
+
+        // umu takes a plain prefix too.
+        t.options.wine_prefix = Some(text(&plain));
+        let mut with_umu = linux.clone();
+        with_umu.umu = Some(crate::umu::UmuLaunch::new(
+            PathBuf::from("/u/umu-run"),
+            StoreSource::Manual,
+            None,
+        ));
+        let LaunchPlan::Process { env, .. } = plan(&t, &with_umu).unwrap() else {
+            panic!()
+        };
+        assert_eq!(var(&env, "WINEPREFIX"), Some(text(&plain)));
+        let prefix = game_prefix(&t.options, Path::new("/data/compat"), "g");
+        assert!(!prefix.own);
     }
 
     #[test]

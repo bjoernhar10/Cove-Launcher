@@ -15,13 +15,16 @@ mod discord;
 mod downloads;
 mod emulators;
 mod error;
+mod external;
 mod flatpak;
 mod folders;
 mod free_games;
 mod gamepad;
 mod launcher;
 mod models;
+mod mods;
 mod mover;
+mod news;
 mod plugins;
 mod prefix;
 mod prices;
@@ -29,11 +32,13 @@ mod proton;
 mod protondb;
 mod recommend;
 mod scanner;
+mod shortcuts;
 mod sidecar;
 mod state;
 mod steam;
 mod storage;
 mod stores;
+mod transfer;
 mod umu;
 mod updates;
 
@@ -148,6 +153,22 @@ macro_rules! cove_handlers {
             $crate::commands::downloads_start_now,
             $crate::commands::free_games_list,
             $crate::commands::storage_overview,
+            $crate::commands::game_news,
+            $crate::commands::news_recent,
+            $crate::commands::game_shortcuts,
+            $crate::commands::game_create_shortcut,
+            $crate::commands::game_remove_shortcut,
+            $crate::commands::data_export,
+            $crate::commands::data_import_pick,
+            $crate::commands::data_import,
+            $crate::commands::launchers_scan,
+            $crate::commands::launchers_import,
+            $crate::commands::mods_list,
+            $crate::commands::mods_pick,
+            $crate::commands::mods_add,
+            $crate::commands::mods_set_enabled,
+            $crate::commands::mods_move,
+            $crate::commands::mods_remove,
             $crate::commands::downloads_reorder,
             $crate::commands::downloads_clear_history,
             $crate::commands::system_profile,
@@ -296,6 +317,13 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         protondb: Arc::new(protondb::ProtonDb::new(pool.clone())),
         prices: Arc::new(prices::PriceService::new(pool.clone())),
         free_games: Arc::new(free_games::FreeGames::new(pool.clone())),
+        news: Arc::new(news::News::new(pool.clone())),
+        shortcuts: Arc::new(build_shortcuts(app, &pool, &data_dir)),
+        mods: Arc::new(mods::Mods::new(pool.clone(), data_dir.join("mods"))),
+        launcher_dirs: external::LauncherDirs::for_home(
+            host.home.as_deref(),
+            app.path().config_dir().ok().as_deref(),
+        ),
         discord: Arc::new(discord::Discord::default()),
         gamepads: Arc::new(gamepad::Gamepads::default()),
         proton,
@@ -376,6 +404,41 @@ fn after_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, game_id: String) 
         }
         state.backups.after_session(&game_id, &state.host).await;
     });
+}
+
+/// Shortcuts go to the desktop and the app menu of this system.
+fn build_shortcuts(
+    app: &tauri::App,
+    pool: &sqlx::SqlitePool,
+    data_dir: &std::path::Path,
+) -> shortcuts::Shortcuts {
+    let paths = app.path();
+    let menu = if cfg!(windows) {
+        paths
+            .data_dir()
+            .ok()
+            .map(|d| d.join("Microsoft/Windows/Start Menu/Programs/Cove"))
+    } else if cfg!(target_os = "macos") {
+        paths.home_dir().ok().map(|h| h.join("Applications/Cove"))
+    } else if flatpak::active() {
+        // The sandbox's data folder is not the one the host's menu reads.
+        paths
+            .home_dir()
+            .ok()
+            .map(|h| h.join(".local/share/applications"))
+    } else {
+        paths.data_dir().ok().map(|d| d.join("applications"))
+    };
+    shortcuts::Shortcuts::new(
+        pool.clone(),
+        shortcuts::ShortcutDirs {
+            desktop: paths.desktop_dir().ok(),
+            menu,
+            icons: data_dir.join("shortcut-icons"),
+        },
+        shortcuts::CoveCommand::current(),
+        shortcuts::Kind::native(),
+    )
 }
 
 /// "Spiel verschieben", reporting progress as `game-move-progress`.
@@ -542,11 +605,36 @@ fn report_startup_failure(app: &tauri::App, error: &dyn std::error::Error) {
         .show(move |_| handle.exit(1));
 }
 
+/// Only one Cove runs. A second start (a shortcut, the app menu) hands its
+/// command line over: `--launch <id>` starts that game, anything else brings
+/// the window to the front. In Flatpak the D-Bus name has to start with the
+/// app id, else the sandbox doesn't allow it.
+fn single_instance<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    let mut builder = tauri_plugin_single_instance::Builder::new().callback(|app, args, _cwd| {
+        if let Some(game_id) = shortcuts::launch_arg(&args) {
+            commands::launch_from_shortcut(app.clone(), game_id);
+        } else if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    });
+    if let Some(id) = std::env::var("FLATPAK_ID")
+        .ok()
+        .filter(|_| flatpak::active())
+    {
+        builder = builder.dbus_id(id);
+    }
+    builder.build()
+}
+
 /// Builds and runs the Tauri application.
 pub fn run() {
     let started = std::time::Instant::now();
     let logged_start = std::sync::atomic::AtomicBool::new(false);
     tauri::Builder::default()
+        // First: a second Cove (a desktop shortcut) hands its request to this one.
+        .plugin(single_instance())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -596,6 +684,10 @@ pub fn run() {
             watch_prices(app.handle().clone());
             watch_free_games(app.handle().clone());
             gamepad::watch(app.handle().clone(), gamepads);
+            let args: Vec<String> = std::env::args().collect();
+            if let Some(game_id) = shortcuts::launch_arg(&args) {
+                commands::launch_from_shortcut(app.handle().clone(), game_id);
+            }
             Ok(())
         })
         .invoke_handler(cove_handlers!())

@@ -41,7 +41,7 @@ pub fn folder_bytes(dir: &Path) -> u64 {
 /// Only a game's own folder is measured: not a folder another game lies in
 /// or shares (ROM folders, a manual game started from `~/bin`), not the home
 /// folder or one above it, not a drive's root.
-fn measurable(path: &Path, all: &[PathBuf], home: Option<&Path>) -> bool {
+pub(crate) fn measurable(path: &Path, all: &[PathBuf], home: Option<&Path>) -> bool {
     let shared = all
         .iter()
         .filter(|other| other.starts_with(path))

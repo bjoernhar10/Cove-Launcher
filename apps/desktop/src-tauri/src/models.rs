@@ -185,6 +185,13 @@ pub struct LaunchOptions {
     /// Linux: `MangoHud`, `GameMode`, gamescope, FSR, DXVK/VKD3D.
     #[serde(default)]
     pub tweaks: GameTweaks,
+    /// Linux: a Wine prefix the game brought along (Heroic, Lutris);
+    /// `None` = Cove's own prefix.
+    #[serde(default)]
+    pub wine_prefix: Option<String>,
+    /// Linux, Wine: the wine program (a Heroic or Lutris build); `None` = `wine`.
+    #[serde(default)]
+    pub wine_binary: Option<String>,
 }
 
 /// Per-game options on Linux for games Cove starts itself.
@@ -1322,6 +1329,138 @@ pub struct FreeGame {
     pub ends_at: Option<String>,
     /// Free from `startsAt` on (Epic shows next week's games).
     pub upcoming: bool,
+}
+
+/// A developer announcement or patch notes of a game (Steam's news).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewsItem {
+    pub id: String,
+    pub title: String,
+    /// The post on Steam; null when it isn't an https link.
+    pub url: Option<String>,
+    pub published_at: String,
+    pub author: Option<String>,
+    /// Steam tagged the post as patch notes.
+    pub patch_notes: bool,
+    /// The text as plain blocks (never markup).
+    pub blocks: Vec<NewsBlock>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum NewsBlock {
+    Heading { text: String },
+    Paragraph { text: String },
+    Item { text: String },
+}
+
+/// A mod of a game.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModInfo {
+    pub id: String,
+    pub name: String,
+    /// The archive, file or folder it came from.
+    pub source: String,
+    /// Folder inside the game folder ("" = the game folder).
+    pub target: String,
+    pub enabled: bool,
+    pub files: i64,
+    pub size_bytes: i64,
+    pub added_at: String,
+    /// Its files that a mod later in the order replaces.
+    pub overridden: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExternalLauncher {
+    Heroic,
+    Lutris,
+}
+
+/// A game Heroic or Lutris knows (not their store games).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalGame {
+    /// `heroic:<app name>` or `lutris:<id>`.
+    pub id: String,
+    pub launcher: ExternalLauncher,
+    pub title: String,
+    pub executable_path: String,
+    /// A Windows game (starts with Wine or Proton).
+    pub windows: bool,
+    /// Heroic runs it with Proton (else Wine).
+    pub proton: bool,
+    pub wine_prefix: Option<String>,
+    pub wine_binary: Option<String>,
+    pub arguments: String,
+    /// Playtime Lutris counted.
+    pub playtime_minutes: i64,
+    pub in_library: bool,
+}
+
+/// What a Cove export file holds (shown before the import).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPreview {
+    pub path: String,
+    pub exported_at: String,
+    pub cove_version: String,
+    pub games: usize,
+    pub sessions: usize,
+    pub collections: usize,
+    pub wishlist: usize,
+}
+
+/// What an import changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportResult {
+    /// Manual games that were added.
+    pub games_added: usize,
+    /// Games already here that got favourites, playtime and options.
+    pub games_updated: usize,
+    /// Store games that aren't here yet (they come with the store's sync).
+    pub games_skipped: usize,
+    pub sessions_added: usize,
+    pub collections_added: usize,
+    pub wishlist_added: usize,
+    pub settings: bool,
+}
+
+/// Where a shortcut to a game goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ShortcutPlace {
+    Desktop,
+    /// The app menu (Linux), the Start menu (Windows), `~/Applications` (macOS).
+    Menu,
+}
+
+/// A shortcut Cove created for a game.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameShortcut {
+    pub place: ShortcutPlace,
+    pub path: String,
+}
+
+/// The places this system offers and the game's shortcuts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameShortcuts {
+    pub places: Vec<ShortcutPlace>,
+    pub shortcuts: Vec<GameShortcut>,
+}
+
+/// A news post with its library game (Home).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameNews {
+    pub game_id: GameId,
+    pub item: NewsItem,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -5,11 +5,6 @@ import { useQuery } from "../hooks/useQuery.ts";
 import { useMessages } from "../i18n/index.ts";
 import { formatHours, formatNumber } from "../lib/format.ts";
 
-/** The length that sorts a game: main story and extras, else whatever is known (seconds). */
-export function typicalLength(times: Times): number | null {
-  return times.normally ?? times.hastily ?? times.completely;
-}
-
 /** "Spieldauer" on a game page: main story, with extras, everything (IGDB player reports). */
 export function TimeToBeat({ catalogId }: { catalogId: string }) {
   const t = useMessages();

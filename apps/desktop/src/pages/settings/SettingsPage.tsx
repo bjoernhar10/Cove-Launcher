@@ -19,6 +19,7 @@ import { Badge, EmptyState, ErrorState, ProgressBar } from "../../components/ui/
 import { Field, Input, Select, SettingRow, Switch } from "../../components/ui/Field.tsx";
 import { Page } from "../../components/ui/Page.tsx";
 import { useCatalogStatus } from "../../hooks/useCatalog.ts";
+import { DataTransfer } from "../../features/DataTransfer.tsx";
 import { AccountsTab } from "./AccountsTab.tsx";
 import { PluginsTab } from "./PluginsTab.tsx";
 import { ProtonTab } from "./ProtonTab.tsx";
@@ -116,6 +117,7 @@ function GeneralTab() {
           </SettingRow>
         )}
       </Group>
+      <DataTransfer />
     </Panel>
   );
 }

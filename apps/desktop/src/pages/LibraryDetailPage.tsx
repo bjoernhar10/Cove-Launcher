@@ -22,6 +22,9 @@ import { Badge, EmptyState, ErrorState, LoadingRegion, ProgressBar, Skeleton } f
 import { Field, Input, Select } from "../components/ui/Field.tsx";
 import { Page } from "../components/ui/Page.tsx";
 import { Segmented } from "../components/ui/Segmented.tsx";
+import { GameMods } from "../features/GameMods.tsx";
+import { GameNews } from "../features/GameNews.tsx";
+import { GameShortcuts } from "../features/GameShortcuts.tsx";
 import { Tabs } from "../components/ui/Tabs.tsx";
 import { useQuery } from "../hooks/useQuery.ts";
 import { cx } from "../lib/cx.ts";
@@ -32,8 +35,8 @@ import { useMoves } from "../stores/moves.ts";
 import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 
-type Tab = "overview" | "achievements" | "settings";
-const TABS: Tab[] = ["overview", "achievements", "settings"];
+type Tab = "overview" | "news" | "achievements" | "mods" | "settings";
+const TABS: Tab[] = ["overview", "news", "achievements", "mods", "settings"];
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -767,6 +770,38 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
         />
       )}
 
+      {isLinux && draft.compatibilityTool !== "native" && (
+        <Field label={t.game.winePrefix} description={t.game.winePrefixHint}>
+          {(props) => (
+            <Input
+              {...props}
+              spellCheck={false}
+              placeholder={t.game.winePrefixPlaceholder}
+              value={draft.winePrefix ?? ""}
+              onChange={(e) => {
+                setDraft((d) => ({ ...d, winePrefix: e.target.value === "" ? null : e.target.value }));
+              }}
+            />
+          )}
+        </Field>
+      )}
+
+      {isLinux && draft.compatibilityTool === "wine" && (
+        <Field label={t.game.wineBinary} description={t.game.wineBinaryHint}>
+          {(props) => (
+            <Input
+              {...props}
+              spellCheck={false}
+              placeholder="wine"
+              value={draft.wineBinary ?? ""}
+              onChange={(e) => {
+                setDraft((d) => ({ ...d, wineBinary: e.target.value === "" ? null : e.target.value }));
+              }}
+            />
+          )}
+        </Field>
+      )}
+
       {item.entry.launchVia === "direct" && (
         <GameTweaks
           platform={detectPlatform()}
@@ -850,7 +885,10 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
       </div>
     </form>
     <SaveBackups item={item} />
-    {isLinux && item.entry.launchOptions.compatibilityTool === "proton" && <PrefixTools item={item} />}
+    <GameShortcuts item={item} />
+    {isLinux && item.entry.launchOptions.compatibilityTool === "proton" && item.entry.launchOptions.winePrefix === null && (
+      <PrefixTools item={item} />
+    )}
     {item.entry.installed && ownStoreInstall(item) && <GameUpdates item={item} />}
     {item.entry.installed && (item.entry.source === "manual" || ownStoreInstall(item)) && item.entry.installPath && (
       <MoveGame item={item} />
@@ -1016,6 +1054,7 @@ export function LibraryDetailPage() {
               }}
               items={[
                 { value: "overview", label: t.game.overview },
+                { value: "news", label: t.news.title },
                 {
                   value: "achievements",
                   label: "Achievements",
@@ -1023,11 +1062,14 @@ export function LibraryDetailPage() {
                     ? { meta: `${String(query.data.entry.achievements.unlocked)}/${String(query.data.entry.achievements.total)}` }
                     : {}),
                 },
+                ...(query.data.entry.installed && query.data.entry.installPath ? [{ value: "mods" as const, label: t.mods.title }] : []),
                 { value: "settings", label: t.game.settings },
               ]}
             >
               {tab === "overview" && <Overview item={query.data} />}
+              {tab === "news" && <GameNews gameId={query.data.game.id} focus={params.get("post")} />}
               {tab === "achievements" && <Achievements item={query.data} />}
+              {tab === "mods" && <GameMods item={query.data} />}
               {tab === "settings" && <LaunchSettings key={query.data.game.id} item={query.data} />}
             </Tabs>
           </div>
