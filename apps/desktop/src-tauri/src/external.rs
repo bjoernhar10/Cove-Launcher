@@ -358,6 +358,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)] // two launchers set up and imported in one go
     async fn heroic_and_lutris_games_come_with_prefix_wine_and_playtime() {
         let home = tempfile::tempdir().unwrap();
         let h = home.path();
@@ -421,15 +422,21 @@ mod tests {
         let titles: Vec<&str> = found.iter().map(|g| g.title.as_str()).collect();
         assert_eq!(titles, ["Ember", "Lantern", "Oak", "Tidewater"]);
         let ember = &found[0];
-        assert_eq!(ember.wine_prefix.as_deref(), Some(s(&prefix).as_str()));
-        assert_eq!(ember.wine_binary.as_deref(), Some(s(&wine).as_str()));
+        assert_eq!(
+            ember.wine_prefix.as_deref().map(Path::new),
+            Some(prefix.as_path())
+        );
+        assert_eq!(
+            ember.wine_binary.as_deref().map(Path::new),
+            Some(wine.as_path())
+        );
         assert_eq!((ember.arguments.as_str(), ember.proton), ("-dx11", false));
         assert!(found[2].proton && found[2].wine_binary.is_none());
         let lantern = &found[1];
         assert_eq!(lantern.playtime_minutes, 150);
         assert_eq!(
-            lantern.wine_binary.as_deref(),
-            Some(s(&lutris_wine).as_str())
+            lantern.wine_binary.as_deref().map(Path::new),
+            Some(lutris_wine.as_path())
         );
         assert!(!found[3].windows && found[3].wine_prefix.is_none());
 
@@ -442,8 +449,8 @@ mod tests {
         let options = &lantern.entry.launch_options;
         assert_eq!(options.compatibility_tool, CompatibilityTool::Wine);
         assert_eq!(
-            options.wine_prefix.as_deref(),
-            Some(s(&lutris_prefix).as_str())
+            options.wine_prefix.as_deref().map(Path::new),
+            Some(lutris_prefix.as_path())
         );
         assert_eq!(options.arguments, "--safe");
         let oak = library.iter().find(|i| i.game.title == "Oak").unwrap();

@@ -676,7 +676,7 @@ mod tests {
             .create(&item, ShortcutPlace::Desktop, Some(png_cover()))
             .await
             .unwrap();
-        assert!(desktop.path.ends_with("Desktop/Ember and Oak.desktop"));
+        assert!(Path::new(&desktop.path).ends_with("Desktop/Ember and Oak.desktop"));
         let text = std::fs::read_to_string(&desktop.path).unwrap();
         assert!(text.contains(&format!("Exec=/usr/bin/cove --launch {}", item.game.id)));
         let icon = tmp
@@ -690,9 +690,9 @@ mod tests {
             .create(&item, ShortcutPlace::Menu, None)
             .await
             .unwrap();
-        assert!(menu
-            .path
-            .ends_with(&format!("applications/cove-{}.desktop", item.game.id)));
+        assert!(
+            Path::new(&menu.path).ends_with(format!("applications/cove-{}.desktop", item.game.id))
+        );
         assert_eq!(shortcuts.list(&item.game.id).await.unwrap().len(), 2);
 
         // A deleted file is dropped from the list.
