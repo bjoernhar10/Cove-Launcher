@@ -11,6 +11,7 @@ import { MatchDialog } from "../features/MatchDialog.tsx";
 import { GameTweaks } from "../features/GameTweaks.tsx";
 import { PrefixTools } from "../features/PrefixTools.tsx";
 import { SaveBackups } from "../features/SaveBackups.tsx";
+import { SaveSync } from "../features/SaveSync.tsx";
 import { FpsHistory } from "../features/FpsHistory.tsx";
 import { ProtonRating } from "../features/ProtonRating.tsx";
 import { TimeToBeat } from "../features/TimeToBeat.tsx";
@@ -886,6 +887,7 @@ function LaunchSettings({ item }: { item: LibraryItem }) {
         </Button>
       </div>
     </form>
+    <SaveSync item={item} />
     <SaveBackups item={item} />
     <GameShortcuts item={item} />
     {isLinux && item.entry.launchOptions.compatibilityTool === "proton" && item.entry.launchOptions.winePrefix === null && (

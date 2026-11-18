@@ -86,3 +86,22 @@ export const pricesBody = z.object({
 export const timeToBeatBody = z.object({
   ids: z.array(gameId).min(1, "ids must not be empty").max(500, "at most 500 ids"),
 });
+
+/** Google Drive sign-in: the code from the loopback redirect, or a refresh token. */
+const loopback = z
+  .string()
+  .max(100)
+  .regex(/^http:\/\/127\.0\.0\.1:\d{1,5}\/callback$/, "redirectUri must be Cove's loopback address");
+
+export const googleTokenBody = z.discriminatedUnion("grantType", [
+  z.object({
+    grantType: z.literal("authorization_code"),
+    code: z.string().min(1).max(2048),
+    codeVerifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/, "codeVerifier must be a PKCE verifier"),
+    redirectUri: loopback,
+  }),
+  z.object({
+    grantType: z.literal("refresh_token"),
+    refreshToken: z.string().min(1).max(2048),
+  }),
+]);

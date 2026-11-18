@@ -67,6 +67,7 @@ Requirements: a Cloudflare account (the free plan is enough) and a Twitch applic
    npx wrangler secret put IGDB_CLIENT_SECRET
    npx wrangler secret put STEAM_API_KEY      # https://steamcommunity.com/dev/apikey (for the Steam endpoints)
    npx wrangler secret put ITAD_API_KEY       # https://isthereanydeal.com/apps/my/ (prices for the wishlist)
+   npx wrangler secret put GOOGLE_CLIENT_SECRET  # Google Drive save sync: the secret of the OAuth client in wrangler.toml
 ```
 
 5. **Check and deploy:**

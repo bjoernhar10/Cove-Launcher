@@ -39,6 +39,9 @@ pub struct IndexGame {
     /// This name is another name of that game.
     #[serde(default)]
     pub alias: Option<String>,
+    /// Stores whose own cloud keeps the saves (`steam`, `gog`, `epic` …).
+    #[serde(default)]
+    pub cloud: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,6 +61,8 @@ struct RawGame {
     gog: Option<RawId>,
     #[serde(default)]
     alias: Option<String>,
+    #[serde(default)]
+    cloud: HashMap<String, bool>,
 }
 
 #[derive(Deserialize, Default)]
@@ -113,12 +118,19 @@ pub fn index_from_yaml(yaml: &str) -> AppResult<Index> {
                 })
                 .collect();
             files.sort_by(|a, b| a.path.cmp(&b.path));
+            let mut cloud: Vec<String> = game
+                .cloud
+                .into_iter()
+                .filter_map(|(store, on)| on.then_some(store))
+                .collect();
+            cloud.sort();
             (!files.is_empty() || game.alias.is_some()).then(|| IndexGame {
                 name,
                 files,
                 steam: game.steam.and_then(|s| s.id),
                 gog: game.gog.and_then(|g| g.id),
                 alias: game.alias,
+                cloud,
             })
         })
         .collect();
@@ -153,7 +165,10 @@ impl Index {
     }
 }
 
-/// Keeps the index in `<dir>/index.json` up to date.
+/// The index file; a new name when its shape changes, so old ones are rebuilt.
+const INDEX_FILE: &str = "index-v2.json";
+
+/// Keeps the index in `<dir>/index-v2.json` up to date.
 pub struct ManifestStore {
     dir: PathBuf,
     url: String,
@@ -166,7 +181,7 @@ impl ManifestStore {
     }
 
     fn index_path(&self) -> PathBuf {
-        self.dir.join("index.json")
+        self.dir.join(INDEX_FILE)
     }
 
     fn etag_path(&self) -> PathBuf {
@@ -229,7 +244,7 @@ impl ManifestStore {
         let index = tokio::task::spawn_blocking(move || index_from_yaml(&yaml))
             .await
             .map_err(|e| AppError::Download(e.to_string()))??;
-        let temp = self.dir.join("index.json.part");
+        let temp = self.dir.join(format!("{INDEX_FILE}.part"));
         tokio::fs::write(&temp, serde_json::to_vec(&index)?).await?;
         tokio::fs::rename(&temp, self.index_path()).await?;
         if let Some(etag) = etag {
@@ -268,6 +283,9 @@ Saltmarsh:
     id: 1234
   gog:
     id: 5678
+  cloud:
+    steam: true
+    gog: false
 Saltmarsh GOTY:
   alias: Saltmarsh
 Only Registry:
@@ -287,6 +305,7 @@ Only Registry:
             ["<base>/settings.ini", "<winDocuments>/Saltmarsh/Saves"]
         );
         assert_eq!(game.files[0].os, ["windows"]);
+        assert_eq!(game.cloud, ["steam"]);
         // By GOG id, by title, through an alias.
         assert_eq!(index.find(None, Some(5678), "x").unwrap().name, "Saltmarsh");
         assert_eq!(
@@ -333,7 +352,7 @@ Only Registry:
         let old = std::time::SystemTime::now() - Duration::from_secs(2 * 24 * 60 * 60);
         std::fs::File::options()
             .write(true)
-            .open(dir.path().join("index.json"))
+            .open(dir.path().join(INDEX_FILE))
             .unwrap()
             .set_modified(old)
             .unwrap();

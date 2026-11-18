@@ -3,6 +3,7 @@ import { api } from "../../api/index.ts";
 import { Button } from "../../components/ui/Button.tsx";
 import { ErrorState } from "../../components/ui/Feedback.tsx";
 import { Select, SettingRow, Switch } from "../../components/ui/Field.tsx";
+import { SaveSyncSettings } from "../../features/SaveSyncSettings.tsx";
 import { useMessages } from "../../i18n/index.ts";
 import { errorMessage, toast } from "../../stores/toasts.ts";
 import { Group, Panel, SettingsSkeleton } from "./parts.tsx";
@@ -77,6 +78,7 @@ export function BackupsTab() {
         </SettingRow>
       </Group>
       <p className="mt-4 text-xs text-fg-muted">{t.backups.source}</p>
+      <SaveSyncSettings />
     </Panel>
   );
 }

@@ -1025,6 +1025,48 @@ describe("Proton (Linux)", () => {
   });
 });
 
+describe("Cloud sync", () => {
+  it("connects a cloud in the settings and disconnects it again", async () => {
+    renderAt("/settings/backups");
+    fireEvent.click(await screen.findByRole("button", { name: "Mit OneDrive verbinden" }));
+    expect(await screen.findByText("Verbunden mit OneDrive (ann@example.com)")).toBeDefined();
+    expect(screen.getByText("Dieses Gerät heißt „Desk“.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Trennen" }));
+    expect(await screen.findByRole("button", { name: "Mit Google Drive verbinden" })).toBeDefined();
+    expect(core.saveSync.provider).toBeNull();
+  });
+
+  it("asks to sign in again when the cloud no longer takes the sign-in", async () => {
+    core.saveSync = { ...core.saveSync, provider: "googleDrive", account: "ann@example.com", needsReauth: true };
+    renderAt("/settings/backups");
+    fireEvent.click(await screen.findByRole("button", { name: "Erneut anmelden" }));
+    await waitFor(() => {
+      expect(core.saveSync.needsReauth).toBe(false);
+    });
+  });
+
+  it("syncs a game now and lets the user settle a conflict", async () => {
+    core.saveSync = { ...core.saveSync, provider: "oneDrive", account: null };
+    core.backups.tidewater = { known: true, files: 1, bytes: 10, backups: [] };
+    core.saveSyncGames.tidewater = { state: "conflict", syncedAt: null, conflict: { device: "Deck", savedAt: new Date(Date.now() - 2 * 3600_000).toISOString() } };
+    renderAt("/library/tidewater?tab=settings");
+    const conflict = await screen.findByRole("group", { name: "Zwei verschiedene Spielstände" });
+    expect(within(conflict).getByText(/Auf „Deck“ wurde vor 2 Stunden auch gespielt/)).toBeDefined();
+    fireEvent.click(within(conflict).getByRole("button", { name: "Stand von diesem Gerät" }));
+    expect(await screen.findByText("Spielstand übernommen.")).toBeDefined();
+    await waitFor(() => {
+      expect(core.saveSyncGames.tidewater?.state).toBe("synced");
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Jetzt abgleichen" }));
+    expect(await screen.findByText("Spielstände abgeglichen.")).toBeDefined();
+  });
+
+  it("says how to switch it on when no cloud is connected", async () => {
+    renderAt("/library/tidewater?tab=settings");
+    expect(await screen.findByText("Aus. Verbinde Cove unter Einstellungen → Spielstände mit deiner Cloud.")).toBeDefined();
+  });
+});
+
 describe("Save backups", () => {
   it("backs a game up and restores a backup after asking", async () => {
     core.backups.tidewater = {

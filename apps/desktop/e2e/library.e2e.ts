@@ -72,6 +72,23 @@ test.describe("Bibliothek", () => {
     await expect(toasts(page).getByText("3 Dateien wiederhergestellt.")).toBeVisible();
   });
 
+  test("Spielstände über die eigene Cloud abgleichen", async ({ page }) => {
+    await openCove(page, "/settings/backups");
+    const settings = page.getByRole("region", { name: "Cloud-Sync" });
+    await settings.getByRole("button", { name: "Mit OneDrive verbinden" }).click();
+    await expect(settings.getByText("Verbunden mit OneDrive (ann@example.com)")).toBeVisible();
+
+    // In the app (a reload would start the fake core afresh).
+    await page.evaluate(() => {
+      window.location.hash = "#/library/game-0?tab=settings";
+    });
+    const game = page.getByRole("region", { name: "Cloud-Sync" });
+    await expect(game.getByText("Wird beim nächsten Start abgeglichen.")).toBeVisible();
+    await game.getByRole("button", { name: "Jetzt abgleichen" }).click();
+    await expect(toasts(page).getByText("Spielstände abgeglichen.")).toBeVisible();
+    await expect(game.getByText(/^Abgeglichen /)).toBeVisible();
+  });
+
   test("ROMs eines Emulators in die Bibliothek holen", async ({ page }) => {
     await openCove(page, "/settings/emulators");
     await page.getByLabel("Ordner").fill("/home/alex/ROMs/SNES");

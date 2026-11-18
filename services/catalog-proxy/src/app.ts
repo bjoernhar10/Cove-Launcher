@@ -9,6 +9,7 @@ import type {
   ProxyErrorCode,
   ProxyGame,
   ProxyMatchResponse,
+  ProxyOAuthToken,
   ProxyPage,
   ProxyPricesResponse,
   ProxyTimeToBeatResponse,
@@ -31,8 +32,9 @@ import {
 } from "./igdb-query.ts";
 import { mapGame, type IgdbGame } from "./mapping.ts";
 import { normalize, score } from "./match.ts";
+import { googleToken } from "./google.ts";
 import { ItadClient } from "./itad.ts";
-import { browseQuery, gameId, matchBody, pricesBody, searchQuery, steamAppId, steamId, timeToBeatBody } from "./schemas.ts";
+import { browseQuery, gameId, googleTokenBody, matchBody, pricesBody, searchQuery, steamAppId, steamId, timeToBeatBody } from "./schemas.ts";
 import { SteamClient, steamAchievements, steamOwned, steamProfile, steamRarity, steamSchema } from "./steam.ts";
 
 const SEARCH_LIMIT = 20;
@@ -226,6 +228,20 @@ export function createApp(deps: Deps = {}) {
     const items: ProxyPricesResponse["items"] = {};
     for (const game of games) items[game.key] = body[game.title] ?? null;
     return c.json({ items } satisfies ProxyPricesResponse);
+  });
+
+  // ───────────── Google Drive sign-in (secret stays in the Worker) ─────────────
+
+  // Never cached: tokens only pass through.
+  app.post("/v1/oauth/google/token", async (c) => {
+    const json: unknown = await c.req.json().catch(() => {
+      throw new ApiError(400, "invalid_request", "body must be JSON");
+    });
+    const input = parse(googleTokenBody, json);
+    const result = await googleToken(c.env, input, deps.fetch ?? ((i, init) => fetch(i, init)));
+    c.header("Cache-Control", "no-store");
+    if (!result.ok) return c.json(errorBody("invalid_grant", "Google did not accept the sign-in."), 400);
+    return c.json(result.token satisfies ProxyOAuthToken);
   });
 
   // ───────────── Steam (key stays in the Worker) ─────────────

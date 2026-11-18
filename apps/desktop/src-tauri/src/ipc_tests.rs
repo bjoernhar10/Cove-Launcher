@@ -80,6 +80,13 @@ async fn app_with(
         tmp.path().join("plugins"),
         vec![tmp.path().join("dev-plugins")],
     ));
+    // Nothing listens there: tests never download the Ludusavi manifest.
+    let backups = Arc::new(crate::backups::BackupService::new(
+        pool.clone(),
+        default_settings(None),
+        tmp.path().to_path_buf(),
+        "http://127.0.0.1:1/manifest.yaml".into(),
+    ));
     let state = AppState {
         launcher: Launcher::new(
             pool.clone(),
@@ -127,12 +134,28 @@ async fn app_with(
             },
         )),
         // Nothing listens there: tests never talk to ProtonDB or Steam.
-        // Nothing listens there: tests never download the Ludusavi manifest.
-        backups: Arc::new(crate::backups::BackupService::new(
+        backups: backups.clone(),
+        // Nothing listens there either: no cloud in tests.
+        save_sync: Arc::new(crate::savesync::SaveSync::new(
             pool.clone(),
             default_settings(None),
-            tmp.path().to_path_buf(),
-            "http://127.0.0.1:1/manifest.yaml".into(),
+            backups,
+            secrets.clone(),
+            crate::savesync::cloud::Endpoints {
+                proxy: Some("http://127.0.0.1:1".into()),
+                google_auth: "http://127.0.0.1:1/auth".into(),
+                google_api: "http://127.0.0.1:1".into(),
+                microsoft_login: "http://127.0.0.1:1/login".into(),
+                graph: "http://127.0.0.1:1/graph".into(),
+                google_client_id: "gid".into(),
+                // Without an id OneDrive is not offered: `save_sync_connect` answers at once.
+                onedrive_client_id: String::new(),
+                dropbox_auth: "http://127.0.0.1:1/dbauth".into(),
+                dropbox_api: "http://127.0.0.1:1".into(),
+                dropbox_content: "http://127.0.0.1:1".into(),
+                dropbox_client_id: String::new(),
+            },
+            Arc::new(|_, _| {}),
         )),
         gamepads: Arc::new(crate::gamepad::Gamepads::default()),
         discord: Arc::new(crate::discord::Discord::default()),
@@ -1288,4 +1311,45 @@ async fn mods_accept_frontend_payloads() {
         json!({ "gameId": id, "modId": mod_id }),
     );
     assert_eq!(mods, json!([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn save_sync_accepts_frontend_payloads() {
+    let app = app().await;
+    let status: Value = invoke(&app, "save_sync_status", json!({}));
+    assert_eq!(status["provider"], Value::Null);
+    assert_eq!(status["needsReauth"], false);
+    assert_eq!(status["available"], json!(["googleDrive"]));
+    assert!(status["device"].as_str().is_some_and(|d| !d.is_empty()));
+    let error =
+        invoke_raw(&app, "save_sync_connect", json!({ "provider": "oneDrive" })).unwrap_err();
+    assert_eq!(error["kind"], "invalidInput");
+
+    let exe = app.tmp.path().join("game.x86_64");
+    std::fs::write(&exe, b"x").unwrap();
+    let added: LibraryItem = invoke(
+        &app,
+        "library_add_manual",
+        json!({ "input": { "title": "Tide", "executablePath": exe.to_string_lossy(), "sizeBytes": null } }),
+    );
+    let id = added.game.id;
+    let off = json!({ "state": "off", "syncedAt": null, "conflict": null });
+    assert_eq!(
+        invoke::<Value>(&app, "game_save_sync", json!({ "gameId": id })),
+        off
+    );
+    assert_eq!(
+        invoke::<Value>(&app, "game_save_sync_now", json!({ "gameId": id })),
+        off
+    );
+    assert_eq!(
+        invoke::<Value>(
+            &app,
+            "game_save_sync_resolve",
+            json!({ "gameId": id, "keep": "local" })
+        ),
+        off
+    );
+    let status: Value = invoke(&app, "save_sync_disconnect", json!({}));
+    assert_eq!(status["provider"], Value::Null);
 }

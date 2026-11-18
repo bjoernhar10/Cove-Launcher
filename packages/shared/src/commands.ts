@@ -29,6 +29,10 @@ import type {
   ExternalGame,
   FpsLog,
   SunshineStatus,
+  SaveSyncStatus,
+  GameSaveSync,
+  CloudProvider,
+  SaveSyncKeep,
   FreeGame,
   GameNews,
   GameShortcut,
@@ -174,6 +178,18 @@ export interface CoveCommands {
   sunshine_sync: { args: NoArgs; result: SunshineStatus };
   /** Takes Cove's games out of Sunshine's app list. */
   sunshine_remove: { args: NoArgs; result: SunshineStatus };
+  /** Save sync: the connected cloud, if any. */
+  save_sync_status: { args: NoArgs; result: SaveSyncStatus };
+  /** Sign-in to the cloud in the system browser (Cove's app folder only). */
+  save_sync_connect: { args: { provider: CloudProvider }; result: SaveSyncStatus };
+  /** Forgets the cloud on this computer; the saves in it stay. */
+  save_sync_disconnect: { args: NoArgs; result: SaveSyncStatus };
+  /** A game's save sync, without asking the cloud. */
+  game_save_sync: { args: { gameId: GameId }; result: GameSaveSync };
+  /** Syncs the game's saves now (refused while it runs). */
+  game_save_sync_now: { args: { gameId: GameId }; result: GameSaveSync };
+  /** A conflict: which side wins; the other is kept as a save backup (refused while the game runs). */
+  game_save_sync_resolve: { args: { gameId: GameId; keep: SaveSyncKeep }; result: GameSaveSync };
   /** Recent posts of the games played last (Home). */
   news_recent: { args: NoArgs; result: GameNews[] };
   /** Linux: GE-Proton releases, installed builds and Steam's builds. */
@@ -304,6 +320,8 @@ export type CoveCommand = keyof CoveCommands;
 
 /** Events emitted by the core (name → payload). */
 export interface CoveEvents {
+  /** A game's saves were synced, or a conflict came up. */
+  "save-sync-changed": { gameId: GameId };
   "game-state-changed": GameStateEvent;
   "downloads-changed": DownloadItem[];
   "download-progress": DownloadProgress;

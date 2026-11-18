@@ -12,4 +12,8 @@ export interface Env {
   STEAM_API_KEY: string;
   /** IsThereAnyDeal API key (https://isthereanydeal.com/apps/my/). */
   ITAD_API_KEY: string;
+  /** Google OAuth client of Cove's Drive save sync (a var in wrangler.toml, not a secret). */
+  GOOGLE_CLIENT_ID: string;
+  /** Its client secret (Google wants it even with PKCE). */
+  GOOGLE_CLIENT_SECRET: string;
 }

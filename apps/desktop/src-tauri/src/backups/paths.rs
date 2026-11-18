@@ -155,6 +155,81 @@ impl Context {
     }
 }
 
+/// Folders a save may lie in, named so another computer can find its own
+/// copy: `<winAppData>` is the roaming `AppData` of this Windows user or of a
+/// prefix, `<winHome>` that user's profile, `<home>` a Linux/macOS home.
+impl Context {
+    pub fn roots(&self) -> Vec<(&'static str, PathBuf)> {
+        let mut out = Vec::new();
+        if let Some(base) = &self.base {
+            out.push(("<base>", base.clone()));
+        }
+        if let Some(w) = &self.windows {
+            out.extend([
+                ("<winHome>", self.home.clone()),
+                ("<winAppData>", w.app_data.clone()),
+                ("<winLocalAppData>", w.local_app_data.clone()),
+                (
+                    "<winLocalAppDataLow>",
+                    w.local_app_data.with_file_name("LocalLow"),
+                ),
+                ("<winDocuments>", w.documents.clone()),
+                ("<winPublic>", w.public.clone()),
+                ("<winProgramData>", w.program_data.clone()),
+                ("<winDir>", w.windows.clone()),
+            ]);
+        } else {
+            out.push(("<home>", self.home.clone()));
+        }
+        if let Some(dir) = &self.xdg_data {
+            out.push(("<xdgData>", dir.clone()));
+        }
+        if let Some(dir) = &self.xdg_config {
+            out.push(("<xdgConfig>", dir.clone()));
+        }
+        out
+    }
+}
+
+/// `/home/u/.local/share/x/a.sav` → `<xdgData>/x/a.sav`: a file's path below
+/// the deepest known folder, with `/`. None when it is below none of them.
+pub fn portable(path: &Path, contexts: &[Context]) -> Option<String> {
+    let (name, rest) = contexts
+        .iter()
+        .flat_map(Context::roots)
+        .filter_map(|(name, root)| Some((name, path.strip_prefix(&root).ok()?.to_owned())))
+        .min_by_key(|(_, rest)| rest.components().count())?;
+    let parts: Vec<String> = rest
+        .components()
+        .map(|c| match c {
+            std::path::Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    if parts.is_empty() || parts.iter().any(|p| p.contains(['/', '\\'])) {
+        return None;
+    }
+    Some(format!("{name}/{}", parts.join("/")))
+}
+
+/// The other way round, on this computer: the first context that has the
+/// folder. None for folders this computer lacks and for unsafe paths.
+pub fn resolve(portable: &str, contexts: &[Context]) -> Option<PathBuf> {
+    let (name, rest) = portable.split_once('/')?;
+    let parts: Vec<&str> = rest.split('/').collect();
+    let unsafe_part =
+        |p: &&str| p.is_empty() || *p == "." || *p == ".." || p.contains(['\\', ':', '\0']);
+    if parts.iter().any(unsafe_part) {
+        return None;
+    }
+    let root = contexts
+        .iter()
+        .flat_map(Context::roots)
+        .find(|(n, _)| *n == name)?
+        .1;
+    Some(parts.iter().fold(root, |path, part| path.join(part)))
+}
+
 /// `Saves/<home>` → `[sS][aA][vV][eE][sS]/<home>`: the manifest's own letters
 /// match in any case (glob ignores its case option for plain path parts);
 /// placeholders and the values put in for them stay as they are.
@@ -278,6 +353,7 @@ mod tests {
             steam: None,
             gog: None,
             alias: None,
+            cloud: Vec::new(),
         };
         let context = Context {
             os: Os::Windows,
@@ -299,6 +375,86 @@ mod tests {
                 install.join("Settings.INI")
             ]
         );
+    }
+
+    #[test]
+    fn save_paths_travel_between_windows_and_a_prefix() {
+        let windows_pc = Context {
+            os: Os::Windows,
+            store: None,
+            store_game_id: None,
+            base: Some(PathBuf::from("/c/Games/Saltmarsh")),
+            home: PathBuf::from("/c/Users/Ann"),
+            os_user: "Ann".into(),
+            windows: Some(WindowsDirs::of_profile(
+                Path::new("/c/Users/Ann"),
+                Path::new("/c"),
+            )),
+            xdg_data: None,
+            xdg_config: None,
+        };
+        let save = Path::new("/c/Users/Ann/AppData/Roaming/Saltmarsh/slot 1.sav");
+        let moved = portable(save, std::slice::from_ref(&windows_pc)).unwrap();
+        assert_eq!(moved, "<winAppData>/Saltmarsh/slot 1.sav");
+        assert_eq!(
+            portable(
+                Path::new("/c/Games/Saltmarsh/cfg.ini"),
+                std::slice::from_ref(&windows_pc)
+            )
+            .as_deref(),
+            Some("<base>/cfg.ini")
+        );
+        assert_eq!(portable(Path::new("/elsewhere/x"), &[windows_pc]), None);
+
+        // The same save on a Steam Deck: inside the game's Proton prefix.
+        let drive_c = PathBuf::from("/home/deck/compat/g/pfx/drive_c");
+        let (profile, dirs) = WindowsDirs::in_prefix(&drive_c, "steamuser");
+        let deck = vec![
+            Context {
+                os: Os::Windows,
+                store: None,
+                store_game_id: None,
+                base: None,
+                home: profile,
+                os_user: "steamuser".into(),
+                windows: Some(dirs),
+                xdg_data: None,
+                xdg_config: None,
+            },
+            Context {
+                os: Os::Linux,
+                store: None,
+                store_game_id: None,
+                base: None,
+                home: PathBuf::from("/home/deck"),
+                os_user: "deck".into(),
+                windows: None,
+                xdg_data: Some(PathBuf::from("/home/deck/.local/share")),
+                xdg_config: None,
+            },
+        ];
+        assert_eq!(
+            resolve(&moved, &deck),
+            Some(drive_c.join("users/steamuser/AppData/Roaming/Saltmarsh/slot 1.sav"))
+        );
+        // The deepest folder wins: the prefix lies below the Linux home.
+        assert_eq!(
+            portable(
+                &drive_c.join("users/steamuser/Documents/Saltmarsh/a.sav"),
+                &deck
+            )
+            .as_deref(),
+            Some("<winDocuments>/Saltmarsh/a.sav")
+        );
+        assert_eq!(
+            resolve("<home>/.config/x", &deck),
+            Some(PathBuf::from("/home/deck/.config/x"))
+        );
+        // A folder this computer lacks, and paths leaving their folder.
+        assert_eq!(resolve("<base>/cfg.ini", &deck), None);
+        assert_eq!(resolve("<winAppData>/../../etc/passwd", &deck), None);
+        assert_eq!(resolve("<winAppData>//x", &deck), None);
+        assert_eq!(resolve("noslash", &deck), None);
     }
 
     #[test]

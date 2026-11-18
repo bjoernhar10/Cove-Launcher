@@ -76,6 +76,8 @@ export function fakeEnv(options: FakeEnvOptions = {}) {
     IGDB_CLIENT_SECRET: options.secrets === false ? "" : "secret",
     STEAM_API_KEY: options.secrets === false ? "" : "steamkey",
     ITAD_API_KEY: options.secrets === false ? "" : "itadkey",
+    GOOGLE_CLIENT_ID: "gid.apps.googleusercontent.com",
+    GOOGLE_CLIENT_SECRET: options.secrets === false ? "" : "gsecret",
   } as unknown as Env;
   return { env, kv, gate, limiter };
 }

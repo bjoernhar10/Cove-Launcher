@@ -109,6 +109,11 @@ No ads, no social feed, no account of its own.
   you choose, for example one that Syncthing or Nextcloud syncs. Where a game keeps its saves comes
   from the open [Ludusavi manifest](https://github.com/mtkennerly/ludusavi-manifest) (over 20,000
   games), also inside Proton prefixes. Restore any backup from the game page.
+- **Cloud saves for every game, from every store, on every device:** connect your own Google Drive,
+  OneDrive or Dropbox once, and Cove fetches newer saves before a game starts and uploads changed ones after
+  playing. A save made on Windows lands in the game's Proton prefix on a Steam Deck. Cove only sees
+  its own app folder in your cloud, needs no server and no Cove account, and never overwrites a save
+  without keeping a backup. When you played on two devices, Cove asks which save stays.
 - **Cloud saves** of the GOG and Epic games Cove installed are synced before and after playing,
   compatible with GOG Galaxy and the Epic Launcher.
 

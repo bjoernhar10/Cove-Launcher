@@ -1977,3 +1977,70 @@ pub struct SunshineStatus {
     /// How many of Cove's games are in it.
     pub games: u32,
 }
+
+/// A cloud the user's saves can sync through (their own account).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CloudProvider {
+    GoogleDrive,
+    OneDrive,
+    Dropbox,
+}
+
+/// Save sync: the connected cloud, if any.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveSyncStatus {
+    /// The connected cloud; null = save sync is off.
+    pub provider: Option<CloudProvider>,
+    /// E-mail or name of the account, when the cloud told it.
+    pub account: Option<String>,
+    /// The sign-in no longer works; sign in again.
+    pub needs_reauth: bool,
+    /// Clouds this build can connect to.
+    pub available: Vec<CloudProvider>,
+    /// This computer's name, shown to other devices.
+    pub device: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SaveSyncState {
+    /// No cloud connected.
+    Off,
+    /// Cove knows no save locations for this game.
+    Unsupported,
+    /// The store's own cloud keeps the saves (Steam Cloud …).
+    StoreCloud,
+    /// Not synced on this computer yet.
+    Pending,
+    Synced,
+    /// Played on two computers since the last sync: the user chooses.
+    Conflict,
+}
+
+/// The cloud's side of a conflict.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveSyncConflict {
+    /// The computer that saved it.
+    pub device: String,
+    pub saved_at: String,
+}
+
+/// Save sync of one game.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameSaveSync {
+    pub state: SaveSyncState,
+    pub synced_at: Option<String>,
+    pub conflict: Option<SaveSyncConflict>,
+}
+
+/// Which side of a conflict wins (the other one is kept as a backup).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SaveSyncKeep {
+    Cloud,
+    Local,
+}

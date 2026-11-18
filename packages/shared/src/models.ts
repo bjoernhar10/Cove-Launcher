@@ -1360,8 +1360,22 @@ export interface ProxyPricesResponse {
   items: Record<string, GamePrice | null>;
 }
 
+/** `POST /v1/oauth/google/token`: Google Drive sign-in (code or refresh), the secret stays in the Worker. */
+export type ProxyGoogleTokenRequest =
+  | { grantType: "authorization_code"; code: string; codeVerifier: string; redirectUri: string }
+  | { grantType: "refresh_token"; refreshToken: string };
+
+export interface ProxyOAuthToken {
+  accessToken: string;
+  /** Only with a new sign-in (Google keeps the old one on refresh). */
+  refreshToken: string | null;
+  /** Seconds. */
+  expiresIn: number;
+}
+
 export type ProxyErrorCode =
   | "invalid_request"
+  | "invalid_grant"
   | "not_found"
   | "rate_limited"
   | "upstream_error"
@@ -1489,3 +1503,45 @@ export interface SunshineStatus {
   /** How many of Cove's games are in it. */
   games: number;
 }
+
+/** A cloud the user's saves can sync through (their own account). */
+export type CloudProvider = "googleDrive" | "oneDrive" | "dropbox";
+
+/** Save sync: the connected cloud, if any. */
+export interface SaveSyncStatus {
+  /** The connected cloud; null = save sync is off. */
+  provider: CloudProvider | null;
+  /** E-mail or name of the account, when the cloud told it. */
+  account: string | null;
+  /** The sign-in no longer works; sign in again. */
+  needsReauth: boolean;
+  /** Clouds this build can connect to. */
+  available: CloudProvider[];
+  /** This computer's name, shown to other devices. */
+  device: string;
+}
+
+/**
+ * `off` no cloud connected, `unsupported` no known save locations,
+ * `storeCloud` the store's own cloud keeps them (Steam Cloud …), `pending`
+ * not synced on this computer yet, `conflict` played on two computers since
+ * the last sync.
+ */
+export type SaveSyncState = "off" | "unsupported" | "storeCloud" | "pending" | "synced" | "conflict";
+
+/** The cloud's side of a conflict. */
+export interface SaveSyncConflict {
+  /** The computer that saved it. */
+  device: string;
+  savedAt: string;
+}
+
+/** Save sync of one game. */
+export interface GameSaveSync {
+  state: SaveSyncState;
+  syncedAt: string | null;
+  conflict: SaveSyncConflict | null;
+}
+
+/** Which side of a conflict wins (the other one is kept as a backup). */
+export type SaveSyncKeep = "cloud" | "local";

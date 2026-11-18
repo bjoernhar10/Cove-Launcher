@@ -532,6 +532,15 @@
       ],
       "type": "object"
     },
+    "CloudProvider": {
+      "description": "A cloud the user's saves can sync through (their own account).",
+      "enum": [
+        "googleDrive",
+        "oneDrive",
+        "dropbox"
+      ],
+      "type": "string"
+    },
     "Collection": {
       "additionalProperties": false,
       "description": "One of the user's own collections (\"Mit Freunden\", \"Angefangen\" ...). A game can be in several.",
@@ -1613,6 +1622,37 @@
         "deals",
         "historyLow",
         "checkedAt"
+      ],
+      "type": "object"
+    },
+    "GameSaveSync": {
+      "additionalProperties": false,
+      "description": "Save sync of one game.",
+      "properties": {
+        "conflict": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SaveSyncConflict"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "$ref": "#/definitions/SaveSyncState"
+        },
+        "syncedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "syncedAt",
+        "conflict"
       ],
       "type": "object"
     },
@@ -3472,6 +3512,7 @@
     "ProxyErrorCode": {
       "enum": [
         "invalid_request",
+        "invalid_grant",
         "not_found",
         "rate_limited",
         "upstream_error",
@@ -3492,6 +3533,53 @@
         "game"
       ],
       "type": "object"
+    },
+    "ProxyGoogleTokenRequest": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "codeVerifier": {
+              "type": "string"
+            },
+            "grantType": {
+              "const": "authorization_code",
+              "type": "string"
+            },
+            "redirectUri": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "grantType",
+            "code",
+            "codeVerifier",
+            "redirectUri"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "grantType": {
+              "const": "refresh_token",
+              "type": "string"
+            },
+            "refreshToken": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "grantType",
+            "refreshToken"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "`POST /v1/oauth/google/token`: Google Drive sign-in (code or refresh), the secret stays in the Worker."
     },
     "ProxyMatchRequest": {
       "additionalProperties": false,
@@ -3519,6 +3607,31 @@
       },
       "required": [
         "candidates"
+      ],
+      "type": "object"
+    },
+    "ProxyOAuthToken": {
+      "additionalProperties": false,
+      "properties": {
+        "accessToken": {
+          "type": "string"
+        },
+        "expiresIn": {
+          "description": "Seconds.",
+          "type": "number"
+        },
+        "refreshToken": {
+          "description": "Only with a new sign-in (Google keeps the old one on refresh).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "accessToken",
+        "refreshToken",
+        "expiresIn"
       ],
       "type": "object"
     },
@@ -4021,6 +4134,91 @@
       "required": [
         "gameId",
         "startedAt"
+      ],
+      "type": "object"
+    },
+    "SaveSyncConflict": {
+      "additionalProperties": false,
+      "description": "The cloud's side of a conflict.",
+      "properties": {
+        "device": {
+          "description": "The computer that saved it.",
+          "type": "string"
+        },
+        "savedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "device",
+        "savedAt"
+      ],
+      "type": "object"
+    },
+    "SaveSyncKeep": {
+      "description": "Which side of a conflict wins (the other one is kept as a backup).",
+      "enum": [
+        "cloud",
+        "local"
+      ],
+      "type": "string"
+    },
+    "SaveSyncState": {
+      "description": "`off` no cloud connected, `unsupported` no known save locations, `storeCloud` the store's own cloud keeps them (Steam Cloud …), `pending` not synced on this computer yet, `conflict` played on two computers since the last sync.",
+      "enum": [
+        "off",
+        "unsupported",
+        "storeCloud",
+        "pending",
+        "synced",
+        "conflict"
+      ],
+      "type": "string"
+    },
+    "SaveSyncStatus": {
+      "additionalProperties": false,
+      "description": "Save sync: the connected cloud, if any.",
+      "properties": {
+        "account": {
+          "description": "E-mail or name of the account, when the cloud told it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "available": {
+          "description": "Clouds this build can connect to.",
+          "items": {
+            "$ref": "#/definitions/CloudProvider"
+          },
+          "type": "array"
+        },
+        "device": {
+          "description": "This computer's name, shown to other devices.",
+          "type": "string"
+        },
+        "needsReauth": {
+          "description": "The sign-in no longer works; sign in again.",
+          "type": "boolean"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CloudProvider"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The connected cloud; null = save sync is off."
+        }
+      },
+      "required": [
+        "provider",
+        "account",
+        "needsReauth",
+        "available",
+        "device"
       ],
       "type": "object"
     },

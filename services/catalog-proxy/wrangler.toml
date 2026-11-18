@@ -6,6 +6,11 @@ compatibility_date = "2026-10-01"
 workers_dev = true
 
 # Secrets (never in this file): wrangler secret put IGDB_CLIENT_ID / IGDB_CLIENT_SECRET
+# (also STEAM_API_KEY, ITAD_API_KEY, GOOGLE_CLIENT_SECRET)
+
+# Not secrets: Google's OAuth client of Cove's Drive save sync.
+[vars]
+GOOGLE_CLIENT_ID = "316912259410-at7u3acbgt2f8de7lgh101e2jfvgaphr.apps.googleusercontent.com"
 
 # Twitch app access token cache. Create with: wrangler kv namespace create TOKENS
 [[kv_namespaces]]

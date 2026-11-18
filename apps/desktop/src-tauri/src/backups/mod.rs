@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::SqlitePool;
 
-use self::manifest::ManifestStore;
+use self::manifest::{IndexGame, ManifestStore};
 use self::paths::{Context, Os, WindowsDirs, MAX_BYTES, MAX_FILES};
 use crate::db;
 use crate::error::{AppError, AppResult};
@@ -135,6 +135,18 @@ fn write_backup(
     keep: usize,
     protect: Option<&Path>,
 ) -> AppResult<Option<BackupInfo>> {
+    write_backup_from(game_dir, item, files, keep, protect, &|p| p.to_owned())
+}
+
+/// Like `write_backup`, copying each file from `source(original)`.
+fn write_backup_from(
+    game_dir: &Path,
+    item: &LibraryItem,
+    files: &[(PathBuf, u64, i64)],
+    keep: usize,
+    protect: Option<&Path>,
+    source: &dyn Fn(&Path) -> PathBuf,
+) -> AppResult<Option<BackupInfo>> {
     if files.is_empty() {
         return Ok(None);
     }
@@ -157,7 +169,7 @@ fn write_backup(
         if let Some(parent) = to.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::copy(original, &to)?;
+        std::fs::copy(source(original), &to)?;
         record_files.push(RecordFile {
             original: original.to_string_lossy().into_owned(),
             stored,
@@ -216,6 +228,14 @@ fn restore_files(backup: &Path) -> AppResult<usize> {
         count += 1;
     }
     Ok(count)
+}
+
+/// A game's saves on this computer: its manifest entry, where it looks for
+/// them and the files there now (path, size, modification time).
+pub struct SaveSet {
+    pub game: IndexGame,
+    pub contexts: Vec<Context>,
+    pub files: Vec<(PathBuf, u64, i64)>,
 }
 
 pub struct BackupService {
@@ -370,37 +390,78 @@ impl BackupService {
         out
     }
 
-    /// The game's entry in the manifest and its files right now.
-    async fn current_files(
-        &self,
-        item: &LibraryItem,
-        host: &HostEnv,
-    ) -> AppResult<Option<Vec<(PathBuf, u64, i64)>>> {
+    /// The game's entry in the manifest.
+    pub async fn manifest_game(&self, item: &LibraryItem) -> AppResult<Option<IndexGame>> {
         let index = self.manifest.index().await?;
         let id = |source| {
             (item.entry.source == source)
                 .then(|| item.entry.store_game_id.as_deref()?.parse::<u64>().ok())
                 .flatten()
         };
-        let Some(game) = index
+        Ok(index
             .find(
                 id(StoreSource::Steam),
                 id(StoreSource::Gog),
                 &item.game.title,
             )
-            .cloned()
-        else {
+            .cloned())
+    }
+
+    /// The game's entry in the manifest and its files right now.
+    pub async fn save_set(&self, item: &LibraryItem, host: &HostEnv) -> AppResult<Option<SaveSet>> {
+        let Some(game) = self.manifest_game(item).await? else {
             return Ok(None);
         };
-        drop(index);
         let contexts = Self::contexts(item, host);
-        let files = tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let found = paths::find_files(&game, &contexts);
-            describe(&found)
+            let files = describe(&found)?;
+            Ok(Some(SaveSet {
+                game,
+                contexts,
+                files,
+            }))
         })
         .await
-        .map_err(|e| AppError::Download(e.to_string()))??;
-        Ok(Some(files))
+        .map_err(|e| AppError::Download(e.to_string()))?
+    }
+
+    async fn current_files(
+        &self,
+        item: &LibraryItem,
+        host: &HostEnv,
+    ) -> AppResult<Option<Vec<(PathBuf, u64, i64)>>> {
+        Ok(self.save_set(item, host).await?.map(|set| set.files))
+    }
+
+    /// A backup of files that are not on disk where they belong (the cloud's
+    /// copy of a save): each `(original, source)` is stored as `original`.
+    pub async fn import(
+        &self,
+        item: &LibraryItem,
+        files: Vec<(PathBuf, PathBuf)>,
+    ) -> AppResult<Option<BackupInfo>> {
+        let settings = self.settings().await?;
+        let game_dir = Self::game_dir(&self.root(&settings), item);
+        let keep = usize::try_from(settings.backups.keep).unwrap_or(10).max(1);
+        let item = item.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut described = Vec::with_capacity(files.len());
+            for (original, source) in &files {
+                let meta = std::fs::metadata(source)?;
+                let time = meta
+                    .modified()
+                    .ok()
+                    .map_or(0, |t| DateTime::<Utc>::from(t).timestamp());
+                described.push((original.clone(), meta.len(), time));
+            }
+            let sources: std::collections::HashMap<PathBuf, PathBuf> = files.into_iter().collect();
+            write_backup_from(&game_dir, &item, &described, keep, None, &|p| {
+                sources.get(p).cloned().unwrap_or_else(|| p.to_owned())
+            })
+        })
+        .await
+        .map_err(|e| AppError::Download(e.to_string()))?
     }
 
     /// What the game page shows: known to the manifest, files found now, backups.

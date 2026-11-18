@@ -41,6 +41,8 @@ pub struct AppState {
     pub proton: Arc<crate::proton::ProtonManager>,
     /// Save backups of every game.
     pub backups: Arc<crate::backups::BackupService>,
+    /// Save sync through the user's own cloud.
+    pub save_sync: Arc<crate::savesync::SaveSync>,
     /// Wishlist prices and price alerts.
     pub prices: Arc<crate::prices::PriceService>,
     pub free_games: Arc<crate::free_games::FreeGames>,

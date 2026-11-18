@@ -93,8 +93,26 @@ impl LoopbackServer {
         Ok(Self { listener, port })
     }
 
+    /// Binds 127.0.0.1 on a fixed port (providers that want the exact redirect address).
+    pub async fn bind_port(port: u16) -> AppResult<Self> {
+        let listener = TcpListener::bind(("127.0.0.1", port)).await.map_err(|e| {
+            eprintln!("[cove] Port {port} für die Anmeldung belegt: {e}");
+            AppError::LoginFailed(tr!(
+                "Die Anmeldung braucht den Port {port}, aber ein anderes Programm nutzt ihn gerade. Schließe es und versuche es noch einmal.",
+                "The sign-in needs port {port}, but another program is using it. Close it and try again."
+            ))
+        })?;
+        Ok(Self { listener, port })
+    }
+
     pub fn redirect_uri(&self) -> String {
         format!("http://127.0.0.1:{}/callback", self.port)
+    }
+
+    /// The same address as `localhost` (Microsoft registers loopback
+    /// redirects only under that name; it ignores the port).
+    pub fn localhost_redirect_uri(&self) -> String {
+        format!("http://localhost:{}/callback", self.port)
     }
 
     /// Waits for the provider's redirect. Requests to other paths or with a

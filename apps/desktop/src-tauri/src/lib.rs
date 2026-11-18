@@ -32,6 +32,7 @@ mod prices;
 mod proton;
 mod protondb;
 mod recommend;
+mod savesync;
 mod scanner;
 mod shortcuts;
 mod sidecar;
@@ -176,6 +177,12 @@ macro_rules! cove_handlers {
             $crate::commands::sunshine_status,
             $crate::commands::sunshine_sync,
             $crate::commands::sunshine_remove,
+            $crate::commands::save_sync_status,
+            $crate::commands::save_sync_connect,
+            $crate::commands::save_sync_disconnect,
+            $crate::commands::game_save_sync,
+            $crate::commands::game_save_sync_now,
+            $crate::commands::game_save_sync_resolve,
             $crate::commands::downloads_reorder,
             $crate::commands::downloads_clear_history,
             $crate::commands::system_profile,
@@ -312,6 +319,12 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
 
     let downloads = build_downloads(app, &pool, &defaults, &stores, open_url.clone());
     let proton = build_proton(app, &pool, &data_dir, &host, &defaults);
+    let backups = Arc::new(backups::BackupService::new(
+        pool.clone(),
+        defaults.clone(),
+        data_dir.clone(),
+        backups::manifest::MANIFEST_URL.into(),
+    ));
 
     Ok(AppState {
         recommender,
@@ -339,12 +352,8 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         discord: Arc::new(discord::Discord::default()),
         gamepads: Arc::new(gamepad::Gamepads::default()),
         proton,
-        backups: Arc::new(backups::BackupService::new(
-            pool.clone(),
-            defaults.clone(),
-            data_dir.clone(),
-            backups::manifest::MANIFEST_URL.into(),
-        )),
+        save_sync: build_save_sync(app, &pool, &defaults, &backups),
+        backups,
         launcher: Launcher::new(pool.clone(), emit, open_url, Timing::default()),
         defaults,
         catalog,
@@ -415,10 +424,53 @@ fn after_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, game_id: String) 
             eprintln!("[cove] Cloud-Spielstände von {game_id}: {error}");
         }
         state.backups.after_session(&game_id, &state.host).await;
+        state.save_sync.after_session(&game_id, &state.host).await;
         if let Err(error) = state.fps.collect(&game_id).await {
             eprintln!("[cove] FPS-Log von {game_id}: {error}");
         }
     });
+}
+
+pub const SAVE_SYNC_CHANGED: &str = "save-sync-changed";
+
+/// Save sync through the user's cloud; a conflict also gets a desktop notification.
+fn build_save_sync(
+    app: &tauri::App,
+    pool: &sqlx::SqlitePool,
+    defaults: &models::AppSettings,
+    backups: &Arc<backups::BackupService>,
+) -> Arc<savesync::SaveSync> {
+    use tauri_plugin_notification::NotificationExt;
+    let handle = app.handle().clone();
+    let notify = Arc::new(move |item: &models::LibraryItem, notice| {
+        let _ = handle.emit(
+            SAVE_SYNC_CHANGED,
+            serde_json::json!({ "gameId": item.game.id }),
+        );
+        if notice == savesync::Notice::Conflict {
+            let title = &item.game.title;
+            let _ = handle
+                .notification()
+                .builder()
+                .title(tr!(
+                    "Spielstände von {title} weichen ab",
+                    "Saves of {title} differ"
+                ))
+                .body(tr!(
+                    "Auf einem anderen Gerät wurde auch gespielt. Wähle auf der Seite des Spiels, welcher Stand bleibt.",
+                    "It was played on another device too. Choose on the game's page which save stays."
+                ))
+                .show();
+        }
+    });
+    Arc::new(savesync::SaveSync::new(
+        pool.clone(),
+        defaults.clone(),
+        backups.clone(),
+        Arc::new(catalog::secrets::KeyringStore::app()),
+        savesync::cloud::Endpoints::default(),
+        notify,
+    ))
 }
 
 /// Shortcuts go to the desktop and the app menu of this system.

@@ -3,6 +3,8 @@
  * Tauri's `mockIPC`. Keeps the UI tests independent of a running app.
  */
 import type {
+  GameSaveSync,
+  SaveSyncStatus,
   AppErrorKind,
   AppSettings,
   CatalogPage,
@@ -301,6 +303,10 @@ export interface FakeCore {
   sunshineFound: boolean;
   /** Cove's games in Sunshine's list. */
   sunshineGames: number;
+  /** The connected cloud of save sync (`save_sync_status`), null = off. */
+  saveSync: SaveSyncStatus;
+  /** Save sync per game id; missing = `pending` when connected. */
+  saveSyncGames: Record<string, GameSaveSync>;
   /** What `mods_pick` "picks"; null = cancelled. */
   modPick: string | null;
   /** Games Heroic and Lutris know (`launchers_scan`). */
@@ -467,6 +473,8 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     fpsLogs: {},
     sunshineFound: false,
     sunshineGames: 0,
+    saveSync: { provider: null, account: null, needsReauth: false, available: ["googleDrive", "oneDrive", "dropbox"], device: "Desk" },
+    saveSyncGames: {},
     modPick: null,
     imports: [],
     gameSizes: {},
@@ -789,6 +797,36 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     game_fps_logs_clear: ({ gameId }) => {
       core.fpsLogs[gameId] = [];
       return null;
+    },
+    save_sync_status: () => core.saveSync,
+    save_sync_connect: ({ provider }) => {
+      core.saveSync = { ...core.saveSync, provider, account: "ann@example.com", needsReauth: false };
+      return core.saveSync;
+    },
+    save_sync_disconnect: () => {
+      core.saveSync = { ...core.saveSync, provider: null, account: null, needsReauth: false };
+      core.saveSyncGames = {};
+      return core.saveSync;
+    },
+    game_save_sync: ({ gameId }): GameSaveSync => {
+      require(gameId);
+      if (!core.saveSync.provider) return { state: "off", syncedAt: null, conflict: null };
+      if (!core.backups[gameId]?.known) return { state: "unsupported", syncedAt: null, conflict: null };
+      return core.saveSyncGames[gameId] ?? { state: "pending", syncedAt: null, conflict: null };
+    },
+    game_save_sync_now: ({ gameId }): GameSaveSync => {
+      require(gameId);
+      const current = core.saveSyncGames[gameId];
+      if (current?.state === "conflict") return current;
+      const synced: GameSaveSync = { state: "synced", syncedAt: new Date().toISOString(), conflict: null };
+      core.saveSyncGames[gameId] = synced;
+      return synced;
+    },
+    game_save_sync_resolve: ({ gameId }): GameSaveSync => {
+      require(gameId);
+      const synced: GameSaveSync = { state: "synced", syncedAt: new Date().toISOString(), conflict: null };
+      core.saveSyncGames[gameId] = synced;
+      return synced;
     },
     sunshine_status: (): SunshineStatus => ({
       found: core.sunshineFound,

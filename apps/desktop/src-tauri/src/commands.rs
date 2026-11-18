@@ -782,6 +782,7 @@ pub async fn launch_game(state: &AppState, game_id: &str) -> AppResult<LaunchRes
     if item.entry.source == StoreSource::Gog && item.entry.installed_by_cove {
         state.downloads.gog_saves_before_launch(&item, &host).await;
     }
+    state.save_sync.before_launch(&item, &host).await;
     if item.entry.source == StoreSource::Epic && item.entry.installed_by_cove {
         let args = state.downloads.epic_launch_args(&item, &host).await?;
         return state.launcher.launch_with(&item, &host, args, Vec::new());
@@ -2299,4 +2300,74 @@ pub async fn sunshine_remove(
     tokio::task::spawn_blocking(move || sunshine.remove())
         .await
         .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?
+}
+
+// ───────────── save sync (the user's own cloud) ─────────────
+
+fn refuse_while_running(state: &AppState, game_id: &str) -> AppResult<()> {
+    if state
+        .launcher
+        .running()
+        .iter()
+        .any(|r| r.game_id == game_id)
+    {
+        return Err(AppError::InvalidInput(tr!(
+            "Beende das Spiel, bevor Cove seine Spielstände abgleicht.",
+            "Quit the game before Cove syncs its saves."
+        )));
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn save_sync_status(
+    state: State<'_, AppState>,
+) -> AppResult<crate::models::SaveSyncStatus> {
+    state.save_sync.status().await
+}
+
+/// Sign-in to the cloud in the system browser.
+#[tauri::command]
+pub async fn save_sync_connect(
+    state: State<'_, AppState>,
+    provider: crate::models::CloudProvider,
+) -> AppResult<crate::models::SaveSyncStatus> {
+    state.save_sync.connect(provider, &state.open_url).await
+}
+
+/// Forgets the cloud on this computer; the saves in it stay.
+#[tauri::command]
+pub async fn save_sync_disconnect(
+    state: State<'_, AppState>,
+) -> AppResult<crate::models::SaveSyncStatus> {
+    state.save_sync.disconnect().await
+}
+
+#[tauri::command]
+pub async fn game_save_sync(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<crate::models::GameSaveSync> {
+    state.save_sync.game(&game_id).await
+}
+
+/// "Jetzt abgleichen" (refused while the game runs).
+#[tauri::command]
+pub async fn game_save_sync_now(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<crate::models::GameSaveSync> {
+    refuse_while_running(&state, &game_id)?;
+    state.save_sync.sync_now(&game_id, &state.host).await
+}
+
+/// A conflict: which side wins (refused while the game runs).
+#[tauri::command]
+pub async fn game_save_sync_resolve(
+    state: State<'_, AppState>,
+    game_id: String,
+    keep: crate::models::SaveSyncKeep,
+) -> AppResult<crate::models::GameSaveSync> {
+    refuse_while_running(&state, &game_id)?;
+    state.save_sync.resolve(&game_id, keep, &state.host).await
 }
