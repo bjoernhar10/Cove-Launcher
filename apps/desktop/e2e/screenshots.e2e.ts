@@ -145,4 +145,41 @@ test("screenshots", async ({ page }) => {
   });
   await settle(page);
   await page.screenshot({ path: `${OUT}/backups.png` });
+
+  // Cloud sync: Google Drive connected, and the same game played on a Steam Deck too.
+  await page.evaluate((id) => {
+    interface Core {
+      saveSync: Record<string, unknown>;
+      saveSyncGames: Record<string, unknown>;
+    }
+    const core = (window as unknown as { __cove: { core: Core } }).__cove.core;
+    core.saveSync = { ...core.saveSync, provider: "googleDrive", account: "alex@example.com", device: "Desktop" };
+    core.saveSyncGames[id] = { state: "conflict", syncedAt: null, conflict: { device: "Steam Deck", savedAt: new Date(Date.now() - 3 * 3600_000).toISOString() } };
+  }, protonId);
+  await go(page, "/settings/backups");
+  await page.getByRole("heading", { name: "Cloud sync" }).evaluate((el) => {
+    el.scrollIntoView({ block: "start" });
+    document.getElementById("main")?.scrollBy(0, -320);
+  });
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/cloud-sync.png` });
+  await go(page, `/library/${protonId}?tab=settings`);
+  await page.getByRole("heading", { name: "Cloud sync" }).evaluate((el) => {
+    el.scrollIntoView({ block: "start" });
+    document.getElementById("main")?.scrollBy(0, -48);
+  });
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/save-conflict.png` });
+
+  // Frame rate history of the first game (MangoHud, Linux).
+  await go(page, `/library/${first}`);
+  // Scroll only the content (the page is short: scrollIntoView would move the whole window).
+  await page.getByRole("heading", { name: "Frame rate" }).evaluate((el) => {
+    const main = document.getElementById("main");
+    if (!main) return;
+    main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top - 420;
+    window.scrollTo(0, 0);
+  });
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/frame-rate.png` });
 });

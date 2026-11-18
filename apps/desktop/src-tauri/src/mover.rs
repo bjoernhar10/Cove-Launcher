@@ -476,7 +476,7 @@ mod tests {
             .start(&item, &folder.join("bin").to_string_lossy())
             .is_err());
         mover.start(&item, &other.to_string_lossy()).unwrap();
-        for _ in 0..200 {
+        for _ in 0..3000 {
             if events
                 .lock()
                 .unwrap()

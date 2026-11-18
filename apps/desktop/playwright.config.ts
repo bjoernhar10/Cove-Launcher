@@ -20,7 +20,11 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "chromium", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } } },
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+      testIgnore: "**/performance.e2e.ts",
+    },
     // Same engine family as the Linux webview (WebKitGTK): the main flows run there too.
     // CI always; locally with COVE_E2E_WEBKIT=1 (Playwright has no WebKit build for every distribution).
     ...(process.env.CI || process.env.COVE_E2E_WEBKIT
@@ -32,6 +36,13 @@ export default defineConfig({
           },
         ]
       : []),
+    // Frame times: alone, after the other projects (parallel tests would make them noise).
+    {
+      name: "performance",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 } },
+      testMatch: "**/performance.e2e.ts",
+      dependencies: process.env.CI || process.env.COVE_E2E_WEBKIT ? ["chromium", "webkit"] : ["chromium"],
+    },
   ],
   // A production build: realistic performance, and what users actually run.
   webServer: {

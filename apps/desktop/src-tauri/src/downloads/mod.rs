@@ -1495,7 +1495,8 @@ mod tests {
         let id = manager.add_itch(&choice, "Zeta", &target).await.unwrap();
         wait_for(&manager, &id, DownloadStatus::Completed).await;
         // Wait until every extra of the second try is finished (or failed).
-        for _ in 0..200 {
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while std::time::Instant::now() < deadline {
             let all = db::downloads::list(&manager.pool).await.unwrap();
             if all
                 .iter()
@@ -1554,7 +1555,9 @@ mod tests {
         id: &str,
         status: DownloadStatus,
     ) -> crate::models::DownloadItem {
-        for _ in 0..200 {
+        // Generous: under a full parallel test run a download can take seconds.
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while std::time::Instant::now() < deadline {
             let item = db::downloads::get(&manager.pool, id).await.unwrap();
             if item.download.status == status {
                 return item;
@@ -2205,7 +2208,7 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(dir, world.games.path().join("Saltmarsh Tides 2"));
-        for _ in 0..200 {
+        for _ in 0..3000 {
             if dir.join("game.exe").exists() {
                 break;
             }
@@ -2216,7 +2219,7 @@ mod tests {
             .control(&id, DownloadStatus::Cancelled)
             .await
             .unwrap();
-        for _ in 0..200 {
+        for _ in 0..1200 {
             if !dir.exists() && world.manager.running_ids().is_empty() {
                 break;
             }

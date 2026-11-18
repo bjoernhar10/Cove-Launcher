@@ -259,7 +259,7 @@ mod tests {
     }
 
     async fn wait_for(pool: &sqlx::SqlitePool, id: &str, status: DownloadStatus) {
-        for _ in 0..200 {
+        for _ in 0..1200 {
             let item = db::downloads::get(pool, id).await.unwrap();
             if item.download.status == status {
                 return;

@@ -74,12 +74,25 @@
       <image>https://raw.githubusercontent.com/bjoernhar10/Cove-Launcher/main/docs/screenshots/game-options.png</image>
     </screenshot>
     <screenshot>
+      <caption>Cloud sync through your own cloud storage</caption>
+      <image>https://raw.githubusercontent.com/bjoernhar10/Cove-Launcher/main/docs/screenshots/cloud-sync.png</image>
+    </screenshot>
+    <screenshot>
       <caption>Statistics</caption>
       <image>https://raw.githubusercontent.com/bjoernhar10/Cove-Launcher/main/docs/screenshots/stats.png</image>
     </screenshot>
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.0" date="2026-11-18">
+      <description>
+        <p>Cove 1.0: your saves on every device. Connect your own Google Drive, OneDrive or Dropbox and
+        Cove fetches newer saves before a game starts and uploads changed ones after playing, for every
+        game from every store. A save made on Windows lands in the game's Proton prefix on a Steam Deck.
+        When a game was played on two devices, Cove asks which save stays and keeps the other one as a
+        backup.</p>
+      </description>
+    </release>
     <release version="0.9.1" date="2026-11-18">
       <description>
         <p>Stream your games with Moonlight through Sunshine, a frame rate history per game recorded

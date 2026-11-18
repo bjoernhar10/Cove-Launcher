@@ -4,13 +4,16 @@
 
 Cove brings your games from Steam, GOG, Epic, Amazon, itch.io, emulators and your own folders
 together in one tidy library. It installs GOG, Epic and Amazon games without their launchers, runs Windows games on
-Linux with Proton, backs up your saves and keeps track of playtime and achievements.
+Linux with Proton, backs up your saves, syncs them between your devices through your own cloud and keeps
+track of playtime and achievements.
 No ads, no social feed, no account of its own.
 
+[Website](https://bjoernhar10.github.io/Cove-Launcher/) ·
 [Download](https://github.com/bjoernhar10/Cove-Launcher/releases/latest) ·
 [Features](#features) ·
 [Build from source](#build-from-source) ·
-[Plugins](docs/plugins.md)
+[Plugins](docs/plugins.md) ·
+[Privacy](https://bjoernhar10.github.io/Cove-Launcher/privacy.html)
 
 ![Cove: Home](docs/screenshots/home.png)
 
@@ -18,10 +21,12 @@ No ads, no social feed, no account of its own.
 |---|---|
 | ![My Library](docs/screenshots/library.png) | ![Game page](docs/screenshots/game.png) |
 | ![Catalogue](docs/screenshots/catalogue.png) | ![Statistics](docs/screenshots/stats.png) |
-| ![Game options on Linux](docs/screenshots/game-options.png) | ![Save backups and Proton prefix](docs/screenshots/backups.png) |
-| ![Downloads](docs/screenshots/downloads.png) | ![Emulators](docs/screenshots/emulators.png) |
-| ![Wishlist](docs/screenshots/wishlist.png) | ![TV mode](docs/screenshots/tv.png) |
-| ![Storage](docs/screenshots/storage.png) | ![Downloads on a schedule](docs/screenshots/schedule.png) |
+| ![Cloud sync through your own Google Drive, OneDrive or Dropbox](docs/screenshots/cloud-sync.png) | ![Played on two devices: choose which save stays](docs/screenshots/save-conflict.png) |
+| ![Game options on Linux](docs/screenshots/game-options.png) | ![Frame rate history](docs/screenshots/frame-rate.png) |
+| ![Save backups and Proton prefix](docs/screenshots/backups.png) | ![Downloads](docs/screenshots/downloads.png) |
+| ![Emulators](docs/screenshots/emulators.png) | ![Wishlist](docs/screenshots/wishlist.png) |
+| ![TV mode](docs/screenshots/tv.png) | ![Storage](docs/screenshots/storage.png) |
+| ![Downloads on a schedule](docs/screenshots/schedule.png) | |
 
 <sub>The screenshots show invented demo games with drawn artwork.</sub>
 

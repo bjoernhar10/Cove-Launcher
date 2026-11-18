@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cove: a calm, universal game launcher</title>
+  <meta name="description" content="Cove brings your games from Steam, GOG, Epic, Amazon, itch.io, emulators and your own folders together in one tidy library. Free and open source for Linux, Windows and macOS.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site">
+    <div class="wrap">
+      <a class="brand" href="./"><img src="icon.svg" alt="">Cove</a>
+      <nav class="site" aria-label="Site">
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="https://github.com/bjoernhar10/Cove-Launcher">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <div class="hero">
+        <h1>A calm, universal game launcher</h1>
+        <p class="lead">
+          Cove brings your games from Steam, GOG, Epic, Amazon, itch.io, emulators and your own folders
+          together in one tidy library. It installs GOG, Epic and Amazon games without their launchers,
+          runs Windows games on Linux with Proton and carries your saves between your devices.
+          No ads, no social feed, no account of its own.
+        </p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/bjoernhar10/Cove-Launcher/releases/latest">Download Cove</a>
+          <a class="button" href="https://github.com/bjoernhar10/Cove-Launcher">Source code</a>
+        </div>
+        <p class="note">Free and open source (MIT). Linux (x86_64, ARM64), Windows and macOS.</p>
+      </div>
+      <img class="shot" src="screenshots/home.png" width="1440" height="900" alt="Cove's home page: games to continue, deals from the wishlist and free games">
+    </div>
+
+    <div class="wrap">
+      <section id="features" aria-labelledby="features-title">
+        <h2 id="features-title">What Cove does</h2>
+        <p class="intro">Everything runs on your computer. Logins stay in your system's keyring, and Cove never sees a password.</p>
+        <ul class="features">
+          <li>
+            <h3>Every store in one library</h3>
+            <p>Sign in to Steam, GOG, Epic and Amazon on the store's own page. Games, playtime and achievements come along; installed games are found without any login.</p>
+          </li>
+          <li>
+            <h3>Installs without the launchers</h3>
+            <p>GOG, Epic and Amazon games download straight through Cove, with pause, resume, repair, updates and DLC choice. itch.io and direct links too.</p>
+          </li>
+          <li>
+            <h3>Saves on every device</h3>
+            <p>Connect your own Google Drive, OneDrive or Dropbox. Cove fetches newer saves before a game starts and uploads changed ones after playing, for every game from every store.</p>
+          </li>
+          <li>
+            <h3>Windows games on Linux</h3>
+            <p>Proton without Steam: GE-Proton is downloaded and kept up to date, with umu-launcher, per-game prefixes, MangoHud, GameMode and gamescope.</p>
+          </li>
+          <li>
+            <h3>Save backups</h3>
+            <p>After every session Cove backs up the game's saves. Where a game keeps them comes from an open list of over 20,000 games, inside Proton prefixes too.</p>
+          </li>
+          <li>
+            <h3>Emulators and ROMs</h3>
+            <p>Point Cove at a ROM folder and every game shows up in your library, started with RetroArch or a standalone emulator.</p>
+          </li>
+          <li>
+            <h3>Catalogue and wishlist</h3>
+            <p>Search and browse thousands of games, see how long they take to beat, and get a note when a game on your wishlist goes on sale.</p>
+          </li>
+          <li>
+            <h3>TV mode and controllers</h3>
+            <p>A big-screen mode for the couch and the Steam Deck, driven by any Xbox, PlayStation, Switch or Steam controller.</p>
+          </li>
+          <li>
+            <h3>Streaming and statistics</h3>
+            <p>Hand your games to Sunshine for Moonlight, record frame rates with MangoHud, and see where your playtime went.</p>
+          </li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="gallery-title">
+        <h2 id="gallery-title">A closer look</h2>
+        <div class="gallery">
+          <figure>
+            <img class="shot" src="screenshots/library.png" width="1440" height="900" loading="lazy" alt="My Library with covers in a grid">
+            <figcaption>Your library, from every store.</figcaption>
+          </figure>
+          <figure>
+            <img class="shot" src="screenshots/game.png" width="1440" height="900" loading="lazy" alt="A game page with banner, playtime and achievements">
+            <figcaption>Every game with its playtime, achievements and news.</figcaption>
+          </figure>
+          <figure>
+            <img class="shot" src="screenshots/cloud-sync.png" width="1440" height="900" loading="lazy" alt="Settings: cloud sync connected to Google Drive">
+            <figcaption>Cloud sync through your own cloud storage.</figcaption>
+          </figure>
+          <figure>
+            <img class="shot" src="screenshots/save-conflict.png" width="1440" height="900" loading="lazy" alt="A game played on two devices: choose which save stays">
+            <figcaption>Played on two devices? You choose which save stays.</figcaption>
+          </figure>
+          <figure>
+            <img class="shot" src="screenshots/game-options.png" width="1440" height="900" loading="lazy" alt="Proton version and game options of a Windows game on Linux">
+            <figcaption>Proton and game options on Linux.</figcaption>
+          </figure>
+          <figure>
+            <img class="shot" src="screenshots/tv.png" width="1440" height="900" loading="lazy" alt="The TV mode with large covers">
+            <figcaption>The TV mode for the couch.</figcaption>
+          </figure>
+        </div>
+        <p class="note">The screenshots show invented demo games with drawn artwork.</p>
+      </section>
+
+      <section id="download" aria-labelledby="download-title">
+        <h2 id="download-title">Download</h2>
+        <p class="intro">Every release is built on its own platform and signed for Cove's updater, which keeps Cove up to date.</p>
+        <div class="downloads">
+          <div>
+            <h3>Linux</h3>
+            <p>AppImage, .deb and .rpm for x86_64 and ARM64, and a Flatpak bundle.</p>
+          </div>
+          <div>
+            <h3>Windows</h3>
+            <p>Installer (.exe) or MSI package for 64-bit Windows.</p>
+          </div>
+          <div>
+            <h3>macOS</h3>
+            <p>Disk image (.dmg) for Apple Silicon and Intel.</p>
+          </div>
+        </div>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/bjoernhar10/Cove-Launcher/releases/latest">Latest release</a>
+          <a class="button" href="https://github.com/bjoernhar10/Cove-Launcher#build-from-source">Build from source</a>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site">
+    <div class="wrap">
+      <span>Cove is free software under the MIT license. It is not affiliated with Valve, GOG, Epic Games, Amazon, itch.io, Google, Microsoft or Dropbox.</span>
+      <span><a href="privacy.html">Privacy</a> · <a href="https://github.com/bjoernhar10/Cove-Launcher/issues">Contact</a></span>
+    </div>
+  </footer>
+</body>
+</html>

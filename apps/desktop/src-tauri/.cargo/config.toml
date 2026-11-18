@@ -10,6 +10,6 @@ COVE_CATALOG_PROXY_URL = "https://cove-catalog-proxy.bjoernharter-github.workers
 COVE_DISCORD_CLIENT_ID = "1572233996539269120"
 # Save sync through the user's cloud (src/savesync/cloud.rs). OAuth client ids are not secrets
 # (desktop clients with PKCE); Google's client secret lives only in the proxy (GOOGLE_CLIENT_SECRET).
-COVE_GOOGLE_CLIENT_ID = "316912259410-at7u3acbgt2f8de7lgh101e2jfvgaphr.apps.googleusercontent.com"
+COVE_GOOGLE_CLIENT_ID = "316912259410-jc4htff7g5c04bpkdvrasr924u6rc5kc.apps.googleusercontent.com"
 COVE_ONEDRIVE_CLIENT_ID = "4ed74ca6-8745-4e39-8beb-4ec0a421d750"
 COVE_DROPBOX_CLIENT_ID = "60gl9nkd94jkhya"

@@ -10,7 +10,7 @@ workers_dev = true
 
 # Not secrets: Google's OAuth client of Cove's Drive save sync.
 [vars]
-GOOGLE_CLIENT_ID = "316912259410-at7u3acbgt2f8de7lgh101e2jfvgaphr.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = "316912259410-jc4htff7g5c04bpkdvrasr924u6rc5kc.apps.googleusercontent.com"
 
 # Twitch app access token cache. Create with: wrangler kv namespace create TOKENS
 [[kv_namespaces]]
