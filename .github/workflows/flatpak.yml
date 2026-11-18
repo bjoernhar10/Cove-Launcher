@@ -60,7 +60,9 @@ jobs:
           manifest-path: packaging/flatpak/io.github.bjoernhar10.Cove_Launcher.yml
           bundle: Cove-${{ matrix.arch }}.flatpak
           arch: ${{ matrix.arch }}
-          cache-key: flatpak-${{ matrix.arch }}-${{ github.sha }}
+          # No cache: a restored builder cache made the SDK update fail with
+          # "Invalid cross-device link" (x86_64, 1.0.0).
+          cache: false
           upload-artifact: true
 
   attach:
