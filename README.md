@@ -8,12 +8,12 @@ Linux with Proton, backs up your saves, syncs them between your devices through 
 track of playtime and achievements.
 No ads, no social feed, no account of its own.
 
-[Website](https://bjoernhar10.github.io/Cove-Launcher/) ·
+[Website](https://getcove.dev) ·
 [Download](https://github.com/bjoernhar10/Cove-Launcher/releases/latest) ·
 [Features](#features) ·
 [Build from source](#build-from-source) ·
 [Plugins](docs/plugins.md) ·
-[Privacy](https://bjoernhar10.github.io/Cove-Launcher/privacy.html)
+[Privacy](PRIVACY.md)
 
 ![Cove: Home](docs/screenshots/home.png)
 
