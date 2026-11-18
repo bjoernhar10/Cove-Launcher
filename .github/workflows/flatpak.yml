@@ -32,7 +32,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
-      options: --privileged
+      # /var/lib/flatpak as a volume (filled from the image): updating the
+      # preinstalled SDK renames folders, which the container's overlay
+      # filesystem refuses ("Invalid cross-device link").
+      options: --privileged --volume /var/lib/flatpak
     env:
       TAG: ${{ inputs.tag || github.event.release.tag_name }}
     steps:
@@ -60,9 +63,7 @@ jobs:
           manifest-path: packaging/flatpak/io.github.bjoernhar10.Cove_Launcher.yml
           bundle: Cove-${{ matrix.arch }}.flatpak
           arch: ${{ matrix.arch }}
-          # No cache: a restored builder cache made the SDK update fail with
-          # "Invalid cross-device link" (x86_64, 1.0.0).
-          cache: false
+          cache-key: flatpak-${{ matrix.arch }}-${{ github.sha }}
           upload-artifact: true
 
   attach:
