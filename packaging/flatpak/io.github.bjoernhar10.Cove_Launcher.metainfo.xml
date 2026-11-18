@@ -84,6 +84,12 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.1" date="2026-11-18">
+      <description>
+        <p>Cloud sync now notices a save that a game rewrites within the same second as the last sync.
+        Before, such a save could stay on this device instead of going to the cloud.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-11-18">
       <description>
         <p>Cove 1.0: your saves on every device. Connect your own Google Drive, OneDrive or Dropbox and
