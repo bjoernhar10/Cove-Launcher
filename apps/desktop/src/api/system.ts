@@ -1,4 +1,4 @@
-import type { AboutInfo, FolderInfo, GameTools, ImportPreview, ImportResult, UpdateCheck, UpdateProgress, UserProfile } from "@cove/shared";
+import type { AboutInfo, FolderInfo, GameTools, ImportPreview, ImportResult, SunshineStatus, UpdateCheck, UpdateProgress, UserProfile } from "@cove/shared";
 import { call, subscribe } from "./transport.ts";
 
 export function getProfile(): Promise<UserProfile> {
@@ -62,4 +62,19 @@ export function pickImport(): Promise<ImportPreview | null> {
 /** Merges an export into this Cove (never deletes anything). */
 export function importData(path: string, settings: boolean): Promise<ImportResult> {
   return call("data_import", { path, settings });
+}
+
+/** Sunshine (game streaming) on this computer and how many of Cove's games are in its list. */
+export function sunshineStatus(): Promise<SunshineStatus> {
+  return call("sunshine_status", {});
+}
+
+/** Puts every installed game Cove can start into Sunshine's app list. */
+export function sunshineSync(): Promise<SunshineStatus> {
+  return call("sunshine_sync", {});
+}
+
+/** Takes Cove's games out of Sunshine's app list. */
+export function sunshineRemove(): Promise<SunshineStatus> {
+  return call("sunshine_remove", {});
 }

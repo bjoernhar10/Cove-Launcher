@@ -2,6 +2,7 @@ import type {
   Achievement,
   BackupInfo,
   ExternalGame,
+  FpsLog,
   Game,
   GameBackups,
   GameId,
@@ -121,6 +122,15 @@ export function protonRating(gameId: GameId): Promise<ProtonRating | null> {
 /** The game's announcements and patch notes from Steam (newest first). */
 export function gameNews(gameId: GameId): Promise<NewsItem[]> {
   return call("game_news", { gameId });
+}
+
+/** Linux: the game's recorded sessions (frame rates), newest first. */
+export function fpsLogs(gameId: GameId): Promise<FpsLog[]> {
+  return call("game_fps_logs", { gameId });
+}
+
+export async function clearFpsLogs(gameId: GameId): Promise<void> {
+  await call("game_fps_logs_clear", { gameId });
 }
 
 /** A game's mods in their order (later ones win for the same file). */

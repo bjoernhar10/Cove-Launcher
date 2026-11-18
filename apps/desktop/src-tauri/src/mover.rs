@@ -232,6 +232,11 @@ impl Mover {
         self.active.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Whether the game's folder is being moved right now.
+    pub fn is_moving(&self, game_id: &str) -> bool {
+        self.active().contains(game_id)
+    }
+
     /// Checks everything that can be checked up front, then moves in the background.
     pub fn start(self: &Arc<Self>, item: &LibraryItem, folder: &str) -> AppResult<()> {
         let source = movable(item)?;

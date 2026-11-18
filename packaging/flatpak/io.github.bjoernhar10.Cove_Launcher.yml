@@ -27,6 +27,8 @@ finish-args:
   - --filesystem=/run/media
   - --filesystem=~/.var/app/com.valvesoftware.Steam:ro
   - --filesystem=~/.var/app/com.heroicgameslauncher.hgl:ro
+  # Sunshine's app list when Sunshine runs as a Flatpak (game streaming).
+  - --filesystem=~/.var/app/dev.lizardbyte.app.Sunshine/config/sunshine
   # The host's programs (Steam, emulators) are found under /run/host ...
   - --filesystem=host-os:ro
   # ... and started on the host with flatpak-spawn --host, which also follows

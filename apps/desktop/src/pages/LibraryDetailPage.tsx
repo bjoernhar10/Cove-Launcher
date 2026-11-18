@@ -11,6 +11,7 @@ import { MatchDialog } from "../features/MatchDialog.tsx";
 import { GameTweaks } from "../features/GameTweaks.tsx";
 import { PrefixTools } from "../features/PrefixTools.tsx";
 import { SaveBackups } from "../features/SaveBackups.tsx";
+import { FpsHistory } from "../features/FpsHistory.tsx";
 import { ProtonRating } from "../features/ProtonRating.tsx";
 import { TimeToBeat } from "../features/TimeToBeat.tsx";
 import { GameCover } from "../components/game/GameCover.tsx";
@@ -112,6 +113,7 @@ function Overview({ item }: { item: LibraryItem }) {
           </section>
         </div>
       </div>
+      {detectPlatform() === "linux" && <FpsHistory item={item} />}
       {entry.source !== "manual" && entry.storeGameId && <GameDlcs item={item} />}
     </div>
   );

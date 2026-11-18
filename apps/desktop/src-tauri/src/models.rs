@@ -235,6 +235,10 @@ pub struct GameTweaks {
     /// Windows: start `RivaTuner` Statistics Server (its overlay) before the game.
     #[serde(default)]
     pub rtss: bool,
+    /// Linux: record frame rates with `MangoHud`'s logger (hidden unless
+    /// `mangohud` is on) and keep a summary per session.
+    #[serde(default)]
+    pub fps_log: bool,
 }
 
 impl Default for GameTweaks {
@@ -252,6 +256,7 @@ impl Default for GameTweaks {
             metal_hud: false,
             performance_mode: false,
             rtss: false,
+            fps_log: false,
         }
     }
 }
@@ -1943,4 +1948,32 @@ pub struct UpdateCheck {
 pub struct UpdateProgress {
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
+}
+
+/// One recorded session's frame rates (`MangoHud` log, Linux).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FpsLog {
+    pub id: i64,
+    pub game_id: GameId,
+    pub started_at: String,
+    pub duration_seconds: i64,
+    pub average_fps: f64,
+    /// 1 % low: the frame rate 99 % of the samples were above.
+    pub low1_fps: f64,
+    /// 0.1 % low.
+    pub low01_fps: f64,
+    /// The frame rate over the session, at most 240 evenly spaced points.
+    pub samples: Vec<f64>,
+}
+
+/// Sunshine (game streaming) on this computer and Cove's games in its list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SunshineStatus {
+    pub found: bool,
+    /// Sunshine's app list (`apps.json`); null when Sunshine wasn't found.
+    pub apps_file: Option<String>,
+    /// How many of Cove's games are in it.
+    pub games: u32,
 }

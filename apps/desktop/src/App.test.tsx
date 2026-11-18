@@ -1439,3 +1439,59 @@ describe("Mods", () => {
     });
   });
 });
+
+describe("Frame rate (Linux)", () => {
+  it("records with MangoHud from the game's settings and shows the sessions on the overview", async () => {
+    renderAt("/library/tidewater?tab=settings");
+    fireEvent.click(await screen.findByRole("switch", { name: "FPS aufzeichnen" }));
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => {
+      expect(core.library.find((i) => i.game.id === "tidewater")?.entry.launchOptions.tweaks.fpsLog).toBe(true);
+    });
+
+    const samples = Array.from({ length: 50 }, (_, i) => 60 + (i % 5));
+    core.fpsLogs = {
+      tidewater: [
+        { id: 2, gameId: "tidewater", startedAt: "2026-11-17T20:00:00Z", durationSeconds: 3600, averageFps: 61.6, low1Fps: 44.2, low01Fps: 30.9, samples },
+        { id: 1, gameId: "tidewater", startedAt: "2026-11-10T20:00:00Z", durationSeconds: 600, averageFps: 90.4, low1Fps: 70, low01Fps: 65, samples },
+      ],
+    };
+    window.location.hash = "#/library/tidewater";
+    const section = within(await screen.findByRole("region", { name: "Bildrate" }));
+    expect(await section.findByText("62")).toBeDefined();
+    expect(section.getByText("44")).toBeDefined();
+    fireEvent.click(section.getByRole("button", { name: /Ø 90 FPS/ }));
+    expect(section.getByText("70")).toBeDefined();
+    fireEvent.click(section.getByRole("button", { name: "Verlauf löschen" }));
+    expect(await section.findByText(/Noch keine Aufzeichnung/)).toBeDefined();
+    expect(core.fpsLogs.tidewater).toEqual([]);
+  });
+
+  it("hides the section for games that never recorded", async () => {
+    renderAt("/library/tidewater");
+    await screen.findByRole("heading", { name: "Informationen" });
+    expect(screen.queryByRole("region", { name: "Bildrate" })).toBeNull();
+  });
+});
+
+describe("Sunshine", () => {
+  it("explains when Sunshine is missing", async () => {
+    renderAt("/settings/general");
+    expect(await screen.findByText(/Sunshine wurde auf diesem Computer nicht gefunden/)).toBeDefined();
+  });
+
+  it("adds the installed games to Sunshine and removes them again", async () => {
+    core.sunshineFound = true;
+    renderAt("/settings/general");
+    fireEvent.click(await screen.findByRole("button", { name: "Spiele an Sunshine geben" }));
+    const installed = core.library.filter((i) => i.entry.installed && i.entry.launchVia !== null).length;
+    await waitFor(() => {
+      expect(core.sunshineGames).toBe(installed);
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Aus Sunshine entfernen" }));
+    await waitFor(() => {
+      expect(core.sunshineGames).toBe(0);
+    });
+    expect(await screen.findByRole("button", { name: "Spiele an Sunshine geben" })).toBeDefined();
+  });
+});

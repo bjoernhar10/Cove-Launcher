@@ -141,6 +141,20 @@ async fn app_with(
             tmp.path().join("mods"),
         )),
         launcher_dirs: crate::external::LauncherDirs::for_home(Some(tmp.path()), None),
+        fps: Arc::new(crate::fps::FpsLogs::new(
+            pool.clone(),
+            tmp.path().join("fps-logs"),
+        )),
+        sunshine: Arc::new(crate::sunshine::Sunshine::new(
+            vec![crate::sunshine::ConfigDir {
+                path: tmp.path().join("sunshine"),
+                flatpak: false,
+            }],
+            Some(crate::shortcuts::CoveCommand {
+                program: "/usr/bin/cove".into(),
+                args: Vec::new(),
+            }),
+        )),
         shortcuts: Arc::new(crate::shortcuts::Shortcuts::new(
             pool.clone(),
             crate::shortcuts::ShortcutDirs {
@@ -780,6 +794,49 @@ async fn proton_rating_accepts_frontend_payloads() {
     .unwrap();
     invoke_raw(&app, "library_remove", json!({ "gameId": id })).unwrap();
     assert!(!app.tmp.path().join("Desktop/Hand Made.desktop").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn fps_logs_and_sunshine_accept_frontend_payloads() {
+    let app = app().await;
+    let exe = app.tmp.path().join("game.x86_64");
+    std::fs::write(&exe, b"x").unwrap();
+    let added: LibraryItem = invoke(
+        &app,
+        "library_add_manual",
+        json!({ "input": { "title": "Tide", "executablePath": exe.to_string_lossy(), "sizeBytes": null } }),
+    );
+    let id = added.game.id;
+    let updated: Value = invoke(
+        &app,
+        "library_update",
+        json!({ "gameId": id, "patch": { "launchOptions": { "arguments": "",
+            "compatibilityTool": "native", "env": [], "protonVersion": null,
+            "tweaks": { "mangohud": false, "gamemode": false, "gamescope": false, "gamescopeWidth": null,
+                "gamescopeHeight": null, "gamescopeFullscreen": false, "fsr": false, "dxvk": true, "vkd3d": true,
+                "metalHud": false, "performanceMode": false, "rtss": false, "fpsLog": true },
+            "winePrefix": null, "wineBinary": null } } }),
+    );
+    assert_eq!(updated["entry"]["launchOptions"]["tweaks"]["fpsLog"], true);
+    let logs: Value = invoke(&app, "game_fps_logs", json!({ "gameId": id }));
+    assert_eq!(logs, json!([]));
+    invoke_raw(&app, "game_fps_logs_clear", json!({ "gameId": id })).unwrap();
+
+    // No Sunshine yet: nothing is written.
+    let status: Value = invoke(&app, "sunshine_status", json!({}));
+    assert_eq!(
+        status,
+        json!({ "found": false, "appsFile": null, "games": 0 })
+    );
+    assert!(invoke_raw(&app, "sunshine_sync", json!({})).is_err());
+    std::fs::create_dir_all(app.tmp.path().join("sunshine")).unwrap();
+    std::fs::write(app.tmp.path().join("sunshine/apps.json"), r#"{"apps":[]}"#).unwrap();
+    let status: Value = invoke(&app, "sunshine_sync", json!({}));
+    assert_eq!(status["games"], 1);
+    let list = std::fs::read_to_string(app.tmp.path().join("sunshine/apps.json")).unwrap();
+    assert!(list.contains(&format!("/usr/bin/cove --launch {id}")));
+    let status: Value = invoke(&app, "sunshine_remove", json!({}));
+    assert_eq!(status["games"], 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]

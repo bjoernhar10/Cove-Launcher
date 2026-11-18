@@ -63,6 +63,9 @@ pub struct HostEnv {
     pub rom_folders: Vec<crate::models::RomFolder>,
     /// Where emulators are looked for.
     pub emulators: crate::emulators::Env,
+    /// Linux: `MangoHud` writes the game's frame rate log here (filled per
+    /// launch when the game records frame rates).
+    pub fps_log_dir: Option<PathBuf>,
 }
 
 impl HostEnv {
@@ -81,6 +84,7 @@ impl HostEnv {
             tools: ToolPaths::default(),
             rom_folders: Vec::new(),
             emulators: crate::emulators::Env::detect(home),
+            fps_log_dir: None,
         }
     }
 
@@ -363,13 +367,31 @@ fn apply_tweaks(
         }
         command.push("--".into());
     }
-    if tweaks.mangohud {
+    let fps_log = host
+        .fps_log_dir
+        .as_deref()
+        .filter(|_| tweaks.fps_log)
+        .and_then(mangohud_log_config);
+    if tweaks.mangohud || fps_log.is_some() {
         let path = host
             .tools
             .mangohud
             .as_ref()
             .ok_or_else(|| tool_missing("MangoHud"))?;
         command.push(text(path));
+    }
+    if let Some(folder) = fps_log {
+        // `read_cfg` keeps the user's own MangoHud config when the overlay is
+        // on; recording alone shows nothing.
+        let shown = if tweaks.mangohud {
+            "read_cfg"
+        } else {
+            "no_display"
+        };
+        env.push((
+            "MANGOHUD_CONFIG".into(),
+            format!("{shown},output_folder={folder},autostart_log=1,log_interval=100"),
+        ));
     }
     if command.is_empty() {
         return Ok((program, args));
@@ -378,6 +400,12 @@ fn apply_tweaks(
     command.extend(args);
     let first = PathBuf::from(command.remove(0));
     Ok((first, command))
+}
+
+/// The log folder as a `MANGOHUD_CONFIG` value (commas and `=` would break it).
+fn mangohud_log_config(dir: &Path) -> Option<String> {
+    let text = dir.to_str()?;
+    (!text.contains([',', '=', '\n'])).then(|| text.to_owned())
 }
 
 /// A game's Windows prefix.
@@ -1090,6 +1118,7 @@ mod tests {
                 path: Vec::new(),
                 program_files: Vec::new(),
             },
+            fps_log_dir: None,
         }
     }
 
@@ -1476,6 +1505,49 @@ mod tests {
             plan(&native, &self::host(Platform::Windows, &[])).unwrap(),
             LaunchPlan::Process { program, .. } if program == Path::new("/g/game.sh")
         ));
+    }
+
+    #[test]
+    fn recording_frame_rates_runs_mangohud_hidden_or_with_the_users_config() {
+        let mut t = target(StoreSource::Manual, Some("/g/game.sh"), None);
+        t.options.tweaks.fps_log = true;
+        let mut host = host(Platform::Linux, &[]);
+        host.tools.mangohud = Some(PathBuf::from("/usr/bin/mangohud"));
+        // Without a log folder (not prepared) the game starts as usual.
+        let LaunchPlan::Process { program, .. } = plan(&t, &host).unwrap() else {
+            panic!()
+        };
+        assert_eq!(program, PathBuf::from("/g/game.sh"));
+
+        host.fps_log_dir = Some(PathBuf::from("/data/fps-logs/g"));
+        let config = |t: &LaunchTarget, host: &HostEnv| {
+            let LaunchPlan::Process {
+                program, args, env, ..
+            } = plan(t, host).unwrap()
+            else {
+                panic!()
+            };
+            assert_eq!(program, PathBuf::from("/usr/bin/mangohud"));
+            assert_eq!(args, ["/g/game.sh"]);
+            env.into_iter()
+                .find(|(k, _)| k == "MANGOHUD_CONFIG")
+                .map(|(_, v)| v)
+                .unwrap()
+        };
+        assert_eq!(
+            config(&t, &host),
+            "no_display,output_folder=/data/fps-logs/g,autostart_log=1,log_interval=100"
+        );
+        t.options.tweaks.mangohud = true;
+        assert!(config(&t, &host).starts_with("read_cfg,output_folder="));
+
+        // A folder MangoHud's config can't hold: no recording.
+        t.options.tweaks.mangohud = false;
+        host.fps_log_dir = Some(PathBuf::from("/data/a,b"));
+        let LaunchPlan::Process { program, .. } = plan(&t, &host).unwrap() else {
+            panic!()
+        };
+        assert_eq!(program, PathBuf::from("/g/game.sh"));
     }
 
     #[test]

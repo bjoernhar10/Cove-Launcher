@@ -270,7 +270,16 @@ if (demo) {
       { id: "ui", name: "Cleaner Interface", source: "cleaner-ui.7z", target: "", enabled: false, files: 12, sizeBytes: 4_200_000, addedAt: added, overridden: 0 },
       { id: "fix", name: "Unofficial Patch", source: "patch.pak", target: "Data", enabled: true, files: 3, sizeBytes: 86_000_000, addedAt: added, overridden: 0 },
     ];
+    // Three recorded sessions: a steady one, one with stutters, a short one.
+    const curve = (base: number, dips: number) =>
+      Array.from({ length: 240 }, (_, i) => Math.round((base + 6 * Math.sin(i / 9) - (i % 47 === 0 ? dips : 0)) * 10) / 10);
+    core.fpsLogs[first.game.id] = [
+      { id: 3, gameId: first.game.id, startedAt: new Date(Date.now() - day).toISOString(), durationSeconds: 5400, averageFps: 118.4, low1Fps: 92.1, low01Fps: 71.5, samples: curve(118, 30) },
+      { id: 2, gameId: first.game.id, startedAt: new Date(Date.now() - 3 * day).toISOString(), durationSeconds: 2700, averageFps: 96.2, low1Fps: 48.3, low01Fps: 31.0, samples: curve(96, 50) },
+      { id: 1, gameId: first.game.id, startedAt: new Date(Date.now() - 6 * day).toISOString(), durationSeconds: 640, averageFps: 121.0, low1Fps: 101.7, low01Fps: 95.2, samples: curve(121, 10) },
+    ];
   }
+  core.sunshineFound = true;
 }
 
 

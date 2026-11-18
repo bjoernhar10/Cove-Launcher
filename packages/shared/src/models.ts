@@ -137,6 +137,8 @@ export interface GameTweaks {
   performanceMode: boolean;
   /** Windows: start RivaTuner Statistics Server (its overlay) before the game. */
   rtss: boolean;
+  /** Linux: record frame rates with MangoHud's logger (hidden unless `mangohud` is on). */
+  fpsLog: boolean;
 }
 
 /** Which game tools are installed (Linux: MangoHud, GameMode, gamescope; Windows: RivaTuner Statistics Server). */
@@ -1462,4 +1464,28 @@ export interface UpdateCheck {
 export interface UpdateProgress {
   downloadedBytes: number;
   totalBytes: number | null;
+}
+
+/** One recorded session's frame rates (MangoHud log, Linux). */
+export interface FpsLog {
+  id: number;
+  gameId: GameId;
+  startedAt: string;
+  durationSeconds: number;
+  averageFps: number;
+  /** 1 % low: the frame rate 99 % of the samples were above. */
+  low1Fps: number;
+  /** 0.1 % low. */
+  low01Fps: number;
+  /** The frame rate over the session, at most 240 evenly spaced points. */
+  samples: number[];
+}
+
+/** Sunshine (game streaming) on this computer and Cove's games in its list. */
+export interface SunshineStatus {
+  found: boolean;
+  /** Sunshine's app list (`apps.json`); null when Sunshine wasn't found. */
+  appsFile: string | null;
+  /** How many of Cove's games are in it. */
+  games: number;
 }

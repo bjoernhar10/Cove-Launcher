@@ -139,6 +139,15 @@ function LinuxTweaks({ value, onChange, proton }: Omit<Props, "platform">) {
             }}
           />
           <Row
+            title={t.tweaks.fpsLog}
+            description={t.tweaks.fpsLogText}
+            checked={value.fpsLog}
+            missing={!installed.mangohud}
+            onChange={(fpsLog) => {
+              set({ fpsLog });
+            }}
+          />
+          <Row
             title="GameMode"
             description={t.tweaks.gamemode}
             checked={value.gamemode}

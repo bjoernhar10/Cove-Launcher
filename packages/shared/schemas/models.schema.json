@@ -1229,6 +1229,53 @@
       ],
       "type": "object"
     },
+    "FpsLog": {
+      "additionalProperties": false,
+      "description": "One recorded session's frame rates (MangoHud log, Linux).",
+      "properties": {
+        "averageFps": {
+          "type": "number"
+        },
+        "durationSeconds": {
+          "type": "number"
+        },
+        "gameId": {
+          "$ref": "#/definitions/GameId"
+        },
+        "id": {
+          "type": "number"
+        },
+        "low01Fps": {
+          "description": "0.1 % low.",
+          "type": "number"
+        },
+        "low1Fps": {
+          "description": "1 % low: the frame rate 99 % of the samples were above.",
+          "type": "number"
+        },
+        "samples": {
+          "description": "The frame rate over the session, at most 240 evenly spaced points.",
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "startedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "gameId",
+        "startedAt",
+        "durationSeconds",
+        "averageFps",
+        "low1Fps",
+        "low01Fps",
+        "samples"
+      ],
+      "type": "object"
+    },
     "FreeGame": {
       "additionalProperties": false,
       "description": "A game that is free to keep for a while (Epic's free games, GOG giveaways, other shops through GamerPower).",
@@ -1678,6 +1725,10 @@
           "description": "Proton: Direct3D 9 to 11 through DXVK (off = WineD3D).",
           "type": "boolean"
         },
+        "fpsLog": {
+          "description": "Linux: record frame rates with MangoHud's logger (hidden unless `mangohud` is on).",
+          "type": "boolean"
+        },
         "fsr": {
           "description": "AMD FSR 1 upscaling: gamescope's filter, else GE-Proton's `WINE_FULLSCREEN_FSR`.",
           "type": "boolean"
@@ -1740,7 +1791,8 @@
         "vkd3d",
         "metalHud",
         "performanceMode",
-        "rtss"
+        "rtss",
+        "fpsLog"
       ],
       "type": "object"
     },
@@ -4322,6 +4374,32 @@
         "manual"
       ],
       "type": "string"
+    },
+    "SunshineStatus": {
+      "additionalProperties": false,
+      "description": "Sunshine (game streaming) on this computer and Cove's games in its list.",
+      "properties": {
+        "appsFile": {
+          "description": "Sunshine's app list (`apps.json`); null when Sunshine wasn't found.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "found": {
+          "type": "boolean"
+        },
+        "games": {
+          "description": "How many of Cove's games are in it.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "found",
+        "appsFile",
+        "games"
+      ],
+      "type": "object"
     },
     "SyncPhase": {
       "enum": [

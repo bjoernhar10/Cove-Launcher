@@ -20,6 +20,7 @@ import type {
   GameBackups,
   GamepadInfo,
   GamePrice,
+  FpsLog,
   GameShortcut,
   GameTools,
   GameTweaks,
@@ -40,6 +41,7 @@ import type {
   ProtonOverview,
   ProtonRating,
   ScanCandidate,
+  SunshineStatus,
   StoreAccount,
   StoreDlcList,
   StoreSource,
@@ -64,6 +66,7 @@ export const FAKE_TWEAKS: GameTweaks = {
   metalHud: false,
   performanceMode: false,
   rtss: false,
+  fpsLog: false,
 };
 
 /** Rejects like the Rust core: an error carrying `kind` + `message`. */
@@ -292,6 +295,12 @@ export interface FakeCore {
   shortcuts: Record<string, GameShortcut[]>;
   /** Mods per game id, in their order. */
   mods: Record<string, ModInfo[]>;
+  /** Recorded frame rates per game id, newest first. */
+  fpsLogs: Record<string, FpsLog[]>;
+  /** Sunshine is set up on this computer (`sunshine_status`). */
+  sunshineFound: boolean;
+  /** Cove's games in Sunshine's list. */
+  sunshineGames: number;
   /** What `mods_pick` "picks"; null = cancelled. */
   modPick: string | null;
   /** Games Heroic and Lutris know (`launchers_scan`). */
@@ -455,6 +464,9 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     importFile: null,
     externalGames: [],
     mods: {},
+    fpsLogs: {},
+    sunshineFound: false,
+    sunshineGames: 0,
     modPick: null,
     imports: [],
     gameSizes: {},
@@ -772,6 +784,26 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       require(gameId);
       if (core.protonDown) reject("storeUnavailable", "ProtonDB ist gerade nicht erreichbar. Versuch es später noch einmal.");
       return core.protonRatings[gameId] ?? null;
+    },
+    game_fps_logs: ({ gameId }) => core.fpsLogs[gameId] ?? [],
+    game_fps_logs_clear: ({ gameId }) => {
+      core.fpsLogs[gameId] = [];
+      return null;
+    },
+    sunshine_status: (): SunshineStatus => ({
+      found: core.sunshineFound,
+      appsFile: core.sunshineFound ? "/home/user/.config/sunshine/apps.json" : null,
+      games: core.sunshineGames,
+    }),
+    sunshine_sync: (): SunshineStatus => {
+      if (!core.sunshineFound) reject("invalidInput", "Sunshine wurde nicht gefunden. Installiere es und starte es einmal, dann versuche es noch einmal.");
+      core.sunshineGames = core.library.filter((i) => i.entry.installed && i.entry.launchVia !== null).length;
+      return { found: true, appsFile: "/home/user/.config/sunshine/apps.json", games: core.sunshineGames };
+    },
+    sunshine_remove: (): SunshineStatus => {
+      if (!core.sunshineFound) reject("invalidInput", "Sunshine wurde nicht gefunden. Installiere es und starte es einmal, dann versuche es noch einmal.");
+      core.sunshineGames = 0;
+      return { found: true, appsFile: "/home/user/.config/sunshine/apps.json", games: 0 };
     },
     mods_list: ({ gameId }) => core.mods[gameId] ?? [],
     mods_pick: () => core.modPick,

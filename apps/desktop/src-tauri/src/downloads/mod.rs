@@ -2489,6 +2489,7 @@ mod tests {
             tools: crate::launcher::ToolPaths::default(),
             rom_folders: Vec::new(),
             emulators: crate::emulators::Env::detect(None),
+            fps_log_dir: None,
         };
         let item = db::library::require(&pool, "epic-sugar").await.unwrap();
         let args = manager.epic_launch_args(&item, &host).await.unwrap();

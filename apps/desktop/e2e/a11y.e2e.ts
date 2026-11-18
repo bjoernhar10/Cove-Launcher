@@ -59,6 +59,9 @@ test.describe("WCAG 2.1 AA unter Linux", () => {
   test("/library/game-0", async ({ page }) => {
     await expectAccessible(page, "/library/game-0");
     await expect(page.getByRole("region", { name: "Linux-Kompatibilität" }).getByText("Gold", { exact: true })).toBeVisible();
+    // The frame rate history of the seeded sessions, checked as well.
+    await expect(page.getByRole("region", { name: "Bildrate" }).getByRole("button", { name: /FPS/ }).first()).toBeVisible();
+    await expectNoViolations(page);
   });
 
   // Proton: the settings tab and the version of a Windows game.

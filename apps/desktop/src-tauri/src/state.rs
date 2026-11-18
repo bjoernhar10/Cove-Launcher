@@ -46,6 +46,10 @@ pub struct AppState {
     pub free_games: Arc<crate::free_games::FreeGames>,
     /// Mods per game.
     pub mods: Arc<crate::mods::Mods>,
+    /// Frame rate history (`MangoHud` logs, Linux).
+    pub fps: Arc<crate::fps::FpsLogs>,
+    /// Game streaming: Cove's games in Sunshine's app list.
+    pub sunshine: Arc<crate::sunshine::Sunshine>,
     /// Where Heroic and Lutris keep their data.
     pub launcher_dirs: crate::external::LauncherDirs,
     /// Desktop and app menu shortcuts.

@@ -77,6 +77,9 @@ No ads, no social feed, no account of its own.
   when you switch them off.
 - **Shortcuts:** put a game on the desktop or in the app menu (Start menu, Applications folder).
   It starts through Cove, so playtime and saves keep being tracked.
+- **Streaming with Moonlight:** Cove adds your installed games, with their covers, to
+  [Sunshine](https://github.com/LizardByte/Sunshine), so you can stream them with Moonlight to a
+  phone, a TV or another computer. Your own Sunshine entries stay as they are.
 
 ### Linux gaming
 
@@ -86,6 +89,9 @@ No ads, no social feed, no account of its own.
 - **Game options per game:** MangoHud, GameMode, gamescope (with game resolution and fullscreen),
   AMD FSR, and DXVK / VKD3D-Proton on or off, next to your own launch arguments and environment
   variables.
+- **Frame rate history:** with "Record frame rate" on, MangoHud logs each session in the
+  background (nothing shows in the game). The game page shows average FPS, 1 % and 0.1 % lows and
+  the frame rate over the session.
 - **Prefix tools:** see each game's Proton prefix size, open it, reset it or run winetricks.
 - **Linux compatibility at a glance:** every game page shows its ProtonDB rating.
 

@@ -489,6 +489,18 @@ pub async fn complete_extra(pool: &SqlitePool, id: &str, path: &str) -> AppResul
     set_status(pool, id, DownloadStatus::Completed).await
 }
 
+/// Whether the game has a download that is not finished (queued, running or paused).
+pub async fn has_unfinished(pool: &SqlitePool, game_id: &str) -> AppResult<bool> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM downloads WHERE game_id = ? \
+         AND status IN ('downloading', 'paused', 'queued', 'verifying', 'extracting')",
+    )
+    .bind(game_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(count > 0)
+}
+
 /// Queued or running extras of a game.
 pub async fn active_extras(pool: &SqlitePool, game_id: &str) -> AppResult<Vec<String>> {
     Ok(sqlx::query_scalar(
@@ -623,6 +635,9 @@ mod tests {
         assert_eq!((store, store_id.as_str()), (StoreSource::Steam, "620"));
         assert_eq!(enqueue_handoff(&pool, "s").await.unwrap().0, first);
         assert_eq!(handed_off(&pool).await.unwrap().len(), 1);
+        // A handed-off download no longer blocks moving; a queued one does.
+        assert!(!has_unfinished(&pool, "s").await.unwrap());
+        assert!(has_unfinished(&pool, "dl-a").await.unwrap());
     }
 
     #[tokio::test]

@@ -20,6 +20,7 @@ import { Field, Input, Select, SettingRow, Switch } from "../../components/ui/Fi
 import { Page } from "../../components/ui/Page.tsx";
 import { useCatalogStatus } from "../../hooks/useCatalog.ts";
 import { DataTransfer } from "../../features/DataTransfer.tsx";
+import { SunshineStreaming } from "../../features/SunshineStreaming.tsx";
 import { AccountsTab } from "./AccountsTab.tsx";
 import { PluginsTab } from "./PluginsTab.tsx";
 import { ProtonTab } from "./ProtonTab.tsx";
@@ -118,6 +119,7 @@ function GeneralTab() {
         )}
       </Group>
       <DataTransfer />
+      <SunshineStreaming />
     </Panel>
   );
 }

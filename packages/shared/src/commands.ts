@@ -27,6 +27,8 @@ import type {
   WishlistItem,
   GamePrice,
   ExternalGame,
+  FpsLog,
+  SunshineStatus,
   FreeGame,
   GameNews,
   GameShortcut,
@@ -163,6 +165,15 @@ export interface CoveCommands {
   /** Moves a mod to `position` (0 = first). */
   mods_move: { args: { gameId: GameId; modId: string; position: number }; result: ModInfo[] };
   mods_remove: { args: { gameId: GameId; modId: string }; result: ModInfo[] };
+  /** Linux: the game's recorded sessions (frame rates), newest first. */
+  game_fps_logs: { args: { gameId: GameId }; result: FpsLog[] };
+  game_fps_logs_clear: { args: { gameId: GameId }; result: null };
+  /** Sunshine on this computer and how many of Cove's games are in its list. */
+  sunshine_status: { args: NoArgs; result: SunshineStatus };
+  /** Puts every installed game Cove can start into Sunshine's app list. */
+  sunshine_sync: { args: NoArgs; result: SunshineStatus };
+  /** Takes Cove's games out of Sunshine's app list. */
+  sunshine_remove: { args: NoArgs; result: SunshineStatus };
   /** Recent posts of the games played last (Home). */
   news_recent: { args: NoArgs; result: GameNews[] };
   /** Linux: GE-Proton releases, installed builds and Steam's builds. */

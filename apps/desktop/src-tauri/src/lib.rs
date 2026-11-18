@@ -18,6 +18,7 @@ mod error;
 mod external;
 mod flatpak;
 mod folders;
+mod fps;
 mod free_games;
 mod gamepad;
 mod launcher;
@@ -38,6 +39,7 @@ mod state;
 mod steam;
 mod storage;
 mod stores;
+mod sunshine;
 mod transfer;
 mod umu;
 mod updates;
@@ -169,6 +171,11 @@ macro_rules! cove_handlers {
             $crate::commands::mods_set_enabled,
             $crate::commands::mods_move,
             $crate::commands::mods_remove,
+            $crate::commands::game_fps_logs,
+            $crate::commands::game_fps_logs_clear,
+            $crate::commands::sunshine_status,
+            $crate::commands::sunshine_sync,
+            $crate::commands::sunshine_remove,
             $crate::commands::downloads_reorder,
             $crate::commands::downloads_clear_history,
             $crate::commands::system_profile,
@@ -320,6 +327,11 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         news: Arc::new(news::News::new(pool.clone())),
         shortcuts: Arc::new(build_shortcuts(app, &pool, &data_dir)),
         mods: Arc::new(mods::Mods::new(pool.clone(), data_dir.join("mods"))),
+        fps: Arc::new(fps::FpsLogs::new(pool.clone(), data_dir.join("fps-logs"))),
+        sunshine: Arc::new(sunshine::Sunshine::new(
+            sunshine::config_dirs(host.home.as_deref()),
+            shortcuts::CoveCommand::current(),
+        )),
         launcher_dirs: external::LauncherDirs::for_home(
             host.home.as_deref(),
             app.path().config_dir().ok().as_deref(),
@@ -403,6 +415,9 @@ fn after_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, game_id: String) 
             eprintln!("[cove] Cloud-Spielstände von {game_id}: {error}");
         }
         state.backups.after_session(&game_id, &state.host).await;
+        if let Err(error) = state.fps.collect(&game_id).await {
+            eprintln!("[cove] FPS-Log von {game_id}: {error}");
+        }
     });
 }
 

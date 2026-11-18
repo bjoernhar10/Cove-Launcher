@@ -775,7 +775,10 @@ pub async fn launch_game(state: &AppState, game_id: &str) -> AppResult<LaunchRes
     if item.entry.launch_via == Some(LaunchVia::Steam) {
         steam_in_background(state).await?;
     }
-    let host = launch_host(state, &item).await?;
+    let mut host = launch_host(state, &item).await?;
+    if host.platform == Platform::Linux && item.entry.launch_options.tweaks.fps_log {
+        host.fps_log_dir = state.fps.prepare(game_id);
+    }
     if item.entry.source == StoreSource::Gog && item.entry.installed_by_cove {
         state.downloads.gog_saves_before_launch(&item, &host).await;
     }
@@ -1283,6 +1286,12 @@ pub async fn game_move(
     {
         return Err(AppError::AlreadyRunning(game_id));
     }
+    if db::downloads::has_unfinished(&state.pool, &game_id).await? {
+        return Err(AppError::InvalidInput(tr!(
+            "Für dieses Spiel läuft gerade ein Download. Verschiebe es, wenn er fertig ist.",
+            "A download for this game is running. Move it when it has finished."
+        )));
+    }
     let item = db::library::require(&state.pool, &game_id).await?;
     state.mover.start(&item, &folder)
 }
@@ -1581,6 +1590,12 @@ async fn update_game(
         .any(|r| r.game_id == game_id)
     {
         return Err(AppError::AlreadyRunning(game_id.to_owned()));
+    }
+    if state.mover.is_moving(game_id) {
+        return Err(AppError::InvalidInput(tr!(
+            "Dieses Spiel wird gerade verschoben. Aktualisiere es danach.",
+            "This game is being moved. Update it afterwards."
+        )));
     }
     match excluded_dlcs {
         Some(excluded) => state.downloads.change_dlcs(game_id, excluded).await,
@@ -2216,4 +2231,72 @@ pub async fn achievements_sync<R: Runtime>(
 #[tauri::command]
 pub async fn cove_achievements_list(state: State<'_, AppState>) -> AppResult<Vec<CoveAchievement>> {
     state.cove_achievements.list().await
+}
+
+// ───────────── frame rates, streaming ─────────────
+
+/// The game's recorded sessions (frame rates), newest first.
+#[tauri::command]
+pub async fn game_fps_logs(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<Vec<crate::models::FpsLog>> {
+    state.fps.list(&game_id).await
+}
+
+#[tauri::command]
+pub async fn game_fps_logs_clear(state: State<'_, AppState>, game_id: String) -> AppResult<()> {
+    state.fps.clear(&game_id).await
+}
+
+/// Sunshine on this computer and how many of Cove's games are in its list.
+#[tauri::command]
+pub async fn sunshine_status(
+    state: State<'_, AppState>,
+) -> AppResult<crate::models::SunshineStatus> {
+    let sunshine = state.sunshine.clone();
+    tokio::task::spawn_blocking(move || sunshine.status())
+        .await
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))
+}
+
+/// Puts every installed game Cove can start into Sunshine's app list.
+#[tauri::command]
+pub async fn sunshine_sync(state: State<'_, AppState>) -> AppResult<crate::models::SunshineStatus> {
+    let mut games = Vec::new();
+    for item in db::library::list(&state.pool).await? {
+        if !item.entry.installed || item.entry.launch_via.is_none() {
+            continue;
+        }
+        let cover = match item.game.artwork.cover.url.as_deref() {
+            Some(url) => state
+                .catalog
+                .images
+                .get(url)
+                .await
+                .ok()
+                .map(|(bytes, _)| bytes),
+            None => None,
+        };
+        games.push(crate::sunshine::StreamGame {
+            id: item.game.id,
+            title: item.game.title,
+            cover,
+        });
+    }
+    let sunshine = state.sunshine.clone();
+    tokio::task::spawn_blocking(move || sunshine.sync(&games))
+        .await
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?
+}
+
+/// Takes Cove's games out of Sunshine's app list.
+#[tauri::command]
+pub async fn sunshine_remove(
+    state: State<'_, AppState>,
+) -> AppResult<crate::models::SunshineStatus> {
+    let sunshine = state.sunshine.clone();
+    tokio::task::spawn_blocking(move || sunshine.remove())
+        .await
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))?
 }
