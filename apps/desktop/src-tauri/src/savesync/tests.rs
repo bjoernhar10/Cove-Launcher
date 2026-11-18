@@ -527,6 +527,42 @@ fn dropbox_arguments_stay_ascii() {
 }
 
 #[tokio::test]
+async fn a_save_rewritten_within_the_same_second_still_goes_up() {
+    let (server, _) = cloud().await;
+    let pc = device(&server, CloudProvider::OneDrive, "Saltmarsh", "Desk").await;
+    let deck = device(&server, CloudProvider::OneDrive, "Saltmarsh", "Deck").await;
+    write(&pc.saves, "slot1.sav", b"chapter one");
+    pc.after_session().await;
+    // Same size, same second, only the nanoseconds differ.
+    let file = pc.saves.join("slot1.sav");
+    let before = std::fs::metadata(&file).unwrap().modified().unwrap();
+    let second = before
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    std::fs::write(&file, b"chapter two").unwrap();
+    let nanos = if before
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos()
+        == 500_000_000
+    {
+        250_000_000
+    } else {
+        500_000_000
+    };
+    std::fs::File::options()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_modified(std::time::UNIX_EPOCH + Duration::new(second, nanos))
+        .unwrap();
+    pc.after_session().await;
+    deck.before_launch().await;
+    assert_eq!(deck.read("slot1.sav"), b"chapter two");
+}
+
+#[tokio::test]
 async fn a_conflict_waits_for_the_user_and_keeps_the_other_side() {
     let (server, _) = cloud().await;
     let pc = device(&server, CloudProvider::OneDrive, "Saltmarsh", "Desk").await;

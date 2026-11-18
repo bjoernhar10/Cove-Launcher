@@ -74,6 +74,9 @@ struct LocalFile {
     path: PathBuf,
     size: u64,
     modified: i64,
+    /// The modification time to the nanosecond: a save rewritten within the
+    /// second of the last sync (same size) still counts as changed.
+    stamp: u128,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -120,6 +123,11 @@ fn local_files(set: &SaveSet) -> Vec<LocalFile> {
                 path: path.clone(),
                 size: *size,
                 modified: *modified,
+                stamp: std::fs::metadata(path)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_nanos()),
             })
         })
         .collect()
@@ -131,7 +139,7 @@ fn fingerprint(files: &[LocalFile]) -> String {
         hash.update(file.portable.as_bytes());
         hash.update([0]);
         hash.update(file.size.to_le_bytes());
-        hash.update(file.modified.to_le_bytes());
+        hash.update(file.stamp.to_le_bytes());
     }
     cloud::hex(&hash.finalize())
 }
