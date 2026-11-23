@@ -2,10 +2,10 @@
 
 **A calm, universal game launcher for Linux, Windows and macOS.**
 
-Cove brings your games from Steam, GOG, Epic, Amazon, itch.io, emulators and your own folders
-together in one tidy library. It installs GOG, Epic and Amazon games without their launchers, runs Windows games on
-Linux with Proton, backs up your saves, syncs them between your devices through your own cloud and keeps
-track of playtime and achievements.
+Cove brings your games from Steam, GOG, Epic, Amazon, itch.io, Ubisoft Connect, Battle.net, the Xbox app,
+emulators and your own folders together in one tidy library. It installs GOG, Epic and Amazon games without
+their launchers, runs Windows games on Linux with Proton, backs up your saves, syncs them and your library
+between your devices through your own cloud and keeps track of playtime and achievements.
 No ads, no social feed, no account of its own.
 
 [Website](https://getcove.dev) ·
@@ -26,7 +26,8 @@ No ads, no social feed, no account of its own.
 | ![Save backups and Proton prefix](docs/screenshots/backups.png) | ![Downloads](docs/screenshots/downloads.png) |
 | ![Emulators](docs/screenshots/emulators.png) | ![Wishlist](docs/screenshots/wishlist.png) |
 | ![TV mode](docs/screenshots/tv.png) | ![Storage](docs/screenshots/storage.png) |
-| ![Downloads on a schedule](docs/screenshots/schedule.png) | |
+| ![Downloads on a schedule](docs/screenshots/schedule.png) | ![Games from Ubisoft Connect, Battle.net, the Xbox app, the EA app and Bottles](docs/screenshots/launchers.png) |
+| ![Notes for every game](docs/screenshots/notes.png) | ![Screenshots from Steam, the Xbox Game Bar and the game folder](docs/screenshots/screenshots.png) |
 
 <sub>The screenshots show invented demo games with drawn artwork.</sub>
 
@@ -42,9 +43,13 @@ No ads, no social feed, no account of its own.
   PlayStation 2, Dreamcast, PSP …). Every ROM becomes a game in your library and starts with
   RetroArch, a standalone emulator (Dolphin, PCSX2, DuckStation, PPSSPP, mGBA, melonDS, Flycast)
   or your own program. Cove brings no emulators, BIOS files or ROMs.
-- **From Heroic and Lutris:** games you added to Heroic yourself and your Lutris games come over
-  with their Wine prefix (saves included), their Wine version and Lutris' playtime. Heroic's store
-  games are found through the stores anyway.
+- **Games from other launchers:** on Windows, games from **Ubisoft Connect**, **Battle.net**, the
+  **Xbox app** (PC Game Pass) and the **EA app** are found without signing in. Ubisoft, Battle.net
+  and Xbox games start through their launcher, so login, overlay and DRM stay as they are, and Cove
+  still counts the playtime.
+- **From Heroic, Lutris and Bottles:** games you added to Heroic yourself, your Lutris games and the
+  programs in your Bottles come over with their Wine prefix (saves included), their Wine version and
+  Lutris' playtime. Heroic's store games are found through the stores anyway.
 - **TV mode for controllers:** a full-screen interface for the TV, the Steam Deck or the sofa,
   made for Xbox, PlayStation, Switch and Steam Deck controllers. The buttons on screen match your
   controller (A or ✕, B or ○ …). On the Steam Deck's gaming mode Cove starts in it by itself; the
@@ -52,6 +57,10 @@ No ads, no social feed, no account of its own.
 - **Tidy:** grid or list, groups for installed games, favourites and each store, your own
   collections ("With friends", "Started" …), a length filter and a command palette (`Ctrl+K`).
   Stays smooth with thousands of games.
+- **Notes for every game:** write down where you stopped or what is left. Saved as you type, found
+  by the search, shown in TV mode.
+- **Screenshots:** every game page collects the pictures from Steam, the Xbox Game Bar and the
+  game's own Screenshots folder, to page through or open in your image viewer.
 - **Playtime and achievements:** playtime follows the whole process tree, the game page shows the
   last 14 days. Achievements come from the stores, plus Cove's own and those of plugins.
 - **Statistics:** click your profile at the bottom left for your playtime per month and weekday,
@@ -108,7 +117,7 @@ No ads, no social feed, no account of its own.
   the game on Windows; on macOS Apple's Metal HUD shows frame rate, frame times and GPU load. Cove
   never injects anything into a game itself.
 
-### Your saves
+### Your saves and library
 
 - **Save backups for every game:** after each session Cove backs up the game's saves into a folder
   you choose, for example one that Syncthing or Nextcloud syncs. Where a game keeps its saves comes
@@ -119,6 +128,10 @@ No ads, no social feed, no account of its own.
   playing. A save made on Windows lands in the game's Proton prefix on a Steam Deck. Cove only sees
   its own app folder in your cloud, needs no server and no Cove account, and never overwrites a save
   without keeping a backup. When you played on two devices, Cove asks which save stays.
+- **Your library on every device:** through the same cloud, your favourites, notes, collections,
+  wishlist and playtime are the same on your PC, laptop and Steam Deck. Removing something on one
+  device removes it on the others too. Launch options, folders and logins stay on each device. If
+  the sync needs a new sign-in or keeps failing, the sidebar tells you.
 - **Cloud saves** of the GOG and Epic games Cove installed are synced before and after playing,
   compatible with GOG Galaxy and the Epic Launcher.
 
@@ -141,8 +154,8 @@ No ads, no social feed, no account of its own.
 
 - **Discord status:** if you switch it on, Discord shows the game you're playing in Cove. It talks
   only to the Discord app on your computer.
-- **Move to a new computer:** export your library, playtime, collections, wishlist and settings
-  to one file and import it there. Cove only adds and never deletes.
+- **Move to a new computer:** export your library, playtime, collections, wishlist, notes and
+  settings to one file and import it there. Cove only adds and never deletes.
 - **Private by design:** Cove never sees your store passwords; tokens live only in your system's
   keyring. Recommendations are computed locally.
 - **Calm design:** a dark, quiet interface with five muted accent colours, fully usable with the

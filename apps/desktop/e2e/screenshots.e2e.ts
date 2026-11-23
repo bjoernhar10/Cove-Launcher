@@ -154,6 +154,7 @@ test("screenshots", async ({ page }) => {
     }
     const core = (window as unknown as { __cove: { core: Core } }).__cove.core;
     core.saveSync = { ...core.saveSync, provider: "googleDrive", account: "alex@example.com", device: "Desktop" };
+    (core as unknown as { librarySyncedAt: string }).librarySyncedAt = new Date(Date.now() - 4 * 60_000).toISOString();
     core.saveSyncGames[id] = { state: "conflict", syncedAt: null, conflict: { device: "Steam Deck", savedAt: new Date(Date.now() - 3 * 3600_000).toISOString() } };
   }, protonId);
   await go(page, "/settings/backups");
@@ -182,4 +183,71 @@ test("screenshots", async ({ page }) => {
   });
   await settle(page);
   await page.screenshot({ path: `${OUT}/frame-rate.png` });
+
+  // Notes on the first game's overview, and its Screenshots tab (the drawn demo artwork).
+  const firstGame = demo.library[0];
+  if (!firstGame) throw new Error("no demo games");
+  await page.evaluate((game) => {
+    interface Core {
+      notes: Record<string, unknown>;
+      screenshots: Record<string, unknown>;
+    }
+    const core = (window as unknown as { __cove: { core: Core } }).__cove.core;
+    core.notes[game.id] = {
+      text: "Chapter 4: the lighthouse. Second key is behind the waterfall.\nStill to do: the north island and the last two shrines.",
+      updatedAt: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+    };
+    core.screenshots[game.id] = [...game.artwork.screenshots, game.artwork.header].map((image, i) => ({
+      url: image.url,
+      fileName: `2026111${String(9 - i)}_2015${String(i)}0.jpg`,
+      takenAt: new Date(Date.now() - (i + 1) * 86_400_000).toISOString(),
+      sizeBytes: 400_000,
+      source: i === 0 ? "game" : "steam",
+    }));
+  }, firstGame);
+  // Away and back, so the game page loads the note.
+  await go(page, "/library");
+  await go(page, `/library/${first}`);
+  await page.getByRole("heading", { name: "Notes" }).evaluate((el) => {
+    const main = document.getElementById("main");
+    if (!main) return;
+    main.scrollTop += el.getBoundingClientRect().top - main.getBoundingClientRect().top - 360;
+    window.scrollTo(0, 0);
+  });
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/notes.png` });
+  await go(page, `/library/${first}?tab=screenshots`);
+  await page.screenshot({ path: `${OUT}/screenshots.png` });
+
+  // Games from other launchers in the add-game dialog (invented titles).
+  await page.evaluate(() => {
+    const game = (id: string, launcher: string, title: string, launchUrl: string | null, winePrefix: string | null = null) => ({
+      id,
+      launcher,
+      title,
+      executablePath: `/games/${id}.exe`,
+      windows: winePrefix !== null,
+      proton: false,
+      winePrefix,
+      wineBinary: null,
+      arguments: "",
+      playtimeMinutes: 0,
+      installPath: null,
+      launchUrl,
+      inLibrary: false,
+    });
+    const cove = (window as unknown as { __cove: { core: { externalGames: unknown[] } } }).__cove;
+    cove.core.externalGames = [
+      game("ubisoft:101", "ubisoft", "Harbour Lights", "uplay://launch/101/0"),
+      game("battlenet:north", "battleNet", "Northwind Keep", "battlenet://NWK"),
+      game("xbox:Studio.PaleOrchard", "xbox", "Pale Orchard", "shell:AppsFolder\\Studio.PaleOrchard_8wekyb3d8bbwe!Game"),
+      game("ea:{7}", "ea", "Glass Reef Racing", null),
+      game("bottles:Games/a1", "bottles", "Copper Moth", null, "/home/alex/.local/share/bottles/bottles/Games"),
+    ];
+  });
+  await go(page, "/library");
+  await page.getByRole("button", { name: "Add game" }).click();
+  await page.getByRole("radio", { name: "Other launchers" }).click();
+  await settle(page);
+  await page.screenshot({ path: `${OUT}/launchers.png` });
 });
