@@ -155,8 +155,15 @@ impl Screenshots {
             .map(Path::new)
             .filter(|p| p.components().count() >= 3)
         {
+            // On Windows and macOS these may all be the same folder: read each once.
+            let mut seen = std::collections::HashSet::new();
             for name in ["Screenshots", "screenshots", "ScreenShots"] {
-                images_in(&folder.join(name), &mut found, ScreenshotSource::Game);
+                let dir = folder.join(name);
+                if let Ok(real) = std::fs::canonicalize(&dir) {
+                    if seen.insert(real) {
+                        images_in(&dir, &mut found, ScreenshotSource::Game);
+                    }
+                }
             }
         }
         found.sort();
