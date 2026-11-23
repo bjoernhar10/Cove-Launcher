@@ -1,5 +1,5 @@
 import { useMessages } from "../../i18n/index.ts";
-import type { Game } from "@cove/shared";
+import type { Game, GameNote } from "@cove/shared";
 import { Bookmark, ChartColumn, CornerDownLeft, Dices, HardDrive, Tv, Plus, Search, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
@@ -32,6 +32,8 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
   const [games, setGames] = useState<Game[]>([]);
   /** Game or catalogue id → library game id. */
   const [owned, setOwned] = useState<Map<string, string>>(new Map());
+  /** Games found through their note. */
+  const [noted, setNoted] = useState<Set<string>>(new Set());
   const [activeIndex, setActiveIndex] = useState(0);
   const debounced = useDebounced(query, 250);
   const listId = useId();
@@ -42,7 +44,9 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
     const catalogHits = debounced.trim().length > 1
       ? api.catalog.searchCatalog(debounced).then((page) => page.items, () => [])
       : Promise.resolve([]);
-    void Promise.all([catalogHits, api.library.listLibrary().catch(() => [])]).then(([catalog, library]) => {
+    const none: Record<string, GameNote> = {};
+    const notes = debounced.trim().length > 1 ? api.library.notes().catch(() => none) : Promise.resolve(none);
+    void Promise.all([catalogHits, api.library.listLibrary().catch(() => []), notes]).then(([catalog, library, noteTexts]) => {
       if (cancelled) return;
       // Catalogue entries linked to a library game open the library page.
       setOwned(
@@ -55,8 +59,15 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       const q = debounced.trim().toLowerCase();
       // Own games first (including manual ones the catalogue does not know), then catalogue hits.
       const own = q ? library.map((i) => i.game).filter((g) => g.title.toLowerCase().includes(q)) : [];
+      // Then games whose note mentions it.
+      const byNote = q
+        ? library
+            .filter((i) => !own.includes(i.game) && noteTexts[i.game.id]?.text.toLowerCase().includes(q))
+            .map((i) => i.game)
+        : [];
+      setNoted(new Set(byNote.map((g) => g.id)));
       const ownIds = new Set(library.flatMap((i) => [i.game.id, i.entry.catalogId ?? ""]));
-      setGames([...own, ...catalog.filter((g) => !ownIds.has(g.id))].slice(0, 8));
+      setGames([...own, ...byNote, ...catalog.filter((g) => !ownIds.has(g.id))].slice(0, 8));
     });
     return () => {
       cancelled = true;
@@ -74,7 +85,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
           id: `game-${game.id}`,
           group: t.palette.games,
           label: game.title,
-          hint: owned.has(game.id) ? t.palette.inLibrary : t.palette.catalogue,
+          hint: noted.has(game.id) ? t.palette.inNote : owned.has(game.id) ? t.palette.inLibrary : t.palette.catalogue,
           game,
           run: go(owned.has(game.id) ? `/library/${owned.get(game.id) ?? game.id}` : `/catalogue/${game.id}`),
         }))
@@ -114,7 +125,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
     ];
     const matches = (c: Command) => !q || c.label.toLowerCase().includes(q);
     return [...gameCommands, ...nav.filter(matches), ...actions.filter(matches)];
-  }, [games, owned, query, navigate, onClose, openAddGame, setPickerOpen, t]);
+  }, [games, owned, noted, query, navigate, onClose, openAddGame, setPickerOpen, t]);
 
   const safeIndex = Math.min(activeIndex, Math.max(0, commands.length - 1));
   const active = commands[safeIndex];

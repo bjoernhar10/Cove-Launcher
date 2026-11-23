@@ -184,7 +184,11 @@ pub fn launch_via(
     store_game_id: Option<&str>,
     executable_path: Option<&str>,
     installed_by_cove: bool,
+    launch_url: Option<&str>,
 ) -> Option<LaunchVia> {
+    if let Some(via) = launch_url.and_then(launch_url_via) {
+        return Some(via);
+    }
     if source == StoreSource::Steam && store_game_id.is_some() {
         return Some(LaunchVia::Steam);
     }
@@ -210,6 +214,21 @@ pub fn launch_via(
     }
 }
 
+/// The launcher a start link belongs to; None = not a launcher link.
+pub fn launch_url_via(url: &str) -> Option<LaunchVia> {
+    let lower = url.to_ascii_lowercase();
+    let rest = |prefix: &str| lower.strip_prefix(prefix).filter(|r| !r.is_empty());
+    if rest("uplay://launch/").is_some() {
+        Some(LaunchVia::UbisoftConnect)
+    } else if rest("battlenet://").is_some() {
+        Some(LaunchVia::BattleNet)
+    } else if rest("shell:appsfolder\\").is_some() {
+        Some(LaunchVia::XboxApp)
+    } else {
+        None
+    }
+}
+
 fn split_args(raw: &str) -> AppResult<Vec<String>> {
     shlex::split(raw).ok_or_else(|| {
         AppError::InvalidInput(tr!(
@@ -228,6 +247,12 @@ fn store_client_plan(target: &LaunchTarget) -> Option<LaunchPlan> {
         || (target.source == StoreSource::Amazon && !target.installed_by_cove && cfg!(windows));
     let id = target.store_game_id.as_deref().filter(|_| via_client)?;
     store_url(target.source, id).map(LaunchPlan::Url)
+}
+
+/// Ubisoft Connect, Battle.net and Xbox app games start through their launcher's link.
+fn launcher_link_plan(target: &LaunchTarget) -> Option<LaunchPlan> {
+    let url = target.options.launch_url.as_deref()?;
+    launch_url_via(url).map(|_| LaunchPlan::Url(url.to_owned()))
 }
 
 /// GOG games define their start in goggame-<id>.info: arguments and working folder.
@@ -497,7 +522,7 @@ fn proton_command(
 }
 
 pub fn plan(target: &LaunchTarget, host: &HostEnv) -> AppResult<LaunchPlan> {
-    if let Some(plan) = store_client_plan(target) {
+    if let Some(plan) = store_client_plan(target).or_else(|| launcher_link_plan(target)) {
         return Ok(plan);
     }
 
@@ -1164,7 +1189,7 @@ mod tests {
         assert_eq!(cwd, Some(dir.path().join("Bin")));
         assert!(env.contains(&("AMAZON_GAMES_FUEL_PRODUCT_SKU".into(), "SKU1".into())));
         assert_eq!(
-            launch_via(StoreSource::Amazon, Some("p"), Some("/g/x.exe"), true),
+            launch_via(StoreSource::Amazon, Some("p"), Some("/g/x.exe"), true, None),
             Some(LaunchVia::Direct)
         );
         let none = if cfg!(windows) {
@@ -1173,7 +1198,7 @@ mod tests {
             None
         };
         assert_eq!(
-            launch_via(StoreSource::Amazon, Some("p"), None, false),
+            launch_via(StoreSource::Amazon, Some("p"), None, false, None),
             none
         );
         // Installed by the Amazon Games app (Windows) or Heroic (Linux): the app
@@ -1184,7 +1209,13 @@ mod tests {
             LaunchVia::Direct
         };
         assert_eq!(
-            launch_via(StoreSource::Amazon, Some("p"), Some("/g/x.exe"), false),
+            launch_via(
+                StoreSource::Amazon,
+                Some("p"),
+                Some("/g/x.exe"),
+                false,
+                None
+            ),
             Some(app_or_direct)
         );
         t.installed_by_cove = false;
@@ -1196,6 +1227,49 @@ mod tests {
             );
         } else {
             assert!(matches!(plan, LaunchPlan::Process { ref args, .. } if args == &["-fuel"]));
+        }
+    }
+
+    #[test]
+    fn launcher_links_start_through_their_launcher() {
+        let windows = host(Platform::Windows, &[]);
+        for (url, via) in [
+            ("uplay://launch/635/0", LaunchVia::UbisoftConnect),
+            ("battlenet://Pro", LaunchVia::BattleNet),
+            (
+                "shell:AppsFolder\\Studio.Game_8wekyb3d8bbwe!Game",
+                LaunchVia::XboxApp,
+            ),
+        ] {
+            let mut t = target(StoreSource::Manual, Some("C:\\Games\\game.exe"), None);
+            t.options.launch_url = Some(url.into());
+            assert_eq!(plan(&t, &windows).unwrap(), LaunchPlan::Url(url.into()));
+            assert_eq!(
+                launch_via(
+                    t.source,
+                    None,
+                    t.executable_path.as_deref(),
+                    false,
+                    Some(url)
+                ),
+                Some(via)
+            );
+        }
+        // Anything else is not a launcher link: the executable starts.
+        for url in [
+            "https://example.com",
+            "file:///bin/sh",
+            "uplay://launch/",
+            "steam://run/1",
+            "origin2://game/launch?offerIds=1",
+        ] {
+            assert_eq!(launch_url_via(url), None, "{url}");
+            let mut t = target(StoreSource::Manual, Some("C:\\Games\\game.exe"), None);
+            t.options.launch_url = Some(url.into());
+            assert!(matches!(
+                plan(&t, &windows).unwrap(),
+                LaunchPlan::Process { .. }
+            ));
         }
     }
 
@@ -1297,6 +1371,7 @@ mod tests {
                 t.store_game_id.as_deref(),
                 t.executable_path.as_deref(),
                 t.installed_by_cove,
+                t.options.launch_url.as_deref(),
             );
             assert_eq!(via, expected, "{t:?}");
             let planned = plan(&t, &linux).ok();

@@ -3,6 +3,8 @@ import type {
   BackupInfo,
   ExternalGame,
   FpsLog,
+  GameNote,
+  Screenshot,
   Game,
   GameBackups,
   GameId,
@@ -125,6 +127,31 @@ export function gameNews(gameId: GameId): Promise<NewsItem[]> {
 }
 
 /** Linux: the game's recorded sessions (frame rates), newest first. */
+/** The user's note on a game; null = none. */
+export function note(gameId: GameId): Promise<GameNote | null> {
+  return call("game_note", { gameId });
+}
+
+/** Stores the note; an empty one is removed. */
+export function setNote(gameId: GameId, text: string): Promise<GameNote | null> {
+  return call("game_note_set", { gameId, text });
+}
+
+/** Every note by game id. */
+export function notes(): Promise<Record<GameId, GameNote>> {
+  return call("notes_list", {});
+}
+
+/** The game's screenshots, newest first. */
+export function screenshots(gameId: GameId): Promise<Screenshot[]> {
+  return call("game_screenshots", { gameId });
+}
+
+/** Opens a listed screenshot in the system's image viewer. */
+export async function openScreenshot(url: string): Promise<void> {
+  await call("screenshot_open", { url });
+}
+
 export function fpsLogs(gameId: GameId): Promise<FpsLog[]> {
   return call("game_fps_logs", { gameId });
 }

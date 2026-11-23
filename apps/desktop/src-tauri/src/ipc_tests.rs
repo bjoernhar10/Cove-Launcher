@@ -87,6 +87,28 @@ async fn app_with(
         tmp.path().to_path_buf(),
         "http://127.0.0.1:1/manifest.yaml".into(),
     ));
+    // Nothing listens there: no cloud in tests.
+    let save_sync = Arc::new(crate::savesync::SaveSync::new(
+        pool.clone(),
+        default_settings(None),
+        backups.clone(),
+        secrets.clone(),
+        crate::savesync::cloud::Endpoints {
+            proxy: Some("http://127.0.0.1:1".into()),
+            google_auth: "http://127.0.0.1:1/auth".into(),
+            google_api: "http://127.0.0.1:1".into(),
+            microsoft_login: "http://127.0.0.1:1/login".into(),
+            graph: "http://127.0.0.1:1/graph".into(),
+            google_client_id: "gid".into(),
+            // Without an id OneDrive is not offered: `save_sync_connect` answers at once.
+            onedrive_client_id: String::new(),
+            dropbox_auth: "http://127.0.0.1:1/dbauth".into(),
+            dropbox_api: "http://127.0.0.1:1".into(),
+            dropbox_content: "http://127.0.0.1:1".into(),
+            dropbox_client_id: String::new(),
+        },
+        Arc::new(|_, _| {}),
+    ));
     let state = AppState {
         launcher: Launcher::new(
             pool.clone(),
@@ -135,27 +157,16 @@ async fn app_with(
         )),
         // Nothing listens there: tests never talk to ProtonDB or Steam.
         backups: backups.clone(),
-        // Nothing listens there either: no cloud in tests.
-        save_sync: Arc::new(crate::savesync::SaveSync::new(
+        save_sync: save_sync.clone(),
+        screenshots: Arc::new(crate::screenshots::Screenshots::new(
+            vec![tmp.path().join("Steam")],
+            Vec::new(),
+        )),
+        library_sync: Arc::new(crate::librarysync::LibrarySync::new(
             pool.clone(),
             default_settings(None),
-            backups,
-            secrets.clone(),
-            crate::savesync::cloud::Endpoints {
-                proxy: Some("http://127.0.0.1:1".into()),
-                google_auth: "http://127.0.0.1:1/auth".into(),
-                google_api: "http://127.0.0.1:1".into(),
-                microsoft_login: "http://127.0.0.1:1/login".into(),
-                graph: "http://127.0.0.1:1/graph".into(),
-                google_client_id: "gid".into(),
-                // Without an id OneDrive is not offered: `save_sync_connect` answers at once.
-                onedrive_client_id: String::new(),
-                dropbox_auth: "http://127.0.0.1:1/dbauth".into(),
-                dropbox_api: "http://127.0.0.1:1".into(),
-                dropbox_content: "http://127.0.0.1:1".into(),
-                dropbox_client_id: String::new(),
-            },
-            Arc::new(|_, _| {}),
+            save_sync,
+            Arc::new(|_| {}),
         )),
         gamepads: Arc::new(crate::gamepad::Gamepads::default()),
         discord: Arc::new(crate::discord::Discord::default()),
@@ -1352,4 +1363,72 @@ async fn save_sync_accepts_frontend_payloads() {
     );
     let status: Value = invoke(&app, "save_sync_disconnect", json!({}));
     assert_eq!(status["provider"], Value::Null);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn notes_library_sync_and_launch_links_accept_frontend_payloads() {
+    let app = app().await;
+    let exe = app.tmp.path().join("game.exe");
+    std::fs::write(&exe, b"x").unwrap();
+    let added: LibraryItem = invoke(
+        &app,
+        "library_add_manual",
+        json!({ "input": { "title": "Harbour", "executablePath": exe.to_string_lossy(), "sizeBytes": null } }),
+    );
+    let id = added.game.id;
+
+    let note: Value = invoke(&app, "game_note", json!({ "gameId": id }));
+    assert_eq!(note, Value::Null);
+    let note: Value = invoke(
+        &app,
+        "game_note_set",
+        json!({ "gameId": id, "text": "Find the key\n" }),
+    );
+    assert_eq!(note["text"], "Find the key");
+    assert!(note["updatedAt"].is_string());
+    let notes: Value = invoke(&app, "notes_list", json!({}));
+    assert_eq!(notes[&id]["text"], "Find the key");
+    let note: Value = invoke(&app, "game_note_set", json!({ "gameId": id, "text": " " }));
+    assert_eq!(note, Value::Null);
+    let notes: Value = invoke(&app, "notes_list", json!({}));
+    assert_eq!(notes, json!({}));
+
+    // Screenshots: a folder next to the game; only listed files open.
+    std::fs::create_dir_all(app.tmp.path().join("Screenshots")).unwrap();
+    std::fs::write(app.tmp.path().join("Screenshots/a.png"), b"png").unwrap();
+    let shots: Value = invoke(&app, "game_screenshots", json!({ "gameId": id }));
+    assert_eq!(shots[0]["fileName"], "a.png");
+    assert_eq!(shots[0]["source"], "game");
+    assert!(invoke_raw(&app, "screenshot_open", json!({ "url": "/etc/passwd" })).is_err());
+    assert!(invoke_raw(
+        &app,
+        "game_note_set",
+        json!({ "gameId": "nope", "text": "x" })
+    )
+    .is_err());
+
+    // No cloud connected: the status says so and a sync does nothing.
+    let status: Value = invoke(&app, "library_sync_status", json!({}));
+    assert_eq!(
+        status,
+        json!({ "enabled": true, "connected": false, "lastSyncedAt": null, "problem": null })
+    );
+    let status: Value = invoke(&app, "library_sync_now", json!({}));
+    assert_eq!(status["lastSyncedAt"], Value::Null);
+
+    let updated: Value = invoke(
+        &app,
+        "library_update",
+        json!({ "gameId": id, "patch": { "launchOptions": { "arguments": "",
+            "compatibilityTool": "native", "env": [], "protonVersion": null,
+            "tweaks": { "mangohud": false, "gamemode": false, "gamescope": false, "gamescopeWidth": null,
+                "gamescopeHeight": null, "gamescopeFullscreen": false, "fsr": false, "dxvk": true, "vkd3d": true,
+                "metalHud": false, "performanceMode": false, "rtss": false, "fpsLog": false },
+            "winePrefix": null, "wineBinary": null, "launchUrl": "battlenet://Pro" } } }),
+    );
+    assert_eq!(
+        updated["entry"]["launchOptions"]["launchUrl"],
+        "battlenet://Pro"
+    );
+    assert_eq!(updated["entry"]["launchVia"], "battleNet");
 }

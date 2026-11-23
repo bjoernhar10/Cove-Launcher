@@ -4,6 +4,8 @@
  */
 import type {
   GameSaveSync,
+  GameNote,
+  Screenshot,
   SaveSyncStatus,
   AppErrorKind,
   AppSettings,
@@ -55,6 +57,15 @@ import type {
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 
 /** The core's defaults for a game's Linux options. */
+/** Mirrors `launcher::launch_url_via`: the launcher a start link belongs to. */
+function launchUrlVia(url: string | null): LaunchVia | null {
+  const lower = url?.toLowerCase() ?? "";
+  if (/^uplay:\/\/launch\/./.test(lower)) return "ubisoftConnect";
+  if (/^battlenet:\/\/./.test(lower)) return "battleNet";
+  if (lower.startsWith("shell:appsfolder\\") && lower.length > 17) return "xboxApp";
+  return null;
+}
+
 export const FAKE_TWEAKS: GameTweaks = {
   mangohud: false,
   gamemode: false,
@@ -120,7 +131,7 @@ export function fakeItem(id: string, title: string, overrides: Partial<LibraryIt
       lastPlayedAt: "2026-11-01T10:00:00Z",
       addedAt: "2026-10-01T10:00:00Z",
       achievements: { unlocked: 0, total: 0 },
-      launchOptions: { arguments: "", compatibilityTool: "native", env: [], protonVersion: null, tweaks: { ...FAKE_TWEAKS }, winePrefix: null, wineBinary: null },
+      launchOptions: { arguments: "", compatibilityTool: "native", env: [], protonVersion: null, tweaks: { ...FAKE_TWEAKS }, winePrefix: null, wineBinary: null, launchUrl: null },
       catalogId: null,
       matchStatus: "none",
       launchVia: null,
@@ -143,7 +154,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   library: { scanFolders: [], scanOnStartup: false, gameFolders: ["/home/u/Games"], steamSilentStart: true, epicCloudSaves: true, gogCloudSaves: true, defaultProton: "latest", useUmu: true },
   downloads: { directory: "/home/u/Games", bandwidthLimitBytesPerSecond: null, maxConcurrent: 1, schedule: { enabled: false, from: "01:00", until: "07:00" } },
   catalog: { useCoveService: true },
-  backups: { enabled: true, directory: "", keep: 10 },
+  backups: { enabled: true, directory: "", keep: 10, librarySync: true },
   emulators: { romFolders: [] },
   wishlist: { country: "DE", priceAlerts: true, freeGames: true },
 };
@@ -307,6 +318,14 @@ export interface FakeCore {
   saveSync: SaveSyncStatus;
   /** Save sync per game id; missing = `pending` when connected. */
   saveSyncGames: Record<string, GameSaveSync>;
+  /** When the library was last synced (`library_sync_status`). */
+  librarySyncedAt: string | null;
+  /** Notes per game id. */
+  notes: Record<string, GameNote>;
+  /** Screenshots per game id. */
+  screenshots: Record<string, Screenshot[]>;
+  /** Screenshot URLs opened in the image viewer. */
+  openedScreenshots: string[];
   /** What `mods_pick` "picks"; null = cancelled. */
   modPick: string | null;
   /** Games Heroic and Lutris know (`launchers_scan`). */
@@ -475,6 +494,10 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
     sunshineGames: 0,
     saveSync: { provider: null, account: null, needsReauth: false, available: ["googleDrive", "oneDrive", "dropbox"], device: "Desk" },
     saveSyncGames: {},
+    librarySyncedAt: null,
+    notes: {},
+    screenshots: {},
+    openedScreenshots: [],
     modPick: null,
     imports: [],
     gameSizes: {},
@@ -793,12 +816,34 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
       if (core.protonDown) reject("storeUnavailable", "ProtonDB ist gerade nicht erreichbar. Versuch es später noch einmal.");
       return core.protonRatings[gameId] ?? null;
     },
+    game_note: ({ gameId }) => core.notes[gameId] ?? null,
+    notes_list: () => ({ ...core.notes }),
+    game_screenshots: ({ gameId }) => core.screenshots[gameId] ?? [],
+    screenshot_open: ({ url }) => {
+      core.openedScreenshots.push(url);
+      return null;
+    },
+    game_note_set: ({ gameId, text }) => {
+      const trimmed = text.trimEnd();
+      if (trimmed.trim() === "") {
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete core.notes[gameId];
+        return null;
+      }
+      core.notes[gameId] = { text: trimmed, updatedAt: new Date().toISOString() };
+      return core.notes[gameId];
+    },
     game_fps_logs: ({ gameId }) => core.fpsLogs[gameId] ?? [],
     game_fps_logs_clear: ({ gameId }) => {
       core.fpsLogs[gameId] = [];
       return null;
     },
     save_sync_status: () => core.saveSync,
+    library_sync_status: () => ({ enabled: core.settings.backups.librarySync, connected: core.saveSync.provider !== null, lastSyncedAt: core.librarySyncedAt, problem: null }),
+    library_sync_now: () => {
+      if (core.saveSync.provider !== null && core.settings.backups.librarySync) core.librarySyncedAt = "2026-11-23T10:00:00Z";
+      return { enabled: core.settings.backups.librarySync, connected: core.saveSync.provider !== null, lastSyncedAt: core.librarySyncedAt, problem: null };
+    },
     save_sync_connect: ({ provider }) => {
       core.saveSync = { ...core.saveSync, provider, account: "ann@example.com", needsReauth: false };
       return core.saveSync;
@@ -876,7 +921,9 @@ export function installFakeCore(library: LibraryItem[] = [fakeItem("tidewater", 
         .filter((g) => ids.includes(g.id))
         .map((g) => {
           const item = fakeItem(`manual-${g.title.toLowerCase()}`, g.title, { source: "manual", executablePath: g.executablePath, playtimeMinutes: g.playtimeMinutes });
-          item.entry.launchOptions = { ...item.entry.launchOptions, compatibilityTool: g.windows ? (g.proton ? "proton" : "wine") : "native", winePrefix: g.winePrefix, wineBinary: g.wineBinary, arguments: g.arguments };
+          item.entry.launchOptions = { ...item.entry.launchOptions, compatibilityTool: g.windows ? (g.proton ? "proton" : "wine") : "native", winePrefix: g.winePrefix, wineBinary: g.wineBinary, arguments: g.arguments, launchUrl: g.launchUrl };
+          if (g.installPath !== null) item.entry.installPath = g.installPath;
+          item.entry.launchVia = launchUrlVia(g.launchUrl) ?? "direct";
           core.library.push(item);
           return item.game.id;
         }),

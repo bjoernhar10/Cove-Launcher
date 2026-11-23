@@ -3,6 +3,7 @@ import { api } from "../../api/index.ts";
 import { Button } from "../../components/ui/Button.tsx";
 import { ErrorState } from "../../components/ui/Feedback.tsx";
 import { Select, SettingRow, Switch } from "../../components/ui/Field.tsx";
+import { LibrarySyncSettings } from "../../features/LibrarySyncSettings.tsx";
 import { SaveSyncSettings } from "../../features/SaveSyncSettings.tsx";
 import { useMessages } from "../../i18n/index.ts";
 import { errorMessage, toast } from "../../stores/toasts.ts";
@@ -79,6 +80,12 @@ export function BackupsTab() {
       </Group>
       <p className="mt-4 text-xs text-fg-muted">{t.backups.source}</p>
       <SaveSyncSettings />
+      <LibrarySyncSettings
+        enabled={backups.librarySync}
+        onToggle={(librarySync) => {
+          save((s) => ({ ...s, backups: { ...s.backups, librarySync } }));
+        }}
+      />
     </Panel>
   );
 }

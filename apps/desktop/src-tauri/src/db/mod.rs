@@ -6,6 +6,7 @@ pub mod catalog_cache;
 pub mod collections;
 pub mod downloads;
 pub mod library;
+pub mod notes;
 pub mod sessions;
 pub mod settings;
 pub mod sources;

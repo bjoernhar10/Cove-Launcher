@@ -43,6 +43,8 @@ pub struct AppState {
     pub backups: Arc<crate::backups::BackupService>,
     /// Save sync through the user's own cloud.
     pub save_sync: Arc<crate::savesync::SaveSync>,
+    pub library_sync: Arc<crate::librarysync::LibrarySync>,
+    pub screenshots: Arc<crate::screenshots::Screenshots>,
     /// Wishlist prices and price alerts.
     pub prices: Arc<crate::prices::PriceService>,
     pub free_games: Arc<crate::free_games::FreeGames>,

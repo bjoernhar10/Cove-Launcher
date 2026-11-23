@@ -59,6 +59,11 @@ or Dropbox:
 - Cove stores your games' save files there, together with a small list of the files, the name of the
   computer that saved them and the game's title. It also reads your account's e-mail address or name to
   show which account is connected.
+- **Library sync** (on by default once a cloud is connected, can be switched off under Settings → Saves):
+  Cove also stores one file with your favourites, notes, collections, wishlist (with target prices) and
+  your play sessions (game, start, duration), so your other computers show the same. Games are named by
+  store and store id, or by title for games you added yourself. Launch options, folders and logins are
+  not part of it.
 - The data goes directly between your computer and your cloud provider. Nobody else, including the
   developers of Cove, can access it.
 - To stop, disconnect the cloud in Cove's settings. You can delete Cove's folder in your cloud storage
@@ -67,7 +72,7 @@ or Dropbox:
 Cove's use and transfer of information received from Google APIs adheres to the
 [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
 including the Limited Use requirements. Data from Google, Microsoft and Dropbox is used only to sync your
-saves, is never sold, never used for advertising and never transferred to anyone else.
+saves and library, is never sold, never used for advertising and never transferred to anyone else.
 
 ## Children
 

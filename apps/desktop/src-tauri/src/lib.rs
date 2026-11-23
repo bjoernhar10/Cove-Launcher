@@ -22,6 +22,7 @@ mod fps;
 mod free_games;
 mod gamepad;
 mod launcher;
+mod librarysync;
 mod models;
 mod mods;
 mod mover;
@@ -34,6 +35,7 @@ mod protondb;
 mod recommend;
 mod savesync;
 mod scanner;
+mod screenshots;
 mod shortcuts;
 mod sidecar;
 mod state;
@@ -172,6 +174,11 @@ macro_rules! cove_handlers {
             $crate::commands::mods_set_enabled,
             $crate::commands::mods_move,
             $crate::commands::mods_remove,
+            $crate::commands::game_note,
+            $crate::commands::game_note_set,
+            $crate::commands::notes_list,
+            $crate::commands::game_screenshots,
+            $crate::commands::screenshot_open,
             $crate::commands::game_fps_logs,
             $crate::commands::game_fps_logs_clear,
             $crate::commands::sunshine_status,
@@ -183,6 +190,8 @@ macro_rules! cove_handlers {
             $crate::commands::game_save_sync,
             $crate::commands::game_save_sync_now,
             $crate::commands::game_save_sync_resolve,
+            $crate::commands::library_sync_status,
+            $crate::commands::library_sync_now,
             $crate::commands::downloads_reorder,
             $crate::commands::downloads_clear_history,
             $crate::commands::system_profile,
@@ -326,6 +335,8 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         backups::manifest::MANIFEST_URL.into(),
     ));
 
+    let save_sync = build_save_sync(app, &pool, &defaults, &backups);
+
     Ok(AppState {
         recommender,
         downloads,
@@ -352,7 +363,12 @@ fn init_state(app: &tauri::App) -> Result<AppState, Box<dyn std::error::Error>> 
         discord: Arc::new(discord::Discord::default()),
         gamepads: Arc::new(gamepad::Gamepads::default()),
         proton,
-        save_sync: build_save_sync(app, &pool, &defaults, &backups),
+        library_sync: build_library_sync(app, &pool, &defaults, &save_sync),
+        screenshots: Arc::new(screenshots::Screenshots::new(
+            screenshots::steam_roots(host.home.as_deref()),
+            screenshots::capture_dirs(host.home.as_deref()),
+        )),
+        save_sync,
         backups,
         launcher: Launcher::new(pool.clone(), emit, open_url, Timing::default()),
         defaults,
@@ -425,6 +441,7 @@ fn after_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, game_id: String) 
         }
         state.backups.after_session(&game_id, &state.host).await;
         state.save_sync.after_session(&game_id, &state.host).await;
+        state.library_sync.changed();
         if let Err(error) = state.fps.collect(&game_id).await {
             eprintln!("[cove] FPS-Log von {game_id}: {error}");
         }
@@ -432,6 +449,29 @@ fn after_session<R: tauri::Runtime>(app: &tauri::AppHandle<R>, game_id: String) 
 }
 
 pub const SAVE_SYNC_CHANGED: &str = "save-sync-changed";
+pub const LIBRARY_SYNC_CHANGED: &str = "library-sync-changed";
+
+/// Library sync through the same cloud; after each sync the UI hears
+/// `library-sync-changed` (`changed`: this computer's library changed).
+fn build_library_sync(
+    app: &tauri::App,
+    pool: &sqlx::SqlitePool,
+    defaults: &models::AppSettings,
+    save_sync: &Arc<savesync::SaveSync>,
+) -> Arc<librarysync::LibrarySync> {
+    let handle = app.handle().clone();
+    Arc::new(librarysync::LibrarySync::new(
+        pool.clone(),
+        defaults.clone(),
+        save_sync.clone(),
+        Arc::new(move |changed| {
+            let _ = handle.emit(
+                LIBRARY_SYNC_CHANGED,
+                serde_json::json!({ "changed": changed }),
+            );
+        }),
+    ))
+}
 
 /// Save sync through the user's cloud; a conflict also gets a desktop notification.
 fn build_save_sync(
@@ -643,6 +683,30 @@ async fn serve_image<R: tauri::Runtime>(
     }
 }
 
+/// Answers a `cove-shot://` request: a screenshot Cove listed (by its token).
+async fn serve_screenshot<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    path: &str,
+) -> tauri::http::Response<Vec<u8>> {
+    let respond = |status: u16, mime: &str, body: Vec<u8>| {
+        tauri::http::Response::builder()
+            .status(status)
+            .header(tauri::http::header::CONTENT_TYPE, mime)
+            .header(tauri::http::header::CACHE_CONTROL, "max-age=3600")
+            .body(body)
+            .unwrap_or_default()
+    };
+    let Some(state) = app.try_state::<AppState>() else {
+        return respond(503, "text/plain", Vec::new());
+    };
+    let shots = state.screenshots.clone();
+    let path = path.to_owned();
+    match tokio::task::spawn_blocking(move || shots.read(&path)).await {
+        Ok(Ok((bytes, mime))) => respond(200, mime, bytes),
+        _ => respond(404, "text/plain", Vec::new()),
+    }
+}
+
 /// Shown instead of a panic when the core cannot start (e.g. a broken database).
 fn report_startup_failure(app: &tauri::App, error: &dyn std::error::Error) {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
@@ -732,6 +796,16 @@ pub fn run() {
                 });
             },
         )
+        .register_asynchronous_uri_scheme_protocol(
+            screenshots::SCHEME,
+            |ctx, request, responder| {
+                let app = ctx.app_handle().clone();
+                let path = request.uri().path().to_owned();
+                tauri::async_runtime::spawn(async move {
+                    responder.respond(serve_screenshot(&app, &path).await);
+                });
+            },
+        )
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let state = match init_state(app) {
@@ -743,6 +817,12 @@ pub fn run() {
             };
             let downloads = state.downloads.clone();
             let gamepads = state.gamepads.clone();
+            tauri::async_runtime::spawn(
+                state
+                    .library_sync
+                    .clone()
+                    .watch(std::time::Duration::from_secs(60)),
+            );
             app.manage(state);
             app.manage(updates::UpdaterRegistered);
             // After `manage`: the download hooks look up the state.

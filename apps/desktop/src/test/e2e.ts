@@ -133,6 +133,13 @@ core.backups["game-0"] = {
     { id: "2026-11-09_19-00-00.000", createdAt: "2026-11-09T19:00:00Z", files: 3, bytes: 2_900_000 },
   ],
 };
+// Two screenshots of the first game (drawn, no real game artwork).
+const shot = (shade: string) =>
+  `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><rect width="1600" height="900" fill="${shade}"/></svg>`)}`;
+core.screenshots["game-0"] = [
+  { url: shot("#2a3140"), fileName: "20261112_201500.jpg", takenAt: "2026-11-12T20:15:00Z", sizeBytes: 420_000, source: "steam" },
+  { url: shot("#3a3a3a"), fileName: "20261110_190000.jpg", takenAt: "2026-11-10T19:00:00Z", sizeBytes: 380_000, source: "steam" },
+];
 core.romFiles["/home/alex/ROMs/SNES"] = ["Lighthouse Keeper (USA).sfc", "Tiny Planets (Europe).sfc"];
 
 // Prices (IsThereAnyDeal) for the first catalogue games; igdb-3 has none.

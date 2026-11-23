@@ -293,12 +293,17 @@
         "keep": {
           "description": "Backups kept per game (1 to 100).",
           "type": "number"
+        },
+        "librarySync": {
+          "description": "With a connected cloud: favourites, notes, collections, wishlist and playtime are shared with the other computers.",
+          "type": "boolean"
         }
       },
       "required": [
         "enabled",
         "directory",
-        "keep"
+        "keep",
+        "librarySync"
       ],
       "type": "object"
     },
@@ -1139,7 +1144,7 @@
     },
     "ExternalGame": {
       "additionalProperties": false,
-      "description": "A game Heroic or Lutris knows (not their store games).",
+      "description": "A game another launcher installed: Heroic's own, Lutris, Bottles, Ubisoft Connect, the EA app, Battle.net or the Xbox app.",
       "properties": {
         "arguments": {
           "type": "string"
@@ -1148,11 +1153,25 @@
           "type": "string"
         },
         "id": {
-          "description": "`heroic:<app name>` or `lutris:<id>`.",
+          "description": "`<launcher>:<the launcher's id>`.",
           "type": "string"
         },
         "inLibrary": {
           "type": "boolean"
+        },
+        "installPath": {
+          "description": "The game's folder when it is not the executable's folder.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "launchUrl": {
+          "description": "Starts through its launcher (see `LaunchOptions.launchUrl`).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "launcher": {
           "$ref": "#/definitions/ExternalLauncher"
@@ -1196,6 +1215,8 @@
         "wineBinary",
         "arguments",
         "playtimeMinutes",
+        "installPath",
+        "launchUrl",
         "inLibrary"
       ],
       "type": "object"
@@ -1203,7 +1224,12 @@
     "ExternalLauncher": {
       "enum": [
         "heroic",
-        "lutris"
+        "lutris",
+        "bottles",
+        "ubisoft",
+        "ea",
+        "battleNet",
+        "xbox"
       ],
       "type": "string"
     },
@@ -1569,6 +1595,23 @@
       "required": [
         "gameId",
         "item"
+      ],
+      "type": "object"
+    },
+    "GameNote": {
+      "additionalProperties": false,
+      "description": "The user's own note on a game (\"where was I, what's left\").",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "updatedAt"
       ],
       "type": "object"
     },
@@ -2269,6 +2312,13 @@
           },
           "type": "array"
         },
+        "launchUrl": {
+          "description": "Starts through another launcher instead of the executable: `uplay://launch/…`, `battlenet://…` or `shell:AppsFolder\\…` (Xbox app). null = the executable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "protonVersion": {
           "anyOf": [
             {
@@ -2306,7 +2356,8 @@
         "protonVersion",
         "tweaks",
         "winePrefix",
-        "wineBinary"
+        "wineBinary",
+        "launchUrl"
       ],
       "type": "object"
     },
@@ -2338,7 +2389,10 @@
         "steam",
         "epicLauncher",
         "gogGalaxy",
-        "amazonGames"
+        "amazonGames",
+        "ubisoftConnect",
+        "battleNet",
+        "xboxApp"
       ],
       "type": "string"
     },
@@ -2538,6 +2592,40 @@
         "gogCloudSaves",
         "defaultProton",
         "useUmu"
+      ],
+      "type": "object"
+    },
+    "LibrarySyncStatus": {
+      "additionalProperties": false,
+      "description": "The library sync (favourites, notes, collections, wishlist, playtime).",
+      "properties": {
+        "connected": {
+          "description": "A cloud is connected (Settings → Saves → Cloud sync).",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "`backups.librarySync`.",
+          "type": "boolean"
+        },
+        "lastSyncedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "problem": {
+          "description": "Why the last sync failed (user-facing); null = it worked.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "connected",
+        "lastSyncedAt",
+        "problem"
       ],
       "type": "object"
     },
@@ -4251,6 +4339,45 @@
         "alreadyInLibrary"
       ],
       "type": "object"
+    },
+    "Screenshot": {
+      "additionalProperties": false,
+      "description": "One screenshot of a game (newest first in a listing).",
+      "properties": {
+        "fileName": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "number"
+        },
+        "source": {
+          "$ref": "#/definitions/ScreenshotSource"
+        },
+        "takenAt": {
+          "type": "string"
+        },
+        "url": {
+          "description": "`cove-shot://localhost/<token>`: only files Cove listed can be shown.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "fileName",
+        "takenAt",
+        "sizeBytes",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ScreenshotSource": {
+      "description": "Where a screenshot comes from: Steam, the Xbox Game Bar, the game's own folder.",
+      "enum": [
+        "steam",
+        "xbox",
+        "game"
+      ],
+      "type": "string"
     },
     "ServiceStatus": {
       "description": "Health of a component. Sidecars start on first use, so `idle` is normal.",

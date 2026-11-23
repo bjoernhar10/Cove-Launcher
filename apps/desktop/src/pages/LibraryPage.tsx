@@ -160,7 +160,7 @@ const GridCard = memo(function GridCard({ item, onFavorite, onMenu }: GameRowPro
 /** Height of one list row in px (40px thumbnail + 2 × 8px padding + 1px border). */
 const LIST_ROW_HEIGHT = 57;
 
-const ListRow = memo(function ListRow({ item, onFavorite, onMenu }: GameRowProps) {
+const ListRow = memo(function ListRow({ item, onFavorite, onMenu, note }: GameRowProps & { note: boolean }) {
   const t = useMessages();
   const { game, entry } = item;
   return (
@@ -177,7 +177,10 @@ const ListRow = memo(function ListRow({ item, onFavorite, onMenu }: GameRowProps
           <GameCover game={game} aspect="square" showTitle={false} className="w-10 shrink-0 rounded-md" />
           <span className="min-w-0">
             <span className="block truncate text-sm font-medium text-fg">{game.title}</span>
-            <span className="block truncate text-xs text-fg-subtle">{entry.installed ? t.library.installed : t.library.notInstalled}</span>
+            <span className="block truncate text-xs text-fg-subtle">
+              {entry.installed ? t.library.installed : t.library.notInstalled}
+              {note && ` · ${t.notes.marker}`}
+            </span>
           </span>
         </Link>
       </td>
@@ -197,7 +200,18 @@ const ListRow = memo(function ListRow({ item, onFavorite, onMenu }: GameRowProps
   );
 });
 
-function LibraryTable({ items, onFavorite, onMenu }: { items: LibraryItem[]; onFavorite: FavoriteHandler; onMenu: MenuHandler }) {
+function LibraryTable({
+  items,
+  notes,
+  onFavorite,
+  onMenu,
+}: {
+  items: LibraryItem[];
+  /** Games with a note. */
+  notes: ReadonlySet<string>;
+  onFavorite: FavoriteHandler;
+  onMenu: MenuHandler;
+}) {
   const t = useMessages();
   const bodyRef = useRef<HTMLTableSectionElement>(null);
   const virtual = items.length > VIRTUALIZE_FROM;
@@ -227,7 +241,7 @@ function LibraryTable({ items, onFavorite, onMenu }: { items: LibraryItem[]; onF
         <tbody ref={bodyRef}>
           {before > 0 && <tr aria-hidden style={{ height: before }} />}
           {visible.map((item) => (
-            <ListRow key={item.game.id} item={item} onFavorite={onFavorite} onMenu={onMenu} />
+            <ListRow key={item.game.id} item={item} note={notes.has(item.game.id)} onFavorite={onFavorite} onMenu={onMenu} />
           ))}
           {after > 0 && <tr aria-hidden style={{ height: after }} />}
         </tbody>
@@ -242,6 +256,8 @@ export function LibraryPage() {
   const view = usePreferences((s) => s.libraryView);
   const setView = usePreferences((s) => s.setLibraryView);
   const collectionsQuery = useQuery("collections", api.collections.list);
+  const notesQuery = useQuery("notes", api.library.notes);
+  const noted = useMemo(() => new Set(Object.keys(notesQuery.data ?? {})), [notesQuery.data]);
   const storedGroup = usePreferences((s) => s.libraryGroup);
   const setGroup = usePreferences((s) => s.setLibraryGroup);
   const length = usePreferences((s) => s.libraryLength);
@@ -502,7 +518,7 @@ export function LibraryPage() {
           )}
 
           {query.status === "success" && !lengthLoading && items.length > 0 && view === "list" && (
-            <LibraryTable items={items} onFavorite={setFavorite} onMenu={openMenu} />
+            <LibraryTable items={items} notes={noted} onFavorite={setFavorite} onMenu={openMenu} />
           )}
         </>
       )}

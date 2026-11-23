@@ -29,6 +29,7 @@ export function TvGame() {
   const { gameId = "" } = useParams();
   const query = useQuery(`library/${gameId}`, () => api.library.getLibraryItem(gameId));
   const item = query.data ?? null;
+  const note = useQuery(`note/${gameId}`, () => api.library.note(gameId));
 
   async function toggleFavorite(): Promise<void> {
     if (!item) return;
@@ -90,6 +91,14 @@ export function TvGame() {
         <Fact label={t.tv.lastPlayed} value={entry.lastPlayedAt ? formatRelative(entry.lastPlayedAt) : "–"} />
         <Fact label={t.tv.achievements} value={entry.achievements.total > 0 ? `${String(entry.achievements.unlocked)} / ${String(entry.achievements.total)}` : "–"} />
       </div>
+      {note.data && (
+        <section aria-labelledby="tv-note" className="rounded-xl border border-border p-4">
+          <h2 id="tv-note" className="text-sm text-fg-muted">
+            {t.notes.title}
+          </h2>
+          <p className="mt-2 text-base whitespace-pre-line text-fg">{note.data.text}</p>
+        </section>
+      )}
     </div>
   );
 }

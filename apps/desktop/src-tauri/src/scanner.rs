@@ -408,6 +408,19 @@ fn folder_size(dir: &Path) -> u64 {
     total
 }
 
+/// The main Windows executable of one game's folder (launchers that only
+/// name the folder: Ubisoft Connect, Battle.net); None = no executable.
+pub fn main_windows_exe(folder: &Path, title: &str) -> Option<PathBuf> {
+    let mut files = Vec::new();
+    walk(folder, 0, &mut files);
+    files
+        .into_iter()
+        .filter_map(|(path, depth, meta)| classify(&path, &meta, depth))
+        .filter(|f| f.kind == ExecutableKind::WindowsExe)
+        .max_by_key(|f| score(f, title, false))
+        .map(|f| f.path)
+}
+
 /// Scans `root` and returns one suggestion per detected game, sorted by title.
 /// `known` = executable paths already in the library.
 pub fn scan(root: &Path, known: &HashSet<String>) -> AppResult<Vec<ScanCandidate>> {

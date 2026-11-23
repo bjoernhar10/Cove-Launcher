@@ -121,10 +121,10 @@ test("„Was soll ich spielen?“ ist zugänglich", async ({ page }) => {
   await expect(dialog.getByRole("heading", { level: 3 })).toBeVisible();
 });
 
-test("Heroic / Lutris und Export sind zugänglich", async ({ page }) => {
+test("Andere Launcher und Export sind zugänglich", async ({ page }) => {
   await openCove(page, "/library");
   await page.getByRole("button", { name: "Spiel hinzufügen" }).click();
-  await page.getByRole("radio", { name: "Heroic / Lutris" }).click();
+  await page.getByRole("radio", { name: "Andere Launcher" }).click();
   await expect(page.getByText("Nichts gefunden")).toBeVisible();
   await expectNoViolations(page);
 });

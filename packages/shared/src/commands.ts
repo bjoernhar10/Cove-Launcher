@@ -33,6 +33,9 @@ import type {
   GameSaveSync,
   CloudProvider,
   SaveSyncKeep,
+  GameNote,
+  Screenshot,
+  LibrarySyncStatus,
   FreeGame,
   GameNews,
   GameShortcut,
@@ -170,6 +173,16 @@ export interface CoveCommands {
   mods_move: { args: { gameId: GameId; modId: string; position: number }; result: ModInfo[] };
   mods_remove: { args: { gameId: GameId; modId: string }; result: ModInfo[] };
   /** Linux: the game's recorded sessions (frame rates), newest first. */
+  /** The user's note on a game; null = none. */
+  game_note: { args: { gameId: GameId }; result: GameNote | null };
+  /** Stores the note; an empty one is removed (null). */
+  game_note_set: { args: { gameId: GameId; text: string }; result: GameNote | null };
+  /** Every note by game id (search, the list view's marker). */
+  notes_list: { args: NoArgs; result: Record<GameId, GameNote> };
+  /** The game's screenshots (Steam, Xbox Game Bar, its own folder), newest first. */
+  game_screenshots: { args: { gameId: GameId }; result: Screenshot[] };
+  /** Opens a listed screenshot in the system's image viewer. */
+  screenshot_open: { args: { url: string }; result: null };
   game_fps_logs: { args: { gameId: GameId }; result: FpsLog[] };
   game_fps_logs_clear: { args: { gameId: GameId }; result: null };
   /** Sunshine on this computer and how many of Cove's games are in its list. */
@@ -190,6 +203,9 @@ export interface CoveCommands {
   game_save_sync_now: { args: { gameId: GameId }; result: GameSaveSync };
   /** A conflict: which side wins; the other is kept as a save backup (refused while the game runs). */
   game_save_sync_resolve: { args: { gameId: GameId; keep: SaveSyncKeep }; result: GameSaveSync };
+  /** Library sync (favourites, notes, collections, wishlist, playtime) through the same cloud. */
+  library_sync_status: { args: NoArgs; result: LibrarySyncStatus };
+  library_sync_now: { args: NoArgs; result: LibrarySyncStatus };
   /** Recent posts of the games played last (Home). */
   news_recent: { args: NoArgs; result: GameNews[] };
   /** Linux: GE-Proton releases, installed builds and Steam's builds. */
@@ -322,6 +338,8 @@ export type CoveCommand = keyof CoveCommands;
 export interface CoveEvents {
   /** A game's saves were synced, or a conflict came up. */
   "save-sync-changed": { gameId: GameId };
+  /** A library sync ran; `changed`: this computer's library changed. */
+  "library-sync-changed": { changed: boolean };
   "game-state-changed": GameStateEvent;
   "downloads-changed": DownloadItem[];
   "download-progress": DownloadProgress;

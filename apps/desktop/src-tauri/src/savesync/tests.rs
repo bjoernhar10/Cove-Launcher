@@ -305,7 +305,7 @@ struct Device {
     saves: PathBuf,
     backups: Arc<BackupService>,
     notices: Arc<Mutex<Vec<Notice>>>,
-    _tmp: tempfile::TempDir,
+    tmp: tempfile::TempDir,
 }
 
 async fn device(server: &MockServer, provider: CloudProvider, title: &str, name: &str) -> Device {
@@ -384,7 +384,7 @@ async fn device(server: &MockServer, provider: CloudProvider, title: &str, name:
         saves,
         backups,
         notices,
-        _tmp: tmp,
+        tmp,
     }
 }
 
@@ -744,4 +744,100 @@ fn the_sign_in_page_asks_only_for_the_app_folder() {
     let (verifier, challenge) = cloud::pkce().unwrap();
     assert_eq!(verifier.len(), 43);
     assert_ne!(verifier, challenge);
+}
+
+async fn library_sync_goes_through_the_same_cloud(provider: CloudProvider) {
+    let (server, fake) = cloud().await;
+    let library = |device: Device| {
+        let pool = device.sync.pool.clone();
+        let id = device.item.game.id.clone();
+        let sync = crate::librarysync::LibrarySync::new(
+            pool.clone(),
+            crate::state::default_settings(None),
+            Arc::new(device.sync),
+            Arc::new(|_| {}),
+        );
+        (pool, sync, id, device.tmp)
+    };
+    let (pc_pool, pc, id, _pc_tmp) = library(device(&server, provider, "Saltmarsh", "Desk").await);
+    let (deck_pool, deck, deck_id, _deck_tmp) =
+        library(device(&server, provider, "Saltmarsh", "Deck").await);
+    let id = id.as_str();
+    assert_eq!(id, deck_id);
+
+    sqlx::query("UPDATE library_entries SET favorite = 1 WHERE game_id = ?")
+        .bind(id)
+        .execute(&pc_pool)
+        .await
+        .unwrap();
+    db::notes::set(&pc_pool, id, "Lighthouse key")
+        .await
+        .unwrap();
+    let status = pc.sync().await.unwrap();
+    assert!(status.connected && status.last_synced_at.is_some() && status.problem.is_none());
+
+    deck.sync().await.unwrap();
+    let item = db::library::require(&deck_pool, id).await.unwrap();
+    assert!(item.entry.favorite);
+    assert_eq!(
+        db::notes::get(&deck_pool, id).await.unwrap().unwrap().text,
+        "Lighthouse key"
+    );
+
+    // Unfavoured on the deck: gone on the desk too, through a replaced file.
+    sqlx::query("UPDATE library_entries SET favorite = 0 WHERE game_id = ?")
+        .bind(id)
+        .execute(&deck_pool)
+        .await
+        .unwrap();
+    deck.sync().await.unwrap();
+    pc.sync().await.unwrap();
+    assert!(
+        !db::library::require(&pc_pool, id)
+            .await
+            .unwrap()
+            .entry
+            .favorite
+    );
+    let names: Vec<String> = fake
+        .store
+        .lock()
+        .unwrap()
+        .files
+        .values()
+        .map(|(name, _)| name.clone())
+        .collect();
+    assert_eq!(
+        names.iter().filter(|n| n.contains("library.json")).count(),
+        1,
+        "{names:?}"
+    );
+
+    // Switched off: nothing happens.
+    let mut settings = db::settings::load(&pc_pool, &crate::state::default_settings(None))
+        .await
+        .unwrap();
+    settings.backups.library_sync = false;
+    db::settings::save(&pc_pool, &settings).await.unwrap();
+    let before = db::settings::get_json::<String>(&pc_pool, crate::librarysync::AT_KEY)
+        .await
+        .unwrap();
+    let status = pc.sync().await.unwrap();
+    assert!(!status.enabled);
+    assert_eq!(status.last_synced_at, before);
+}
+
+#[tokio::test]
+async fn library_sync_through_onedrive() {
+    library_sync_goes_through_the_same_cloud(CloudProvider::OneDrive).await;
+}
+
+#[tokio::test]
+async fn library_sync_through_google_drive() {
+    library_sync_goes_through_the_same_cloud(CloudProvider::GoogleDrive).await;
+}
+
+#[tokio::test]
+async fn library_sync_through_dropbox() {
+    library_sync_goes_through_the_same_cloud(CloudProvider::Dropbox).await;
 }

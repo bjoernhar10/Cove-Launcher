@@ -1,5 +1,6 @@
 import { useMessages } from "../../i18n/index.ts";
-import { Download, Tv } from "lucide-react";
+import { CloudOff, Download, Tv } from "lucide-react";
+import { useEffect } from "react";
 import { NavLink } from "react-router";
 import { api } from "../../api/index.ts";
 import { useQuery } from "../../hooks/useQuery.ts";
@@ -118,6 +119,37 @@ function RecentGames() {
   );
 }
 
+/** A quiet link to Settings → Spielstände while the cloud sync isn't working. */
+function SyncProblem({ collapsed }: { collapsed: boolean }) {
+  const t = useMessages();
+  const saves = useQuery("save-sync", api.saveSync.status);
+  const library = useQuery("library-sync", api.saveSync.libraryStatus);
+  const { retry: retrySaves } = saves;
+  const { retry: retryLibrary } = library;
+  useEffect(() => {
+    const offLibrary = api.saveSync.subscribeLibrary(() => {
+      retrySaves();
+      retryLibrary();
+    });
+    const offSaves = api.saveSync.subscribeChanged(() => {
+      retrySaves();
+    });
+    return () => {
+      offLibrary();
+      offSaves();
+    };
+  }, [retrySaves, retryLibrary]);
+  const reauth = saves.data?.needsReauth === true;
+  const problem = library.data?.enabled === true && library.data.problem !== null;
+  if (!reauth && !problem) return null;
+  return (
+    <SidebarLink
+      item={{ to: "/settings/backups", label: reauth ? t.sidebar.syncReauth : t.sidebar.syncProblem, icon: CloudOff }}
+      collapsed={collapsed}
+    />
+  );
+}
+
 export function Sidebar() {
   const t = useMessages();
   const collapsed = usePreferences((s) => s.sidebarCollapsed);
@@ -153,6 +185,7 @@ export function Sidebar() {
       <div className="flex-1" data-tauri-drag-region />
 
       <div className={cx("pb-3", collapsed ? "px-0" : "px-3")}>
+        <SyncProblem collapsed={collapsed} />
         <DownloadIndicator collapsed={collapsed} />
         <SidebarLink item={{ to: "/tv", label: t.tv.enter, icon: Tv }} collapsed={collapsed} />
         <SidebarLink item={SETTINGS_NAV} collapsed={collapsed} />

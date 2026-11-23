@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
+import { useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from "react";
 import { cx, unlessSet } from "../../lib/cx.ts";
 
 const CONTROL =
@@ -10,6 +10,11 @@ const CONTROL =
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   // Full width unless the caller sets a width.
   return <input className={cx(CONTROL, unlessSet(className, ["w-", "flex-"], "w-full"), className)} {...rest} />;
+}
+
+/** A multi-line text field with the same look as `Input`. */
+export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={cx(CONTROL, "h-auto w-full resize-y py-2 leading-relaxed", className)} {...rest} />;
 }
 
 export interface SelectOption<T extends string> {

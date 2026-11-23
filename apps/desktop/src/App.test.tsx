@@ -815,7 +815,7 @@ describe("Proton (Linux)", () => {
     core.library = [
       fakeItem("tidewater", "Tidewater", {
         executablePath: "/games/tidewater/Tidewater.exe",
-        launchOptions: { arguments: "", compatibilityTool: "proton", env: [], protonVersion, tweaks: { ...FAKE_TWEAKS }, winePrefix: null, wineBinary: null },
+        launchOptions: { arguments: "", compatibilityTool: "proton", env: [], protonVersion, tweaks: { ...FAKE_TWEAKS }, winePrefix: null, wineBinary: null, launchUrl: null },
       }),
     ];
   }
@@ -1061,9 +1061,87 @@ describe("Cloud sync", () => {
     expect(await screen.findByText("Spielstände abgeglichen.")).toBeDefined();
   });
 
+  it("syncs the library through the connected cloud and can be switched off", async () => {
+    core.saveSync = { ...core.saveSync, provider: "dropbox", account: null };
+    renderAt("/settings/backups");
+    expect(await screen.findByText("Noch nicht abgeglichen.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Jetzt abgleichen" }));
+    expect(await screen.findByText("Bibliothek abgeglichen.")).toBeDefined();
+    expect(core.librarySyncedAt).not.toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Bibliothek abgleichen" }));
+    await waitFor(() => {
+      expect(core.settings.backups.librarySync).toBe(false);
+    });
+  });
+
   it("says how to switch it on when no cloud is connected", async () => {
     renderAt("/library/tidewater?tab=settings");
     expect(await screen.findByText("Aus. Verbinde Cove unter Einstellungen → Spielstände mit deiner Cloud.")).toBeDefined();
+  });
+});
+
+describe("Notes in search and list", () => {
+  it("finds a game through its note and marks it in the list view", async () => {
+    core.notes.tidewater = { text: "Lighthouse, second key", updatedAt: "2026-11-20T10:00:00Z" };
+    renderAt("/library");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = await screen.findByRole("combobox", { name: "Suche" });
+    fireEvent.change(input, { target: { value: "lighthouse" } });
+    expect(await screen.findByRole("option", { name: /Tidewater.*In deiner Notiz/ })).toBeDefined();
+    fireEvent.keyDown(input, { key: "Escape" });
+    fireEvent.click(await screen.findByRole("radio", { name: "Liste" }));
+    const table = await screen.findByRole("table");
+    expect(await within(table).findByText(/· Notiz/)).toBeDefined();
+  });
+});
+
+describe("Screenshots", () => {
+  it("shows a game's screenshots, pages through them and opens one outside", async () => {
+    core.screenshots.tidewater = [
+      { url: "cove-shot://localhost/a", fileName: "shot-a.png", takenAt: "2026-11-20T10:00:00Z", sizeBytes: 10, source: "steam" },
+      { url: "cove-shot://localhost/b", fileName: "shot-b.png", takenAt: "2026-11-19T10:00:00Z", sizeBytes: 10, source: "game" },
+    ];
+    renderAt("/library/tidewater?tab=screenshots");
+    expect(await screen.findByText("2 Screenshots")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "shot-a.png öffnen" }));
+    const viewer = await screen.findByRole("dialog", { name: "shot-a.png" });
+    expect(within(viewer).getByText("1 von 2")).toBeDefined();
+    fireEvent.click(within(viewer).getByRole("button", { name: "Nächster Screenshot" }));
+    expect(await screen.findByRole("dialog", { name: "shot-b.png" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Im Bildbetrachter öffnen" }));
+    await waitFor(() => {
+      expect(core.openedScreenshots).toEqual(["cove-shot://localhost/b"]);
+    });
+  });
+
+  it("explains where screenshots come from when there are none", async () => {
+    renderAt("/library/tidewater?tab=screenshots");
+    expect(await screen.findByText("Noch keine Screenshots")).toBeDefined();
+  });
+});
+
+describe("Sync problems", () => {
+  it("shows a link in the sidebar when the cloud wants a new sign-in", async () => {
+    core.saveSync = { ...core.saveSync, provider: "oneDrive", account: null, needsReauth: true };
+    renderAt("/");
+    expect(await screen.findByRole("link", { name: /Cloud: neu anmelden/ })).toBeDefined();
+  });
+});
+
+describe("Notes", () => {
+  it("stores a note while typing and removes an emptied one", async () => {
+    renderAt("/library/tidewater");
+    const field = await screen.findByRole("textbox", { name: "Notizen" });
+    fireEvent.change(field, { target: { value: "Lighthouse, find the second key  " } });
+    await waitFor(() => {
+      expect(core.notes.tidewater?.text).toBe("Lighthouse, find the second key");
+    });
+    expect(await screen.findByText(/Gespeichert ·/)).toBeDefined();
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.blur(field);
+    await waitFor(() => {
+      expect(core.notes.tidewater).toBeUndefined();
+    });
   });
 });
 
@@ -1099,7 +1177,7 @@ describe("Save backups", () => {
     fireEvent.click(auto);
     fireEvent.change(screen.getByLabelText("Aufbewahren"), { target: { value: "20" } });
     await waitFor(() => {
-      expect(core.settings.backups).toEqual({ enabled: false, directory: "", keep: 20 });
+      expect(core.settings.backups).toEqual({ enabled: false, directory: "", keep: 20, librarySync: true });
     });
   });
 });
@@ -1435,22 +1513,27 @@ describe("Export and import", () => {
   });
 });
 
-describe("Heroic and Lutris", () => {
-  it("adds games from Heroic and Lutris with their prefix", async () => {
+describe("Other launchers", () => {
+  it("adds games from Heroic and Lutris with their prefix, and Ubisoft games with their link", async () => {
     core.externalGames = [
-      { id: "lutris:1", launcher: "lutris", title: "Lantern", executablePath: "/g/lantern.exe", windows: true, proton: false, winePrefix: "/g/prefix", wineBinary: "/l/wine", arguments: "--safe", playtimeMinutes: 150, inLibrary: false },
-      { id: "heroic:a", launcher: "heroic", title: "Tidewater", executablePath: "/games/tidewater/tidewater", windows: false, proton: false, winePrefix: null, wineBinary: null, arguments: "", playtimeMinutes: 0, inLibrary: false },
+      { id: "ubisoft:3539", launcher: "ubisoft", title: "Harbour Lights", executablePath: "C:\\Ubisoft\\Harbour\\harbour.exe", windows: false, proton: false, winePrefix: null, wineBinary: null, arguments: "", playtimeMinutes: 0, installPath: "C:\\Ubisoft\\Harbour", launchUrl: "uplay://launch/3539/0", inLibrary: false },
+      { id: "lutris:1", launcher: "lutris", title: "Lantern", executablePath: "/g/lantern.exe", windows: true, proton: false, winePrefix: "/g/prefix", wineBinary: "/l/wine", arguments: "--safe", playtimeMinutes: 150, installPath: null, launchUrl: null, inLibrary: false },
+      { id: "heroic:a", launcher: "heroic", title: "Tidewater", executablePath: "/games/tidewater/tidewater", windows: false, proton: false, winePrefix: null, wineBinary: null, arguments: "", playtimeMinutes: 0, installPath: null, launchUrl: null, inLibrary: false },
     ];
     for (const item of core.library) if (item.game.id === "tidewater") item.entry.executablePath = "/games/tidewater/tidewater";
     renderAt("/library");
     fireEvent.click(await screen.findByRole("button", { name: "Spiel hinzufügen" }));
-    fireEvent.click(await screen.findByRole("radio", { name: "Heroic / Lutris" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "Andere Launcher" }));
     expect(await screen.findByText(/Wine mit eigenem Prefix/)).toBeDefined();
+    expect(screen.getByText("Startet über Ubisoft Connect")).toBeDefined();
     expect(screen.getByText("Bereits in der Bibliothek")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "1 Spiel hinzufügen" }));
+    fireEvent.click(screen.getByRole("button", { name: "2 Spiele hinzufügen" }));
     await waitFor(() => {
       expect(core.library.some((i) => i.game.title === "Lantern" && i.entry.launchOptions.winePrefix === "/g/prefix")).toBe(true);
     });
+    const harbour = core.library.find((i) => i.game.title === "Harbour Lights");
+    expect(harbour?.entry.launchVia).toBe("ubisoftConnect");
+    expect(harbour?.entry.installPath).toBe("C:\\Ubisoft\\Harbour");
   });
 });
 

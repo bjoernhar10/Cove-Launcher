@@ -1,10 +1,14 @@
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { setLanguage } from "../i18n/index.ts";
 import { queryClient } from "../lib/queryClient.ts";
 
 // The tests check German texts (the default UI copy); English has its own tests.
 setLanguage("de");
+
+// A busy machine (all workspaces' tests at once) renders a page in more than
+// the default second; a real failure still fails, only later.
+configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();

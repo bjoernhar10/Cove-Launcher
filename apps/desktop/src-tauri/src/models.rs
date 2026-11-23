@@ -192,6 +192,11 @@ pub struct LaunchOptions {
     /// Linux, Wine: the wine program (a Heroic or Lutris build); `None` = `wine`.
     #[serde(default)]
     pub wine_binary: Option<String>,
+    /// Starts through another launcher instead of the executable
+    /// (`uplay://`, `battlenet://`, `shell:AppsFolder\…`);
+    /// `None` = the executable.
+    #[serde(default)]
+    pub launch_url: Option<String>,
 }
 
 /// Per-game options on Linux for games Cove starts itself.
@@ -313,6 +318,9 @@ pub enum LaunchVia {
     EpicLauncher,
     GogGalaxy,
     AmazonGames,
+    UbisoftConnect,
+    BattleNet,
+    XboxApp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -1031,6 +1039,10 @@ pub struct BackupSettings {
     /// Backups kept per game (1 to 100).
     #[serde(default = "default_keep")]
     pub keep: u32,
+    /// With a connected cloud: favourites, notes, collections, wishlist and
+    /// playtime are shared with the other computers (`librarysync.rs`).
+    #[serde(default = "default_true")]
+    pub library_sync: bool,
 }
 
 fn default_keep() -> u32 {
@@ -1043,6 +1055,7 @@ impl Default for BackupSettings {
             enabled: true,
             directory: String::new(),
             keep: default_keep(),
+            library_sync: true,
         }
     }
 }
@@ -1379,17 +1392,23 @@ pub struct ModInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum ExternalLauncher {
     Heroic,
     Lutris,
+    Bottles,
+    Ubisoft,
+    Ea,
+    BattleNet,
+    Xbox,
 }
 
-/// A game Heroic or Lutris knows (not their store games).
+/// A game another launcher installed: Heroic's own, Lutris, Bottles,
+/// Ubisoft Connect, the EA app, Battle.net or the Xbox app.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalGame {
-    /// `heroic:<app name>` or `lutris:<id>`.
+    /// `<launcher>:<the launcher's id>`.
     pub id: String,
     pub launcher: ExternalLauncher,
     pub title: String,
@@ -1403,6 +1422,10 @@ pub struct ExternalGame {
     pub arguments: String,
     /// Playtime Lutris counted.
     pub playtime_minutes: i64,
+    /// The game's folder when it is not the executable's folder.
+    pub install_path: Option<String>,
+    /// Starts through its launcher (see `LaunchOptions::launch_url`).
+    pub launch_url: Option<String>,
     pub in_library: bool,
 }
 
@@ -1948,6 +1971,50 @@ pub struct UpdateCheck {
 pub struct UpdateProgress {
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
+}
+
+/// Where a screenshot comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ScreenshotSource {
+    Steam,
+    /// The Xbox Game Bar (Windows).
+    Xbox,
+    /// A `Screenshots` folder in the game's folder.
+    Game,
+}
+
+/// One screenshot of a game (newest first in a listing).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Screenshot {
+    /// `cove-shot://localhost/<token>`: only files Cove listed can be shown.
+    pub url: String,
+    pub file_name: String,
+    pub taken_at: String,
+    pub size_bytes: i64,
+    pub source: ScreenshotSource,
+}
+
+/// The library sync (favourites, notes, collections, wishlist, playtime).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySyncStatus {
+    /// `backups.librarySync`.
+    pub enabled: bool,
+    /// A cloud is connected (Settings → Saves → Cloud sync).
+    pub connected: bool,
+    pub last_synced_at: Option<String>,
+    /// Why the last sync failed (user-facing); null = it worked.
+    pub problem: Option<String>,
+}
+
+/// The user's own note on a game.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameNote {
+    pub text: String,
+    pub updated_at: String,
 }
 
 /// One recorded session's frame rates (`MangoHud` log, Linux).

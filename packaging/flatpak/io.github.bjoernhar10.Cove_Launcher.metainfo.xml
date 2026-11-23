@@ -84,6 +84,21 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.1.0" date="2026-11-23">
+      <description>
+        <p>Your whole library on every device, and more launchers in one place.</p>
+        <ul>
+          <li>Library sync: favourites, notes, collections, the wishlist and playtime travel between
+          your computers through the same cloud as your saves.</li>
+          <li>Games from Ubisoft Connect, Battle.net, the Xbox app and the EA app on Windows, and from
+          Bottles on Linux, can be added to the library. Cove still counts their playtime.</li>
+          <li>Notes for every game, found by the search and shown in TV mode.</li>
+          <li>A Screenshots tab with the pictures from Steam, the Xbox Game Bar and the game's own
+          folder.</li>
+          <li>The sidebar says when the cloud sync needs a new sign-in or is failing.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.0.1" date="2026-11-18">
       <description>
         <p>Cloud sync now notices a save that a game rewrites within the same second as the last sync.

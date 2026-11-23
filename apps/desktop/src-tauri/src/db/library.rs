@@ -100,6 +100,7 @@ struct EntryRow {
     tweaks: Option<String>,
     wine_prefix: Option<String>,
     wine_binary: Option<String>,
+    launch_url: Option<String>,
     added_at: String,
     played_seconds: i64,
     last_played_at: Option<String>,
@@ -120,6 +121,7 @@ impl EntryRow {
             self.store_game_id.as_deref(),
             self.executable_path.as_deref(),
             self.installed_by_cove,
+            self.launch_url.as_deref(),
         );
         Ok(LibraryItem {
             entry: LibraryEntry {
@@ -151,6 +153,7 @@ impl EntryRow {
                         .unwrap_or_default(),
                     wine_prefix: self.wine_prefix,
                     wine_binary: self.wine_binary,
+                    launch_url: self.launch_url,
                 },
                 catalog_id: self.catalog_id,
                 match_status: MatchStatus::parse(&self.match_status),
@@ -166,7 +169,7 @@ fn select_entries(filter: &str) -> String {
     format!(
         "SELECT {GAME_COLUMNS}, e.source_id, e.store_game_id, e.installed, e.install_path, e.executable_path, \
            e.install_size_bytes, e.favorite, e.playtime_offset_minutes, e.launch_arguments, e.compatibility_tool, \
-           e.proton_version, e.env, e.tweaks, e.wine_prefix, e.wine_binary, e.added_at, e.catalog_id, e.match_status, \
+           e.proton_version, e.env, e.tweaks, e.wine_prefix, e.wine_binary, e.launch_url, e.added_at, e.catalog_id, e.match_status, \
            (SELECT COALESCE(SUM(s.duration_seconds), 0) FROM play_sessions s WHERE s.game_id = g.id) AS played_seconds, \
            (SELECT COALESCE(MAX(MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at), \
               MAX(COALESCE(s.ended_at, s.started_at)), e.store_last_played_at) \
@@ -586,9 +589,10 @@ async fn write_options(
     }
     let wine_prefix = checked_path(options.wine_prefix.as_deref(), true)?;
     let wine_binary = checked_path(options.wine_binary.as_deref(), false)?;
+    let launch_url = checked_launch_url(options.launch_url.as_deref())?;
     sqlx::query(
         "UPDATE library_entries SET launch_arguments = ?, compatibility_tool = ?, env = ?, proton_version = ?, \
-         tweaks = ?, wine_prefix = ?, wine_binary = ? WHERE game_id = ?",
+         tweaks = ?, wine_prefix = ?, wine_binary = ?, launch_url = ? WHERE game_id = ?",
     )
     .bind(options.arguments.trim())
     .bind(options.compatibility_tool.as_str())
@@ -597,10 +601,29 @@ async fn write_options(
     .bind(serde_json::to_string(tweaks)?)
     .bind(wine_prefix)
     .bind(wine_binary)
+    .bind(launch_url)
     .bind(game_id)
     .execute(conn)
     .await?;
     Ok(())
+}
+
+/// A launcher URL: empty = none, else one of the launchers' own start links
+/// (never a web page or an arbitrary program).
+fn checked_launch_url(value: Option<&str>) -> AppResult<Option<String>> {
+    let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let ok = value.len() <= 500
+        && !value.chars().any(|c| c.is_control() || c.is_whitespace())
+        && crate::launcher::launch_url_via(value).is_some();
+    if !ok {
+        return Err(AppError::InvalidInput(tr!(
+            "Dieser Start-Link gehört zu keinem bekannten Launcher.",
+            "This launch link does not belong to a known launcher."
+        )));
+    }
+    Ok(Some(value.to_owned()))
 }
 
 /// A Wine prefix (a folder) or Wine program (a file) the user or an import gave:
@@ -809,6 +832,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)] // every field of an update, then the refusals
     async fn update_fields() {
         let pool = open_in_memory().await.unwrap();
         let item = add_manual(&pool, &manual("Game", "/g/game.exe"))
@@ -842,9 +866,34 @@ pub(crate) mod tests {
                 },
                 wine_prefix: None,
                 wine_binary: None,
+                launch_url: Some(" uplay://launch/635/0 ".into()),
             }),
         };
         let updated = update(&pool, &item.game.id, &patch).await.unwrap();
+        assert_eq!(
+            updated.entry.launch_options.launch_url.as_deref(),
+            Some("uplay://launch/635/0")
+        );
+        assert_eq!(
+            updated.entry.launch_via,
+            Some(crate::models::LaunchVia::UbisoftConnect)
+        );
+        for bad in ["https://example.com", "uplay://launch/1 2", "/usr/bin/sh"] {
+            let patch = LibraryUpdate {
+                launch_options: Some(LaunchOptions {
+                    launch_url: Some(bad.into()),
+                    ..LaunchOptions::default()
+                }),
+                ..LibraryUpdate::default()
+            };
+            assert!(
+                matches!(
+                    update(&pool, &item.game.id, &patch).await,
+                    Err(AppError::InvalidInput(_))
+                ),
+                "{bad}"
+            );
+        }
         assert_eq!(updated.game.title, "Renamed");
         assert!(updated.entry.favorite);
         assert_eq!(updated.entry.launch_options.arguments, "-novid");

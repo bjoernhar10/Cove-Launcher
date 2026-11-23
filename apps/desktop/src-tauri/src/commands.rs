@@ -368,6 +368,9 @@ pub async fn library_update(
         }
     }
     let item = db::library::update(&state.pool, &game_id, &patch).await?;
+    if patch.favorite.is_some() {
+        state.library_sync.changed();
+    }
     // A Proton build the user just picked is installed right away (Linux).
     if patch.launch_options.is_some() && state.host.platform == Platform::Linux {
         let settings = db::settings::load(&state.pool, &state.defaults).await?;
@@ -392,7 +395,9 @@ pub async fn collections_create(
     state: State<'_, AppState>,
     name: String,
 ) -> AppResult<crate::models::Collection> {
-    db::collections::create(&state.pool, &name).await
+    let created = db::collections::create(&state.pool, &name).await?;
+    state.library_sync.changed();
+    Ok(created)
 }
 
 #[tauri::command]
@@ -401,7 +406,9 @@ pub async fn collections_rename(
     collection_id: String,
     name: String,
 ) -> AppResult<crate::models::Collection> {
-    db::collections::rename(&state.pool, &collection_id, &name).await
+    let renamed = db::collections::rename(&state.pool, &collection_id, &name).await?;
+    state.library_sync.changed();
+    Ok(renamed)
 }
 
 #[tauri::command]
@@ -409,7 +416,9 @@ pub async fn collections_delete(
     state: State<'_, AppState>,
     collection_id: String,
 ) -> AppResult<()> {
-    db::collections::delete(&state.pool, &collection_id).await
+    db::collections::delete(&state.pool, &collection_id).await?;
+    state.library_sync.changed();
+    Ok(())
 }
 
 #[tauri::command]
@@ -419,7 +428,9 @@ pub async fn collections_set_game(
     game_id: String,
     member: bool,
 ) -> AppResult<()> {
-    db::collections::set_game(&state.pool, &collection_id, &game_id, member).await
+    db::collections::set_game(&state.pool, &collection_id, &game_id, member).await?;
+    state.library_sync.changed();
+    Ok(())
 }
 
 #[tauri::command]
@@ -522,6 +533,7 @@ pub async fn wishlist_add(
 ) -> AppResult<crate::models::WishlistItem> {
     let game = state.catalog.details(&game_id).await?.game;
     db::wishlist::add(&state.pool, &game).await?;
+    state.library_sync.changed();
     let settings = db::settings::load(&state.pool, &state.defaults).await?;
     let lookup = state.prices.game_price(&game, &settings.wishlist.country);
     if let Ok(Ok(Some(price))) =
@@ -536,7 +548,9 @@ pub async fn wishlist_add(
 
 #[tauri::command]
 pub async fn wishlist_remove(state: State<'_, AppState>, game_id: String) -> AppResult<()> {
-    db::wishlist::remove(&state.pool, &game_id).await
+    db::wishlist::remove(&state.pool, &game_id).await?;
+    state.library_sync.changed();
+    Ok(())
 }
 
 #[tauri::command]
@@ -546,7 +560,9 @@ pub async fn wishlist_update(
     target_price: Option<f64>,
     notify_on_sale: bool,
 ) -> AppResult<crate::models::WishlistItem> {
-    db::wishlist::update(&state.pool, &game_id, target_price, notify_on_sale).await
+    let item = db::wishlist::update(&state.pool, &game_id, target_price, notify_on_sale).await?;
+    state.library_sync.changed();
+    Ok(item)
 }
 
 /// Checks the prices now ("Preise prüfen").
@@ -1327,6 +1343,9 @@ pub async fn settings_update(
 
 /// What has to follow new settings at once.
 async fn settings_changed(state: &AppState, before: &AppSettings, settings: &AppSettings) {
+    if settings.backups.library_sync && !before.backups.library_sync {
+        state.library_sync.changed();
+    }
     crate::i18n::set_language(&settings.general.language);
     // A new default Proton build is installed right away (Linux).
     if state.host.platform == Platform::Linux
@@ -2234,6 +2253,77 @@ pub async fn cove_achievements_list(state: State<'_, AppState>) -> AppResult<Vec
     state.cove_achievements.list().await
 }
 
+// ───────────── notes ─────────────
+
+/// The user's note on a game; None = no note.
+#[tauri::command]
+pub async fn game_note(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<Option<crate::models::GameNote>> {
+    db::notes::get(&state.pool, &game_id).await
+}
+
+/// Stores the note; an empty one is removed (None).
+#[tauri::command]
+pub async fn game_note_set(
+    state: State<'_, AppState>,
+    game_id: String,
+    text: String,
+) -> AppResult<Option<crate::models::GameNote>> {
+    db::library::require(&state.pool, &game_id).await?;
+    let note = db::notes::set(&state.pool, &game_id, &text).await?;
+    state.library_sync.changed();
+    Ok(note)
+}
+
+/// Every note by game id (search and the list view's marker).
+#[tauri::command]
+pub async fn notes_list(
+    state: State<'_, AppState>,
+) -> AppResult<std::collections::HashMap<String, crate::models::GameNote>> {
+    Ok(db::notes::all(&state.pool).await?.into_iter().collect())
+}
+
+// ───────────── screenshots ─────────────
+
+/// The game's screenshots (Steam, Xbox Game Bar, its own folder), newest first.
+#[tauri::command]
+pub async fn game_screenshots(
+    state: State<'_, AppState>,
+    game_id: String,
+) -> AppResult<Vec<crate::models::Screenshot>> {
+    let item = db::library::require(&state.pool, &game_id).await?;
+    let shots = state.screenshots.clone();
+    tokio::task::spawn_blocking(move || shots.list(&item))
+        .await
+        .map_err(|e| AppError::Io(std::io::Error::other(e.to_string())))
+}
+
+/// Opens a listed screenshot in the system's image viewer.
+#[tauri::command]
+pub async fn screenshot_open<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    url: String,
+) -> AppResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = state.screenshots.path(&url).ok_or_else(|| {
+        AppError::InvalidInput(tr!(
+            "Diesen Screenshot gibt es nicht mehr.",
+            "This screenshot no longer exists."
+        ))
+    })?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|e| {
+            AppError::Launch(tr!(
+                "Der Screenshot konnte nicht geöffnet werden: {e}",
+                "The screenshot could not be opened: {e}"
+            ))
+        })
+}
+
 // ───────────── frame rates, streaming ─────────────
 
 /// The game's recorded sessions (frame rates), newest first.
@@ -2332,7 +2422,9 @@ pub async fn save_sync_connect(
     state: State<'_, AppState>,
     provider: crate::models::CloudProvider,
 ) -> AppResult<crate::models::SaveSyncStatus> {
-    state.save_sync.connect(provider, &state.open_url).await
+    let status = state.save_sync.connect(provider, &state.open_url).await?;
+    state.library_sync.changed();
+    Ok(status)
 }
 
 /// Forgets the cloud on this computer; the saves in it stay.
@@ -2359,6 +2451,22 @@ pub async fn game_save_sync_now(
 ) -> AppResult<crate::models::GameSaveSync> {
     refuse_while_running(&state, &game_id)?;
     state.save_sync.sync_now(&game_id, &state.host).await
+}
+
+/// The library sync: on, connected, last sync, last problem.
+#[tauri::command]
+pub async fn library_sync_status(
+    state: State<'_, AppState>,
+) -> AppResult<crate::models::LibrarySyncStatus> {
+    state.library_sync.status().await
+}
+
+/// "Jetzt abgleichen" for the library.
+#[tauri::command]
+pub async fn library_sync_now(
+    state: State<'_, AppState>,
+) -> AppResult<crate::models::LibrarySyncStatus> {
+    state.library_sync.sync().await
 }
 
 /// A conflict: which side wins (refused while the game runs).

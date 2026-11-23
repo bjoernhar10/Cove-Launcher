@@ -119,6 +119,11 @@ fn flatpak_start_command(home: Option<&Path>) -> Option<(PathBuf, Vec<String>)> 
     })
 }
 
+/// Steam's folder on Windows (None elsewhere).
+pub fn windows_root() -> Option<PathBuf> {
+    windows_steam_exe().and_then(|exe| exe.parent().map(Path::to_path_buf))
+}
+
 #[cfg(windows)]
 fn windows_steam_exe() -> Option<PathBuf> {
     use winreg::enums::HKEY_CURRENT_USER;

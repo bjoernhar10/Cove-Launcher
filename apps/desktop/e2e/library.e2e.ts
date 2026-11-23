@@ -89,6 +89,39 @@ test.describe("Bibliothek", () => {
     await expect(game.getByText(/^Abgeglichen /)).toBeVisible();
   });
 
+  test("Screenshots eines Spiels ansehen und durchblättern", async ({ page }) => {
+    await openCove(page, "/library/game-0?tab=screenshots");
+    await expect(page.getByText("2 Screenshots")).toBeVisible();
+    await page.getByRole("button", { name: "20261112_201500.jpg öffnen" }).click();
+    const viewer = page.getByRole("dialog", { name: "20261112_201500.jpg" });
+    await expect(viewer.getByText("1 von 2")).toBeVisible();
+    await viewer.getByRole("button", { name: "Nächster Screenshot" }).click();
+    await expect(page.getByRole("dialog", { name: "20261110_190000.jpg" })).toBeVisible();
+  });
+
+  test("Bibliothek über die Cloud abgleichen und Notizen behalten", async ({ page }) => {
+    await openCove(page, "/settings/backups");
+    await page.getByRole("button", { name: "Mit Dropbox verbinden" }).click();
+    await expect(page.getByText("Noch nicht abgeglichen.")).toBeVisible();
+    await page.getByRole("button", { name: "Jetzt abgleichen" }).click();
+    await expect(toasts(page).getByText("Bibliothek abgeglichen.")).toBeVisible();
+    await expect(page.getByText(/^Zuletzt abgeglichen /)).toBeVisible();
+
+    await page.evaluate(() => {
+      window.location.hash = "#/library/game-0";
+    });
+    const notes = page.getByRole("textbox", { name: "Notizen" });
+    await notes.fill("Leuchtturm, zweiter Schlüssel fehlt");
+    await expect(page.getByText(/^Gespeichert ·/)).toBeVisible();
+    await page.evaluate(() => {
+      window.location.hash = "#/library";
+    });
+    await page.evaluate(() => {
+      window.location.hash = "#/library/game-0";
+    });
+    await expect(page.getByRole("textbox", { name: "Notizen" })).toHaveValue("Leuchtturm, zweiter Schlüssel fehlt");
+  });
+
   test("ROMs eines Emulators in die Bibliothek holen", async ({ page }) => {
     await openCove(page, "/settings/emulators");
     await page.getByLabel("Ordner").fill("/home/alex/ROMs/SNES");

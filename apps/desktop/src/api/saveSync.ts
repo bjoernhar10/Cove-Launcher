@@ -1,4 +1,4 @@
-import type { CloudProvider, GameId, GameSaveSync, SaveSyncKeep, SaveSyncStatus } from "@cove/shared";
+import type { CloudProvider, GameId, GameSaveSync, LibrarySyncStatus, SaveSyncKeep, SaveSyncStatus } from "@cove/shared";
 import { call, subscribe } from "./transport.ts";
 
 /** Save sync: the connected cloud, if any. */
@@ -34,4 +34,19 @@ export function resolve(gameId: GameId, keep: SaveSyncKeep): Promise<GameSaveSyn
 /** A game's saves were synced in the background, or a conflict came up. */
 export function subscribeChanged(handler: (event: { gameId: GameId }) => void): () => void {
   return subscribe("save-sync-changed", handler);
+}
+
+/** Library sync: on, connected, last sync and its problem. */
+export function libraryStatus(): Promise<LibrarySyncStatus> {
+  return call("library_sync_status", {});
+}
+
+/** Syncs favourites, notes, collections, wishlist and playtime now. */
+export function syncLibraryNow(): Promise<LibrarySyncStatus> {
+  return call("library_sync_now", {});
+}
+
+/** A library sync ran; `changed` = this computer's library changed. */
+export function subscribeLibrary(handler: (event: { changed: boolean }) => void): () => void {
+  return subscribe("library-sync-changed", handler);
 }

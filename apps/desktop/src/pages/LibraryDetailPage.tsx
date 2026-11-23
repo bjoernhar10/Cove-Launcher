@@ -13,6 +13,8 @@ import { PrefixTools } from "../features/PrefixTools.tsx";
 import { SaveBackups } from "../features/SaveBackups.tsx";
 import { SaveSync } from "../features/SaveSync.tsx";
 import { FpsHistory } from "../features/FpsHistory.tsx";
+import { GameNotes } from "../features/GameNotes.tsx";
+import { GameScreenshots } from "../features/GameScreenshots.tsx";
 import { ProtonRating } from "../features/ProtonRating.tsx";
 import { TimeToBeat } from "../features/TimeToBeat.tsx";
 import { GameCover } from "../components/game/GameCover.tsx";
@@ -37,8 +39,8 @@ import { useMoves } from "../stores/moves.ts";
 import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 
-type Tab = "overview" | "news" | "achievements" | "mods" | "settings";
-const TABS: Tab[] = ["overview", "news", "achievements", "mods", "settings"];
+type Tab = "overview" | "news" | "achievements" | "screenshots" | "mods" | "settings";
+const TABS: Tab[] = ["overview", "news", "achievements", "screenshots", "mods", "settings"];
 
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -114,6 +116,7 @@ function Overview({ item }: { item: LibraryItem }) {
           </section>
         </div>
       </div>
+      <GameNotes key={item.game.id} item={item} />
       {detectPlatform() === "linux" && <FpsHistory item={item} />}
       {entry.source !== "manual" && entry.storeGameId && <GameDlcs item={item} />}
     </div>
@@ -1066,6 +1069,7 @@ export function LibraryDetailPage() {
                     ? { meta: `${String(query.data.entry.achievements.unlocked)}/${String(query.data.entry.achievements.total)}` }
                     : {}),
                 },
+                { value: "screenshots", label: t.screenshots.title },
                 ...(query.data.entry.installed && query.data.entry.installPath ? [{ value: "mods" as const, label: t.mods.title }] : []),
                 { value: "settings", label: t.game.settings },
               ]}
@@ -1073,6 +1077,7 @@ export function LibraryDetailPage() {
               {tab === "overview" && <Overview item={query.data} />}
               {tab === "news" && <GameNews gameId={query.data.game.id} focus={params.get("post")} />}
               {tab === "achievements" && <Achievements item={query.data} />}
+              {tab === "screenshots" && <GameScreenshots item={query.data} />}
               {tab === "mods" && <GameMods item={query.data} />}
               {tab === "settings" && <LaunchSettings key={query.data.game.id} item={query.data} />}
             </Tabs>

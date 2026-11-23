@@ -295,6 +295,12 @@ async fn save_row(pool: &SqlitePool, game_id: &str, row: &Row) -> AppResult<()> 
 
 async fn forget_all(pool: &SqlitePool) -> AppResult<()> {
     sqlx::query("DELETE FROM save_sync").execute(pool).await?;
+    // The library sync's agreement with that cloud too.
+    sqlx::query("DELETE FROM settings WHERE key IN (?, ?)")
+        .bind(crate::librarysync::BASE_KEY)
+        .bind(crate::librarysync::AT_KEY)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -475,7 +481,7 @@ impl SaveSync {
     }
 
     /// The connected cloud with a fresh access token; None = not connected.
-    async fn remote(&self) -> AppResult<Option<Remote>> {
+    pub async fn remote(&self) -> AppResult<Option<Remote>> {
         let Some(mut session) = self.session().await? else {
             return Ok(None);
         };

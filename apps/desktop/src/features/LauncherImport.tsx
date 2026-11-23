@@ -1,18 +1,33 @@
-import type { ExternalGame } from "@cove/shared";
+import type { ExternalGame, ExternalLauncher } from "@cove/shared";
 import { Gamepad2 } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api/index.ts";
 import { Button } from "../components/ui/Button.tsx";
 import { Badge, EmptyState, ErrorState, LoadingRegion, Skeleton } from "../components/ui/Feedback.tsx";
 import { useQuery } from "../hooks/useQuery.ts";
-import { useMessages } from "../i18n/index.ts";
+import { type Messages, useMessages } from "../i18n/index.ts";
 import { formatPlaytime } from "../lib/format.ts";
 import { invalidateQueries } from "../stores/query.ts";
 import { errorMessage, toast } from "../stores/toasts.ts";
 
-const LAUNCHER_NAMES = { heroic: "Heroic", lutris: "Lutris" } as const;
+const LAUNCHER_NAMES: Record<ExternalLauncher, string> = {
+  heroic: "Heroic",
+  lutris: "Lutris",
+  bottles: "Bottles",
+  ubisoft: "Ubisoft Connect",
+  ea: "EA",
+  battleNet: "Battle.net",
+  xbox: "Xbox",
+};
 
-/** "Aus Heroic oder Lutris": their own games with Wine prefix, Wine build and playtime. */
+/** What the line under a game says: how it starts. */
+function detail(game: ExternalGame, t: Messages): string {
+  if (game.launchUrl !== null) return t.launchers.via(LAUNCHER_NAMES[game.launcher]);
+  if (!game.windows) return game.launcher === "ea" ? t.launchers.windows : t.launchers.native;
+  return game.winePrefix ? t.launchers.withPrefix(game.proton ? "Proton" : "Wine") : t.launchers.windows;
+}
+
+/** "Andere Launcher": Windows launchers' games, Heroic's own, Lutris and Bottles. */
 export function LauncherImport({ onDone }: { onDone: () => void }) {
   const t = useMessages();
   const query = useQuery("launchers/scan", api.library.launcherGames);
@@ -90,7 +105,7 @@ export function LauncherImport({ onDone }: { onDone: () => void }) {
                 {game.inLibrary && <span className="text-xs text-fg-subtle">{t.addGame.alreadyInLibrary}</span>}
               </span>
               <span className="block truncate text-xs text-fg-subtle" title={game.winePrefix ?? game.executablePath}>
-                {game.windows ? (game.winePrefix ? t.launchers.withPrefix(game.proton ? "Proton" : "Wine") : t.launchers.windows) : t.launchers.native}
+                {detail(game, t)}
                 {game.playtimeMinutes > 0 && ` · ${formatPlaytime(game.playtimeMinutes)}`}
               </span>
             </span>

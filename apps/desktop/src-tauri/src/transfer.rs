@@ -1,8 +1,8 @@
 //! Export and import of the user's Cove data, for a new computer or as a backup.
 //!
 //! The file is JSON: the library (games with their settings and the playtime
-//! the stores reported), play sessions, collections, the wishlist and the
-//! settings. Store logins are never part of it (they live in the keyring).
+//! the stores reported), play sessions, collections, the wishlist, notes and
+//! the settings. Store logins are never part of it (they live in the keyring).
 //!
 //! An import merges and never deletes. Store games are matched by store and
 //! store id; ones that aren't here yet come back with the store's next sync,
@@ -41,6 +41,17 @@ pub struct ExportFile {
     sessions: Vec<ExportedSession>,
     collections: Vec<ExportedCollection>,
     wishlist: Vec<ExportedWish>,
+    /// Older exports have none.
+    #[serde(default)]
+    notes: Vec<ExportedNote>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportedNote {
+    game_id: String,
+    text: String,
+    updated_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -139,6 +150,15 @@ pub async fn export(pool: &SqlitePool, settings: &AppSettings) -> AppResult<Expo
             notify_on_sale: w.notify_on_sale,
         })
         .collect();
+    let notes = db::notes::all(pool)
+        .await?
+        .into_iter()
+        .map(|(game_id, note)| ExportedNote {
+            game_id,
+            text: note.text,
+            updated_at: note.updated_at,
+        })
+        .collect();
     Ok(ExportFile {
         format: FORMAT.into(),
         version: VERSION,
@@ -149,6 +169,7 @@ pub async fn export(pool: &SqlitePool, settings: &AppSettings) -> AppResult<Expo
         sessions,
         collections,
         wishlist,
+        notes,
     })
 }
 
@@ -304,6 +325,28 @@ fn merged_settings(local: &AppSettings, exported: &serde_json::Value) -> Option<
     Some(settings)
 }
 
+/// A note replaces this computer's only when it is newer.
+async fn import_notes(
+    pool: &SqlitePool,
+    notes: &[ExportedNote],
+    ids: &HashMap<&str, String>,
+) -> AppResult<()> {
+    for note in notes {
+        let Some(game_id) = ids.get(note.game_id.as_str()) else {
+            continue;
+        };
+        let local = db::notes::get(pool, game_id).await?;
+        if note.text.trim().is_empty()
+            || note.text.chars().count() > db::notes::MAX_CHARS
+            || local.is_some_and(|l| l.updated_at >= note.updated_at)
+        {
+            continue;
+        }
+        db::notes::write(pool, game_id, &note.text, &note.updated_at).await?;
+    }
+    Ok(())
+}
+
 pub async fn import(
     pool: &SqlitePool,
     file: &ExportFile,
@@ -402,6 +445,8 @@ pub async fn import(
         }
     }
 
+    import_notes(pool, &file.notes, &ids).await?;
+
     if with_settings {
         let settings = merged_settings(local_settings, &file.settings).ok_or_else(not_an_export)?;
         db::settings::save(pool, &settings).await?;
@@ -496,6 +541,9 @@ mod tests {
         db::wishlist::update(&old, "igdb-77", Some(9.99), false)
             .await
             .unwrap();
+        db::notes::set(&old, "steam-620", "Chapter 6, the turret room")
+            .await
+            .unwrap();
         let mut settings = defaults.clone();
         settings.general.language = "en".into();
         settings.downloads.directory = "/old/computer/Games".into();
@@ -546,6 +594,14 @@ mod tests {
         assert_eq!(imported.entry.playtime_minutes, 60);
         let portal = library.iter().find(|i| i.game.id == "steam-620").unwrap();
         assert_eq!(portal.entry.playtime_minutes, 30);
+        assert_eq!(
+            db::notes::get(&new, "steam-620")
+                .await
+                .unwrap()
+                .unwrap()
+                .text,
+            "Chapter 6, the turret room"
+        );
         let collections = db::collections::list(&new).await.unwrap();
         assert_eq!(collections[0].name, "Mit Freunden");
         assert_eq!(collections[0].game_ids.len(), 2);

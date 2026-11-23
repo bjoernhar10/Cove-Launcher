@@ -91,6 +91,15 @@ export function AppShell() {
     [],
   );
 
+  // Another computer's favourites, notes, collections … arrived.
+  useEffect(
+    () =>
+      api.saveSync.subscribeLibrary((event) => {
+        if (event.changed) invalidateQueries();
+      }),
+    [],
+  );
+
   // Release builds look for an update once, shortly after start. Silent when
   // offline or up to date; Settings → Über Cove has the manual check.
   useEffect(() => {

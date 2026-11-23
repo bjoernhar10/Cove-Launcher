@@ -110,6 +110,11 @@ export interface LaunchOptions {
   winePrefix: string | null;
   /** Linux, Wine: the wine program (a Heroic or Lutris build); null = `wine`. */
   wineBinary: string | null;
+  /**
+   * Starts through another launcher instead of the executable: `uplay://launch/…`,
+   * `battlenet://…` or `shell:AppsFolder\…` (Xbox app). null = the executable.
+   */
+  launchUrl: string | null;
 }
 
 /** Per-game options on Linux for games Cove starts itself. */
@@ -183,7 +188,15 @@ export interface LibraryEntry {
 }
 
 /** How a game is started: by Cove itself or through a store client. */
-export type LaunchVia = "direct" | "steam" | "epicLauncher" | "gogGalaxy" | "amazonGames";
+export type LaunchVia =
+  | "direct"
+  | "steam"
+  | "epicLauncher"
+  | "gogGalaxy"
+  | "amazonGames"
+  | "ubisoftConnect"
+  | "battleNet"
+  | "xboxApp";
 
 /**
  * Catalogue matching state of a library game:
@@ -385,11 +398,14 @@ export interface ModInfo {
   overridden: number;
 }
 
-export type ExternalLauncher = "heroic" | "lutris";
+export type ExternalLauncher = "heroic" | "lutris" | "bottles" | "ubisoft" | "ea" | "battleNet" | "xbox";
 
-/** A game Heroic or Lutris knows (not their store games). */
+/**
+ * A game another launcher installed: Heroic's own, Lutris, Bottles, Ubisoft Connect,
+ * the EA app, Battle.net or the Xbox app.
+ */
 export interface ExternalGame {
-  /** `heroic:<app name>` or `lutris:<id>`. */
+  /** `<launcher>:<the launcher's id>`. */
   id: string;
   launcher: ExternalLauncher;
   title: string;
@@ -403,6 +419,10 @@ export interface ExternalGame {
   arguments: string;
   /** Playtime Lutris counted. */
   playtimeMinutes: number;
+  /** The game's folder when it is not the executable's folder. */
+  installPath: string | null;
+  /** Starts through its launcher (see `LaunchOptions.launchUrl`). */
+  launchUrl: string | null;
   inLibrary: boolean;
 }
 
@@ -1140,6 +1160,11 @@ export interface BackupSettings {
   directory: string;
   /** Backups kept per game (1 to 100). */
   keep: number;
+  /**
+   * With a connected cloud: favourites, notes, collections, wishlist and playtime are
+   * shared with the other computers.
+   */
+  librarySync: boolean;
 }
 
 /** Folders with ROMs and the emulator that plays them. */
@@ -1478,6 +1503,36 @@ export interface UpdateCheck {
 export interface UpdateProgress {
   downloadedBytes: number;
   totalBytes: number | null;
+}
+
+/** Where a screenshot comes from: Steam, the Xbox Game Bar, the game's own folder. */
+export type ScreenshotSource = "steam" | "xbox" | "game";
+
+/** One screenshot of a game (newest first in a listing). */
+export interface Screenshot {
+  /** `cove-shot://localhost/<token>`: only files Cove listed can be shown. */
+  url: string;
+  fileName: string;
+  takenAt: string;
+  sizeBytes: number;
+  source: ScreenshotSource;
+}
+
+/** The library sync (favourites, notes, collections, wishlist, playtime). */
+export interface LibrarySyncStatus {
+  /** `backups.librarySync`. */
+  enabled: boolean;
+  /** A cloud is connected (Settings → Saves → Cloud sync). */
+  connected: boolean;
+  lastSyncedAt: string | null;
+  /** Why the last sync failed (user-facing); null = it worked. */
+  problem: string | null;
+}
+
+/** The user's own note on a game ("where was I, what's left"). */
+export interface GameNote {
+  text: string;
+  updatedAt: string;
 }
 
 /** One recorded session's frame rates (MangoHud log, Linux). */
