@@ -84,6 +84,14 @@
   </screenshots>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.1.1" date="2026-11-25">
+      <description>
+        <p>Epic, GOG and Amazon games installed by Cove stay Cove's installs after the download history
+        is cleared. Before, Epic games then tried to start through the Epic Games Launcher. When a
+        store launcher a game needs is not installed, Cove now says so instead of opening a link
+        nothing can handle.</p>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-11-23">
       <description>
         <p>Your whole library on every device, and more launchers in one place.</p>

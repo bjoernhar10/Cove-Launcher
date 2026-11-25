@@ -523,8 +523,9 @@ pub async fn complete_install(
     let now = now_iso();
     sqlx::query(
         "INSERT INTO library_entries (game_id, source_id, installed, install_path, executable_path, install_size_bytes, \
-           compatibility_tool, added_at) VALUES (?, 'manual', 1, ?, ?, ?, ?, ?) \
+           compatibility_tool, added_at, cove_install_path) VALUES (?1, 'manual', 1, ?2, ?3, ?4, ?5, ?6, ?2) \
          ON CONFLICT (game_id) DO UPDATE SET installed = 1, install_path = excluded.install_path, \
+           cove_install_path = excluded.install_path, \
            executable_path = excluded.executable_path, install_size_bytes = excluded.install_size_bytes",
     )
     .bind(game_id)
@@ -709,6 +710,33 @@ mod tests {
             (download.status, download.queue_position),
             (DownloadStatus::Completed, None)
         );
+
+        assert!(item.entry.installed_by_cove);
+
+        // Clearing the history keeps it Cove's install (Epic games started
+        // through the Epic Games Launcher after that), also after a move.
+        clear_history(&pool).await.unwrap();
+        let installed_by_cove = |pool: SqlitePool| async move {
+            crate::db::library::require(&pool, "dl-lantern")
+                .await
+                .unwrap()
+                .entry
+                .installed_by_cove
+        };
+        assert!(installed_by_cove(pool.clone()).await);
+        crate::db::library::set_install_location(
+            &pool,
+            "dl-lantern",
+            "/other/lantern",
+            Some("/other/lantern/run"),
+        )
+        .await
+        .unwrap();
+        assert!(installed_by_cove(pool.clone()).await);
+        crate::db::library::mark_uninstalled(&pool, "dl-lantern")
+            .await
+            .unwrap();
+        assert!(!installed_by_cove(pool.clone()).await);
 
         // The same title again gets its own game.
         let again = enqueue_transfer(&pool, &input).await.unwrap();

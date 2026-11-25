@@ -176,8 +176,9 @@ fn select_entries(filter: &str) -> String {
               FROM play_sessions s WHERE s.game_id = g.id) AS last_played_at, \
            (SELECT COUNT(*) FROM achievements a WHERE a.game_id = g.id) AS achievements_total, \
            (SELECT COUNT(*) FROM user_achievements u WHERE u.game_id = g.id) AS achievements_unlocked, \
-           EXISTS (SELECT 1 FROM downloads d WHERE d.game_id = g.id AND d.status = 'completed' \
-             AND d.install_path = e.install_path) AS installed_by_cove \
+           (e.cove_install_path IS NOT NULL AND e.cove_install_path = e.install_path \
+             OR EXISTS (SELECT 1 FROM downloads d WHERE d.game_id = g.id AND d.status = 'completed' \
+             AND d.install_path = e.install_path)) AS installed_by_cove \
          FROM library_entries e JOIN games g ON g.id = e.game_id {filter}"
     )
 }
@@ -422,7 +423,8 @@ pub async fn set_install_location(
 ) -> AppResult<()> {
     let mut tx = pool.begin().await?;
     let result = sqlx::query(
-        "UPDATE library_entries SET installed = 1, install_path = ?, executable_path = ? WHERE game_id = ?",
+        "UPDATE library_entries SET installed = 1, install_path = ?1, executable_path = ?2, \
+           cove_install_path = CASE WHEN cove_install_path IS NULL THEN NULL ELSE ?1 END WHERE game_id = ?3",
     )
     .bind(install_path)
     .bind(executable_path)
@@ -483,7 +485,7 @@ pub async fn mark_uninstalled(pool: &SqlitePool, game_id: &str) -> AppResult<()>
     }
     sqlx::query(
         "UPDATE library_entries SET installed = 0, install_path = NULL, executable_path = NULL, \
-           install_size_bytes = NULL WHERE game_id = ?",
+           install_size_bytes = NULL, cove_install_path = NULL WHERE game_id = ?",
     )
     .bind(game_id)
     .execute(pool)

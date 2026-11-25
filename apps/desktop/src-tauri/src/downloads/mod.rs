@@ -1218,6 +1218,14 @@ impl DownloadManager {
 
     /// Store game: asks the store client to install it.
     pub async fn hand_off(&self, game_id: &str) -> AppResult<()> {
+        let item = db::library::require(&self.pool, game_id).await?;
+        if let (Some(store_game_id), source) =
+            (item.entry.store_game_id.as_deref(), item.entry.source)
+        {
+            if let Some(url) = handoff::install_url(source, store_game_id, cfg!(windows)) {
+                crate::launcher::check_launcher_link(&url)?;
+            }
+        }
         let (_, store, store_game_id) = db::downloads::enqueue_handoff(&self.pool, game_id).await?;
         let url = handoff::install_url(store, &store_game_id, cfg!(windows)).ok_or_else(|| {
             AppError::InvalidInput(tr!(

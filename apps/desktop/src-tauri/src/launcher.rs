@@ -214,6 +214,63 @@ pub fn launch_via(
     }
 }
 
+/// The program behind a launcher link's scheme, for messages.
+fn scheme_owner(scheme: &str) -> &'static str {
+    match scheme {
+        "steam" => "Steam",
+        "com.epicgames.launcher" => "Epic Games Launcher",
+        "goggalaxy" => "GOG Galaxy",
+        "amazon-games" => "Amazon Games",
+        "uplay" => "Ubisoft Connect",
+        "battlenet" => "Battle.net",
+        "heroic" => "Heroic",
+        _ => "",
+    }
+}
+
+/// Windows answers a link whose scheme no program registered with a "Get an
+/// app to open this link" dialog instead of an error, so Cove checks first.
+#[cfg(windows)]
+fn scheme_registered(scheme: &str) -> bool {
+    use winreg::enums::HKEY_CLASSES_ROOT;
+    winreg::RegKey::predef(HKEY_CLASSES_ROOT)
+        .open_subkey(scheme)
+        .is_ok_and(|key| key.get_raw_value("URL Protocol").is_ok())
+}
+
+#[cfg(not(windows))]
+fn scheme_registered(_scheme: &str) -> bool {
+    true
+}
+
+/// Fails with a clear message when a launcher link can't be opened on this
+/// computer (Windows: the launcher isn't installed). Web links, `shell:`
+/// and links of other programs pass.
+pub fn check_launcher_link(url: &str) -> AppResult<()> {
+    let Some((scheme, _)) = url.split_once(':') else {
+        return Ok(());
+    };
+    let scheme = scheme.to_ascii_lowercase();
+    let owner = scheme_owner(&scheme);
+    if owner.is_empty() || scheme_registered(&scheme) {
+        return Ok(());
+    }
+    Err(AppError::Launch(
+        if scheme == "com.epicgames.launcher" && url.contains("action=launch") {
+            tr!(
+            "Der Epic Games Launcher ist auf diesem Computer nicht installiert. Installiere das Spiel über Cove oder installiere den Epic Games Launcher.",
+            "The Epic Games Launcher is not installed on this computer. Install the game through Cove or install the Epic Games Launcher."
+        )
+        } else {
+            tr!(
+                "{} ist auf diesem Computer nicht installiert.",
+                "{} is not installed on this computer.",
+                owner
+            )
+        },
+    ))
+}
+
 /// The launcher a start link belongs to; None = not a launcher link.
 pub fn launch_url_via(url: &str) -> Option<LaunchVia> {
     let lower = url.to_ascii_lowercase();
@@ -882,6 +939,7 @@ impl Launcher {
 
         match plan {
             LaunchPlan::Url(url) => {
+                check_launcher_link(&url)?;
                 (self.open_url)(&url)?;
                 let Some(dir) = target.install_path.filter(|p| Path::new(p).is_dir()) else {
                     return Ok(LaunchResult {
@@ -1159,6 +1217,19 @@ mod tests {
             extra_args: Vec::new(),
             extra_env: Vec::new(),
         }
+    }
+
+    #[test]
+    fn launcher_links_of_installed_launchers_pass() {
+        // Off Windows every scheme counts as registered; other links always pass.
+        assert!(check_launcher_link("com.epicgames.launcher://apps/x?action=launch").is_ok());
+        assert!(check_launcher_link("https://example.test").is_ok());
+        assert!(check_launcher_link("shell:AppsFolder\\a!b").is_ok());
+        assert_eq!(
+            scheme_owner("com.epicgames.launcher"),
+            "Epic Games Launcher"
+        );
+        assert_eq!(scheme_owner("mailto"), "");
     }
 
     #[test]
