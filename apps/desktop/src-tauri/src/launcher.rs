@@ -230,7 +230,7 @@ fn scheme_owner(scheme: &str) -> &'static str {
 
 /// Windows answers a link whose scheme no program registered with a "Get an
 /// app to open this link" dialog instead of an error, so Cove checks first.
-#[cfg(windows)]
+#[cfg(all(windows, not(test)))]
 fn scheme_registered(scheme: &str) -> bool {
     use winreg::enums::HKEY_CLASSES_ROOT;
     winreg::RegKey::predef(HKEY_CLASSES_ROOT)
@@ -238,7 +238,8 @@ fn scheme_registered(scheme: &str) -> bool {
         .is_ok_and(|key| key.get_raw_value("URL Protocol").is_ok())
 }
 
-#[cfg(not(windows))]
+/// Off Windows, and in tests (CI machines have no store launchers), every scheme counts.
+#[cfg(any(not(windows), test))]
 fn scheme_registered(_scheme: &str) -> bool {
     true
 }
@@ -247,6 +248,10 @@ fn scheme_registered(_scheme: &str) -> bool {
 /// computer (Windows: the launcher isn't installed). Web links, `shell:`
 /// and links of other programs pass.
 pub fn check_launcher_link(url: &str) -> AppResult<()> {
+    check_link_with(url, scheme_registered)
+}
+
+fn check_link_with(url: &str, scheme_registered: impl Fn(&str) -> bool) -> AppResult<()> {
     let Some((scheme, _)) = url.split_once(':') else {
         return Ok(());
     };
@@ -1230,6 +1235,18 @@ mod tests {
             "Epic Games Launcher"
         );
         assert_eq!(scheme_owner("mailto"), "");
+        // A computer without the launchers (Windows' registry has no scheme).
+        let none = |_: &str| false;
+        let epic = check_link_with("com.epicgames.launcher://apps/x?action=launch", none)
+            .unwrap_err()
+            .to_string();
+        assert!(epic.contains("über Cove"), "{epic}");
+        let steam = check_link_with("steam://install/620", none)
+            .unwrap_err()
+            .to_string();
+        assert!(steam.contains("Steam ist"), "{steam}");
+        assert!(check_link_with("https://example.test", none).is_ok());
+        assert!(check_link_with("shell:AppsFolder\\a!b", none).is_ok());
     }
 
     #[test]
