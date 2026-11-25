@@ -165,6 +165,65 @@ mod tests {
     use crate::db::store_games::{upsert, StoreGameInput};
 
     #[tokio::test]
+    async fn migration_restores_cove_installs_whose_download_was_cleared() {
+        let pool = open_in_memory().await.unwrap();
+        let id = match upsert(
+            &pool,
+            StoreSource::Epic,
+            &StoreGameInput {
+                store_game_id: "Sugar".into(),
+                title: "Sugar".into(),
+                ..StoreGameInput::default()
+            },
+        )
+        .await
+        .unwrap()
+        {
+            crate::db::store_games::Upsert::Added(id)
+            | crate::db::store_games::Upsert::Updated(id)
+            | crate::db::store_games::Upsert::Renamed(id) => id,
+        };
+        sqlx::query(
+            "UPDATE library_entries SET installed = 1, install_path = '/games/Sugar' WHERE game_id = ?",
+        )
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let installed_by_cove = || async {
+            crate::db::library::require(&pool, &id)
+                .await
+                .unwrap()
+                .entry
+                .installed_by_cove
+        };
+        // Installed by Cove before 1.1.1, then the download history was cleared.
+        save(
+            &pool,
+            &StoreInstall {
+                game_id: id.clone(),
+                store: StoreSource::Epic,
+                product_id: "Sugar".into(),
+                build_id: "1".into(),
+                version: String::new(),
+                platform: "windows".into(),
+                files: vec![],
+                meta: "{}".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!installed_by_cove().await);
+        sqlx::raw_sql(include_str!(
+            "../../migrations/0026_cove_install_path_from_store_installs.sql"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(installed_by_cove().await);
+    }
+
+    #[tokio::test]
     async fn saves_replaces_and_forgets_on_uninstall() {
         let pool = open_in_memory().await.unwrap();
         upsert(
